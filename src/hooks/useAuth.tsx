@@ -76,9 +76,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    const rememberMe = localStorage.getItem('rememberMe') === 'true';
+    
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
+        // If user signed out or session expired and rememberMe is false, clear session
+        if (event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !session && !rememberMe)) {
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+          setIsLoading(false);
+          return;
+        }
+        
         setSession(session);
         setUser(session?.user ?? null);
         
@@ -123,6 +134,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    // Clear remember me preference on manual logout
+    localStorage.removeItem('rememberMe');
     await supabase.auth.signOut();
     setProfile(null);
   };

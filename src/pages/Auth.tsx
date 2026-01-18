@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Eye, EyeOff, Lock, Mail, Terminal } from 'lucide-react';
 import { z } from 'zod';
+import { Checkbox } from '@/components/ui/checkbox';
 
 const authSchema = z.object({
   email: z.string().email('Geçerli bir e-posta adresi girin'),
@@ -21,6 +22,9 @@ export default function Auth() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [terminalText, setTerminalText] = useState('');
+  const [rememberMe, setRememberMe] = useState(() => {
+    return localStorage.getItem('rememberMe') === 'true';
+  });
   
   const { signIn, user } = useAuth();
   const navigate = useNavigate();
@@ -65,6 +69,9 @@ export default function Auth() {
         return;
       }
 
+      // Store remember me preference
+      localStorage.setItem('rememberMe', rememberMe.toString());
+      
       const { error } = await signIn(email, password);
       if (error) {
         toast({
@@ -160,6 +167,21 @@ export default function Auth() {
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="rememberMe"
+                checked={rememberMe}
+                onCheckedChange={(checked) => setRememberMe(checked === true)}
+                className="border-primary/50 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+              />
+              <Label 
+                htmlFor="rememberMe" 
+                className="text-muted-foreground font-mono text-xs cursor-pointer"
+              >
+                Beni Hatırla
+              </Label>
             </div>
 
             <Button
