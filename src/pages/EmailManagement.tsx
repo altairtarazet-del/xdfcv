@@ -21,7 +21,14 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Key, Mail, RefreshCw, Shield, Eye, EyeOff, Server, ChevronLeft, ChevronRight, AlertCircle, Trash2 } from 'lucide-react';
+import { Plus, Key, Mail, RefreshCw, Shield, Eye, EyeOff, Server, ChevronLeft, ChevronRight, AlertCircle, Trash2, Calendar } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { z } from 'zod';
 
 // Username validation schema (lowercase, no Turkish chars, no spaces)
@@ -68,6 +75,11 @@ export default function EmailManagementPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [usernameError, setUsernameError] = useState<string | null>(null);
+  
+  // DOB states
+  const [dobDay, setDobDay] = useState('');
+  const [dobMonth, setDobMonth] = useState('');
+  const [dobYear, setDobYear] = useState('');
 
   // Check permissions
   const canCreateEmail = isAdmin || profile?.permissions?.can_create_email;
@@ -174,10 +186,22 @@ export default function EmailManagementPage() {
       return;
     }
 
+    // Validate DOB
+    if (!dobDay || !dobMonth || !dobYear) {
+      toast({
+        variant: 'destructive',
+        title: 'Hata',
+        description: 'Doğum tarihi zorunludur',
+      });
+      return;
+    }
+
     const fullEmail = `${newUsername}@${EMAIL_DOMAIN}`;
+    const dateOfBirth = `${dobYear}-${dobMonth.padStart(2, '0')}-${dobDay.padStart(2, '0')}`;
     
     setIsSubmitting(true);
     try {
+      // First, create the email account via SMTP API
       const { data, error } = await supabase.functions.invoke('smtp-api', {
         body: {
           action: 'createAccount',
@@ -188,14 +212,39 @@ export default function EmailManagementPage() {
 
       if (error) throw error;
 
-      toast({
-        title: 'Başarılı',
-        description: `${fullEmail} hesabı oluşturuldu`,
-      });
+      // Then, save to email_accounts table with DOB
+      const { data: session } = await supabase.auth.getSession();
+      const userId = session?.session?.user?.id;
+
+      const { error: dbError } = await supabase
+        .from('email_accounts')
+        .insert({
+          email: fullEmail,
+          date_of_birth: dateOfBirth,
+          created_by: userId,
+        });
+
+      if (dbError) {
+        console.error('Error saving to email_accounts:', dbError);
+        // Don't throw - email was still created successfully
+        toast({
+          variant: 'destructive',
+          title: 'Uyarı',
+          description: 'Email oluşturuldu ancak veritabanına kaydedilemedi',
+        });
+      } else {
+        toast({
+          title: 'Başarılı',
+          description: `${fullEmail} hesabı oluşturuldu`,
+        });
+      }
 
       setIsCreateDialogOpen(false);
       setNewUsername('');
       setUsernameError(null);
+      setDobDay('');
+      setDobMonth('');
+      setDobYear('');
       fetchAccounts(currentPage);
     } catch (error: any) {
       console.error('Error creating email:', error);
@@ -431,16 +480,78 @@ export default function EmailManagementPage() {
                       </div>
                     </div>
                     
-                    {newUsername && !usernameError && (
+                    {/* DOB Fields */}
+                    <div className="space-y-2">
+                      <Label className="text-muted-foreground font-mono text-xs flex items-center gap-2">
+                        <Calendar size={12} />
+                        DOĞUM TARİHİ
+                      </Label>
+                      <div className="grid grid-cols-3 gap-2">
+                        <Select value={dobDay} onValueChange={setDobDay}>
+                          <SelectTrigger className="cyber-input font-mono">
+                            <SelectValue placeholder="Gün" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-background border-border z-50">
+                            {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+                              <SelectItem key={day} value={String(day)} className="font-mono">
+                                {String(day).padStart(2, '0')}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Select value={dobMonth} onValueChange={setDobMonth}>
+                          <SelectTrigger className="cyber-input font-mono">
+                            <SelectValue placeholder="Ay" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-background border-border z-50">
+                            {[
+                              { value: '1', label: 'Ocak' },
+                              { value: '2', label: 'Şubat' },
+                              { value: '3', label: 'Mart' },
+                              { value: '4', label: 'Nisan' },
+                              { value: '5', label: 'Mayıs' },
+                              { value: '6', label: 'Haziran' },
+                              { value: '7', label: 'Temmuz' },
+                              { value: '8', label: 'Ağustos' },
+                              { value: '9', label: 'Eylül' },
+                              { value: '10', label: 'Ekim' },
+                              { value: '11', label: 'Kasım' },
+                              { value: '12', label: 'Aralık' },
+                            ].map((month) => (
+                              <SelectItem key={month.value} value={month.value} className="font-mono">
+                                {month.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Select value={dobYear} onValueChange={setDobYear}>
+                          <SelectTrigger className="cyber-input font-mono">
+                            <SelectValue placeholder="Yıl" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-background border-border z-50 max-h-[200px]">
+                            {Array.from({ length: 61 }, (_, i) => 2010 - i).map((year) => (
+                              <SelectItem key={year} value={String(year)} className="font-mono">
+                                {year}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    {newUsername && !usernameError && dobDay && dobMonth && dobYear && (
                       <div className="p-3 bg-primary/10 rounded-lg border border-primary/30">
                         <p className="text-xs text-muted-foreground font-mono">Oluşturulacak email:</p>
                         <p className="font-mono text-primary font-medium">{newUsername}@{EMAIL_DOMAIN}</p>
+                        <p className="text-xs text-muted-foreground font-mono mt-1">
+                          DOB: {dobDay.padStart(2, '0')}/{dobMonth.padStart(2, '0')}/{dobYear}
+                        </p>
                       </div>
                     )}
                     
                     <Button
                       onClick={handleCreateEmail}
-                      disabled={isSubmitting || !newUsername || !!usernameError}
+                      disabled={isSubmitting || !newUsername || !!usernameError || !dobDay || !dobMonth || !dobYear}
                       className="w-full cyber-glow font-mono"
                     >
                       {isSubmitting ? 'Oluşturuluyor...' : 'Email Oluştur'}
