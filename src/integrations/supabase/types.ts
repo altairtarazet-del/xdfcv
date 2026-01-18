@@ -48,6 +48,7 @@ export type Database = {
           id: string
           last_name: string | null
           middle_name: string | null
+          status: Database["public"]["Enums"]["account_status"]
         }
         Insert: {
           created_at?: string | null
@@ -58,6 +59,7 @@ export type Database = {
           id?: string
           last_name?: string | null
           middle_name?: string | null
+          status?: Database["public"]["Enums"]["account_status"]
         }
         Update: {
           created_at?: string | null
@@ -68,6 +70,7 @@ export type Database = {
           id?: string
           last_name?: string | null
           middle_name?: string | null
+          status?: Database["public"]["Enums"]["account_status"]
         }
         Relationships: []
       }
@@ -215,6 +218,7 @@ export type Database = {
       make_user_admin: { Args: { _user_email: string }; Returns: boolean }
     }
     Enums: {
+      account_status: "acildi" | "background" | "aktif" | "kapandi" | "suspend"
       app_role: "admin" | "moderator" | "user"
     }
     CompositeTypes: {
@@ -343,6 +347,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      account_status: ["acildi", "background", "aktif", "kapandi", "suspend"],
       app_role: ["admin", "moderator", "user"],
     },
   },

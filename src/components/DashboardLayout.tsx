@@ -1,4 +1,4 @@
-import { ReactNode, useEffect } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { CyberLogo } from '@/components/CyberLogo';
@@ -14,8 +14,9 @@ import {
   X,
   Server,
   FileSearch,
+  PanelLeftClose,
+  PanelLeft,
 } from 'lucide-react';
-import { useState } from 'react';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -26,12 +27,23 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  
+  // Desktop sidebar collapsed state (persisted in localStorage)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    const saved = localStorage.getItem('sidebarCollapsed');
+    return saved === 'true';
+  });
 
   useEffect(() => {
     if (!isLoading && !user) {
       navigate('/auth');
     }
   }, [user, isLoading, navigate]);
+
+  // Persist sidebar state
+  useEffect(() => {
+    localStorage.setItem('sidebarCollapsed', String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
 
   if (isLoading) {
     return (
@@ -64,6 +76,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     navigate('/auth');
   };
 
+  const toggleSidebarCollapse = () => {
+    setSidebarCollapsed(!sidebarCollapsed);
+  };
+
   return (
     <div className="min-h-screen matrix-bg flex">
       {/* Mobile Sidebar Toggle */}
@@ -74,10 +90,25 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
       </button>
 
+      {/* Desktop Collapse Toggle (always visible) */}
+      <button
+        onClick={toggleSidebarCollapse}
+        className={`hidden lg:flex fixed top-4 z-50 p-2 cyber-card rounded-lg hover:bg-primary/10 transition-all ${
+          sidebarCollapsed ? 'left-4' : 'left-[232px]'
+        }`}
+        title={sidebarCollapsed ? 'Sidebar aç' : 'Sidebar kapat'}
+      >
+        {sidebarCollapsed ? <PanelLeft size={20} /> : <PanelLeftClose size={20} />}
+      </button>
+
       {/* Sidebar */}
       <aside
-        className={`fixed lg:sticky top-0 left-0 h-screen w-64 bg-sidebar border-r border-sidebar-border p-4 flex flex-col z-40 transition-transform lg:translate-x-0 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        className={`fixed lg:sticky top-0 left-0 h-screen bg-sidebar border-r border-sidebar-border p-4 flex flex-col z-40 transition-all duration-300 ${
+          // Mobile behavior
+          sidebarOpen ? 'translate-x-0 w-64' : '-translate-x-full w-64'
+        } ${
+          // Desktop behavior
+          sidebarCollapsed ? 'lg:w-0 lg:-translate-x-full lg:p-0 lg:border-0' : 'lg:w-64 lg:translate-x-0'
         }`}
       >
         <div className="mb-8 pt-2">
@@ -164,7 +195,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 p-4 lg:p-8 min-h-screen overflow-auto">
+      <main className={`flex-1 p-4 lg:p-8 min-h-screen overflow-auto transition-all duration-300 ${
+        sidebarCollapsed ? 'lg:ml-0' : ''
+      }`}>
         {children}
       </main>
     </div>
