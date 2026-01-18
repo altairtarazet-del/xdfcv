@@ -94,6 +94,13 @@ const availablePermissions: PermissionItem[] = [
     type: 'toggle',
   },
   {
+    id: 'can_edit_background',
+    label: 'Background Düzenleme',
+    description: 'Background sayfasında isim ve doğum tarihi düzenleyebilir',
+    icon: <Edit size={16} />,
+    type: 'toggle',
+  },
+  {
     id: 'time_filter_minutes',
     label: 'Zaman Filtresi',
     description: 'Sadece son X dakikadaki mailleri görebilir',
@@ -234,6 +241,9 @@ export default function RolesPage() {
     realtime_enabled: true,
     can_create_email: false,
     can_change_password: false,
+    can_delete_account: false,
+    can_delete_emails: false,
+    can_edit_background: false,
     time_filter_minutes: '',
     allowed_mailboxes: '',
     allowed_senders: '',
@@ -353,6 +363,9 @@ export default function RolesPage() {
           realtime_enabled: !!permissionValues.realtime_enabled,
           can_create_email: !!permissionValues.can_create_email,
           can_change_password: !!permissionValues.can_change_password,
+          can_delete_account: !!permissionValues.can_delete_account,
+          can_delete_emails: !!permissionValues.can_delete_emails,
+          can_edit_background: !!permissionValues.can_edit_background,
         };
 
         const { error: permError } = await supabase
@@ -418,6 +431,9 @@ export default function RolesPage() {
       realtime_enabled: perms?.realtime_enabled ?? true,
       can_create_email: perms?.can_create_email ?? false,
       can_change_password: perms?.can_change_password ?? false,
+      can_delete_account: perms?.can_delete_account ?? false,
+      can_delete_emails: perms?.can_delete_emails ?? false,
+      can_edit_background: perms?.can_edit_background ?? false,
       time_filter_minutes: perms?.time_filter_minutes?.toString() || '',
       allowed_mailboxes: perms?.allowed_mailboxes?.join(', ') || '',
       allowed_senders: perms?.allowed_senders?.join(', ') || '',
@@ -430,6 +446,9 @@ export default function RolesPage() {
     if (perms?.realtime_enabled) active.push('realtime_enabled');
     if (perms?.can_create_email) active.push('can_create_email');
     if (perms?.can_change_password) active.push('can_change_password');
+    if (perms?.can_delete_account) active.push('can_delete_account');
+    if (perms?.can_delete_emails) active.push('can_delete_emails');
+    if (perms?.can_edit_background) active.push('can_edit_background');
     if (perms?.time_filter_minutes) active.push('time_filter_minutes');
     if (perms?.allowed_mailboxes?.length) active.push('allowed_mailboxes');
     if (perms?.allowed_senders?.length) active.push('allowed_senders');
@@ -447,6 +466,9 @@ export default function RolesPage() {
       realtime_enabled: true,
       can_create_email: false,
       can_change_password: false,
+      can_delete_account: false,
+      can_delete_emails: false,
+      can_edit_background: false,
       time_filter_minutes: '',
       allowed_mailboxes: '',
       allowed_senders: '',
