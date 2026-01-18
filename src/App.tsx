@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import Users from "./pages/Users";
 import Roles from "./pages/Roles";
 import EmailManagement from "./pages/EmailManagement";
+import Background from "./pages/Background";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
@@ -29,6 +30,7 @@ const App = () => (
             <Route path="/dashboard/users" element={<Users />} />
             <Route path="/dashboard/roles" element={<Roles />} />
             <Route path="/dashboard/emails" element={<EmailManagement />} />
+            <Route path="/dashboard/background" element={<Background />} />
             <Route path="/dashboard/settings" element={<Settings />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

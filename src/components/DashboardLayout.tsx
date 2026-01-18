@@ -13,6 +13,7 @@ import {
   Menu,
   X,
   Server,
+  FileSearch,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -54,6 +55,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     { to: '/dashboard/users', icon: Users, label: 'Kullanıcılar', show: isAdmin },
     { to: '/dashboard/roles', icon: Shield, label: 'Roller', show: isAdmin },
     { to: '/dashboard/emails', icon: Server, label: 'Email Yönetimi', show: canManageEmails },
+    { to: '/dashboard/background', icon: FileSearch, label: 'Background', show: canManageEmails },
     { to: '/dashboard/settings', icon: Settings, label: 'Ayarlar', show: true },
   ];
 
