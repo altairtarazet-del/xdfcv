@@ -56,9 +56,11 @@ export default function Dashboard() {
   const [messages, setMessages] = useState<SMTPDevMessage[]>([]);
   const [selectedMailbox, setSelectedMailbox] = useState<SMTPDevMailbox | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<SMTPDevMessage | null>(null);
+  const [fullMessageData, setFullMessageData] = useState<SMTPDevMessage | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMailboxes, setIsLoadingMailboxes] = useState(false);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [isLoadingFullMessage, setIsLoadingFullMessage] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   
   // Pagination state
@@ -68,18 +70,34 @@ export default function Dashboard() {
 
   const fetchAccounts = useCallback(async () => {
     try {
-      const { data, error } = await supabase.functions.invoke('smtp-api', {
-        body: { action: 'getAccounts' },
-      });
-
-      if (error) throw error;
+      // Fetch all pages of accounts
+      let allAccounts: Account[] = [];
+      let page = 1;
+      let hasMore = true;
       
-      const accountList = Array.isArray(data?.accounts) ? data.accounts : [];
-      setAccounts(accountList);
+      while (hasMore) {
+        const { data, error } = await supabase.functions.invoke('smtp-api', {
+          body: { action: 'getAccounts', page },
+        });
+
+        if (error) throw error;
+        
+        const accountList = Array.isArray(data?.accounts) ? data.accounts : [];
+        allAccounts = [...allAccounts, ...accountList];
+        
+        // Check if there are more pages
+        hasMore = !!data?.view?.next;
+        page++;
+        
+        // Safety limit to prevent infinite loops
+        if (page > 50) break;
+      }
+      
+      setAccounts(allAccounts);
       
       // Auto-select first account and set its mailboxes
-      if (accountList.length > 0 && !selectedAccount) {
-        const firstAccount = accountList[0];
+      if (allAccounts.length > 0 && !selectedAccount) {
+        const firstAccount = allAccounts[0];
         setSelectedAccount(firstAccount);
         if (firstAccount.mailboxes) {
           setMailboxes(firstAccount.mailboxes);
@@ -210,6 +228,42 @@ export default function Dashboard() {
     if (paginationView?.next) {
       setCurrentPage(prev => prev + 1);
     }
+  };
+
+  const fetchFullMessage = useCallback(async (message: SMTPDevMessage) => {
+    if (!selectedAccount || !selectedMailbox) return;
+    
+    setSelectedMessage(message);
+    setFullMessageData(null);
+    setIsLoadingFullMessage(true);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('smtp-api', {
+        body: {
+          action: 'getMessage',
+          accountId: selectedAccount.id,
+          mailboxId: selectedMailbox.id,
+          messageId: message.id,
+        },
+      });
+
+      if (error) throw error;
+      setFullMessageData(data);
+    } catch (error: any) {
+      console.error('Error fetching full message:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Hata',
+        description: 'Mesaj içeriği yüklenirken bir hata oluştu',
+      });
+    } finally {
+      setIsLoadingFullMessage(false);
+    }
+  }, [selectedAccount, selectedMailbox, toast]);
+
+  const handleCloseMessageDialog = () => {
+    setSelectedMessage(null);
+    setFullMessageData(null);
   };
 
   const totalPages = Math.ceil(totalMessages / 30); // SMTP.dev returns 30 per page
@@ -457,7 +511,7 @@ export default function Dashboard() {
                     {filteredMessages.map((message) => (
                       <button
                         key={message.id}
-                        onClick={() => setSelectedMessage(message)}
+                        onClick={() => fetchFullMessage(message)}
                         className="w-full text-left p-4 rounded-lg hover:bg-muted/50 transition-all border border-transparent hover:border-primary/20"
                       >
                         <div className="flex items-start justify-between gap-4">
@@ -528,7 +582,7 @@ export default function Dashboard() {
         </div>
 
         {/* Message Detail Dialog */}
-        <Dialog open={!!selectedMessage} onOpenChange={() => setSelectedMessage(null)}>
+        <Dialog open={!!selectedMessage} onOpenChange={handleCloseMessageDialog}>
           <DialogContent className="cyber-card border-primary/30 max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
             <DialogHeader>
               <DialogTitle className="font-mono text-foreground">
@@ -559,11 +613,11 @@ export default function Dashboard() {
                       {new Date(selectedMessage.date || selectedMessage.createdAt).toLocaleString('tr-TR')}
                     </p>
                   </div>
-                  {selectedMessage.attachments && selectedMessage.attachments.length > 0 && (
+                  {(fullMessageData?.attachments || selectedMessage.attachments)?.length > 0 && (
                     <div>
                       <span className="text-muted-foreground">Ekler:</span>
                       <div className="flex flex-wrap gap-2 mt-1">
-                        {selectedMessage.attachments.map((att, i) => (
+                        {(fullMessageData?.attachments || selectedMessage.attachments)?.map((att, i) => (
                           <span
                             key={i}
                             className="px-2 py-1 bg-muted rounded text-xs flex items-center gap-1"
@@ -578,15 +632,35 @@ export default function Dashboard() {
                 </div>
 
                 <div className="border-t border-border/30 pt-4">
-                  {selectedMessage.html ? (
+                  {isLoadingFullMessage ? (
+                    <div className="text-center py-8">
+                      <RefreshCw size={24} className="mx-auto text-primary animate-spin mb-2" />
+                      <span className="text-muted-foreground font-mono text-sm">
+                        İçerik yükleniyor...
+                      </span>
+                    </div>
+                  ) : fullMessageData?.html ? (
+                    <div
+                      className="prose prose-invert prose-sm max-w-none"
+                      dangerouslySetInnerHTML={{ __html: fullMessageData.html }}
+                    />
+                  ) : fullMessageData?.text ? (
+                    <pre className="font-mono text-sm whitespace-pre-wrap text-foreground">
+                      {fullMessageData.text}
+                    </pre>
+                  ) : selectedMessage.html ? (
                     <div
                       className="prose prose-invert prose-sm max-w-none"
                       dangerouslySetInnerHTML={{ __html: selectedMessage.html }}
                     />
-                  ) : (
+                  ) : selectedMessage.text ? (
                     <pre className="font-mono text-sm whitespace-pre-wrap text-foreground">
-                      {selectedMessage.text || 'İçerik yok'}
+                      {selectedMessage.text}
                     </pre>
+                  ) : (
+                    <p className="text-muted-foreground font-mono text-sm text-center py-4">
+                      İçerik yok
+                    </p>
                   )}
                 </div>
               </div>
