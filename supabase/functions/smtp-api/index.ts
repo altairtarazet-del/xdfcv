@@ -93,7 +93,10 @@ serve(async (req) => {
         console.log('Changing password for account:', accountId);
         const response = await fetch(`${SMTP_API_URL}/accounts/${accountId}`, {
           method: 'PATCH',
-          headers,
+          headers: {
+            'X-API-KEY': apiKey,
+            'Content-Type': 'application/merge-patch+json',
+          },
           body: JSON.stringify({ password }),
         });
         
