@@ -23,6 +23,9 @@ interface EmailAccount {
   date_of_birth: string;
   created_at: string;
   created_by: string | null;
+  first_name: string | null;
+  middle_name: string | null;
+  last_name: string | null;
 }
 
 export default function BackgroundPage() {
@@ -77,10 +80,19 @@ export default function BackgroundPage() {
     }
   };
 
-  // Extract name parts from email (e.g., john.middle.doe@example.com -> { first: "John", middle: "Middle", last: "Doe" })
-  const extractNamePartsFromEmail = (email: string) => {
-    const localPart = email.split('@')[0];
-    // Replace dots, underscores with spaces and remove numbers
+  // Get name parts - use saved values if available, otherwise extract from email
+  const getNameParts = (account: EmailAccount) => {
+    // If we have saved name data, use it
+    if (account.first_name || account.last_name) {
+      return {
+        first: account.first_name || '',
+        middle: account.middle_name || '',
+        last: account.last_name || '',
+      };
+    }
+    
+    // Fallback: extract from email for old records
+    const localPart = account.email.split('@')[0];
     const parts = localPart
       .replace(/[._]/g, ' ')
       .replace(/\d+/g, '')
@@ -96,7 +108,6 @@ export default function BackgroundPage() {
     } else if (parts.length === 2) {
       return { first: parts[0], middle: '', last: parts[1] };
     } else {
-      // First part is first name, last part is last name, everything in between is middle name
       return { 
         first: parts[0], 
         middle: parts.slice(1, -1).join(' '), 
@@ -248,7 +259,7 @@ export default function BackgroundPage() {
                 </TableRow>
               ) : (
                 filteredAccounts.map((account) => {
-                  const nameParts = extractNamePartsFromEmail(account.email);
+                  const nameParts = getNameParts(account);
                   const dob = formatDateOfBirth(account.date_of_birth);
                   return (
                     <TableRow key={account.id} className="border-b border-border/30">
