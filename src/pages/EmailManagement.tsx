@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Key, Mail, RefreshCw, Shield, Eye, EyeOff, Server, ChevronLeft, ChevronRight, AlertCircle, Trash2, Calendar } from 'lucide-react';
+import { Plus, Key, Mail, RefreshCw, Shield, Eye, EyeOff, Server, ChevronLeft, ChevronRight, AlertCircle, Trash2, Calendar, Search, X } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -81,6 +81,9 @@ export default function EmailManagementPage() {
   const [totalAccounts, setTotalAccounts] = useState(0);
   const [paginationView, setPaginationView] = useState<PaginationView | null>(null);
 
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+
   // Form states
   const [firstName, setFirstName] = useState('');
   const [middleName, setMiddleName] = useState('');
@@ -110,6 +113,18 @@ export default function EmailManagementPage() {
   const canDeleteEmails = isAdmin || profile?.permissions?.can_delete_emails;
 
   const [apiError, setApiError] = useState<string | null>(null);
+
+  // Filter accounts based on search query
+  const filteredAccounts = useMemo(() => {
+    if (!searchQuery.trim()) return accounts;
+    
+    const query = searchQuery.toLowerCase().trim();
+    return accounts.filter((account) => {
+      const address = (account.address || '').toLowerCase();
+      const name = (account.name || '').toLowerCase();
+      return address.includes(query) || name.includes(query);
+    });
+  }, [accounts, searchQuery]);
 
   const fetchAccounts = useCallback(async (page?: number, retryCount = 0) => {
     setIsLoading(true);
@@ -462,7 +477,7 @@ export default function EmailManagementPage() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-mono font-bold text-foreground cyber-glow-text">
               Email Yönetimi
@@ -473,6 +488,26 @@ export default function EmailManagementPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Search Bar */}
+            <div className="relative flex-1 lg:w-64">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Email veya isim ara..."
+                className="cyber-input font-mono pl-10 pr-10 text-sm"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+
             <Button
               variant="ghost"
               size="icon"
@@ -708,17 +743,17 @@ export default function EmailManagementPage() {
                     </Button>
                   </TableCell>
                 </TableRow>
-              ) : accounts.length === 0 ? (
+              ) : filteredAccounts.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={3} className="text-center py-8">
                     <Mail size={32} className="mx-auto text-muted-foreground mb-2" />
                     <span className="text-muted-foreground font-mono">
-                      Henüz email hesabı yok
+                      {searchQuery ? 'Arama sonucu bulunamadı' : 'Henüz email hesabı yok'}
                     </span>
                   </TableCell>
                 </TableRow>
               ) : (
-                accounts.map((account) => (
+                filteredAccounts.map((account) => (
                   <TableRow key={account.id} className="border-b border-border/30">
                     <TableCell className="font-mono text-sm text-muted-foreground">
                       {account.id}
@@ -778,7 +813,10 @@ export default function EmailManagementPage() {
           {totalAccounts > 0 && (
             <div className="flex items-center justify-between p-4 border-t border-border/30">
               <span className="font-mono text-xs text-muted-foreground">
-                Toplam: {totalAccounts} hesap
+                {searchQuery 
+                  ? `${filteredAccounts.length} / ${totalAccounts} hesap gösteriliyor`
+                  : `Toplam: ${totalAccounts} hesap`
+                }
               </span>
               <div className="flex items-center gap-2">
                 <Button

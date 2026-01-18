@@ -31,6 +31,8 @@ import { RefreshCw, Shield, FileSearch, Search, Mail, Calendar, X, User, Copy, E
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 
+type AccountStatus = 'acildi' | 'background' | 'aktif' | 'kapandi' | 'suspend';
+
 interface EmailAccount {
   id: string;
   email: string;
@@ -40,7 +42,16 @@ interface EmailAccount {
   first_name: string | null;
   middle_name: string | null;
   last_name: string | null;
+  status: AccountStatus;
 }
+
+const statusConfig: Record<AccountStatus, { label: string; color: string; bgColor: string }> = {
+  acildi: { label: 'Açıldı', color: 'text-green-400', bgColor: 'bg-green-500/20' },
+  background: { label: 'Background', color: 'text-blue-400', bgColor: 'bg-blue-500/20' },
+  aktif: { label: 'Aktif', color: 'text-cyan-400', bgColor: 'bg-cyan-500/20' },
+  kapandi: { label: 'Kapandı', color: 'text-red-400', bgColor: 'bg-red-500/20' },
+  suspend: { label: 'Suspend', color: 'text-orange-400', bgColor: 'bg-orange-500/20' },
+};
 
 export default function BackgroundPage() {
   const { isAdmin, profile } = useAuth();
@@ -59,6 +70,7 @@ export default function BackgroundPage() {
   const [editDobDay, setEditDobDay] = useState('');
   const [editDobMonth, setEditDobMonth] = useState('');
   const [editDobYear, setEditDobYear] = useState('');
+  const [editStatus, setEditStatus] = useState<AccountStatus>('acildi');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Check permissions
@@ -261,6 +273,9 @@ export default function BackgroundPage() {
       setEditDobYear('');
     }
     
+    // Set status
+    setEditStatus(account.status || 'acildi');
+    
     setIsEditDialogOpen(true);
   };
 
@@ -288,7 +303,8 @@ export default function BackgroundPage() {
           middle_name: editMiddleName.toUpperCase() || null,
           last_name: editLastName.toUpperCase() || null,
           date_of_birth: dateOfBirth,
-        })
+          status: editStatus,
+        } as any)
         .eq('id', editingAccount.id);
 
       if (error) throw error;
@@ -446,13 +462,14 @@ export default function BackgroundPage() {
                     DOĞUM TARİHİ
                   </div>
                 </TableHead>
+                <TableHead className="font-mono text-muted-foreground">DURUM</TableHead>
                 <TableHead className="font-mono text-muted-foreground">İŞLEMLER</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8">
+                  <TableCell colSpan={7} className="text-center py-8">
                     <span className="text-muted-foreground font-mono animate-pulse">
                       Yükleniyor...
                     </span>
@@ -460,7 +477,7 @@ export default function BackgroundPage() {
                 </TableRow>
               ) : filteredAccounts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8">
+                  <TableCell colSpan={7} className="text-center py-8">
                     <FileSearch size={32} className="mx-auto text-muted-foreground mb-2" />
                     <span className="text-muted-foreground font-mono">
                       {searchQuery ? 'Arama sonucu bulunamadı' : 'Henüz kayıtlı email hesabı yok'}
@@ -535,6 +552,17 @@ export default function BackgroundPage() {
                           {dob}
                           <Copy size={12} className="opacity-0 group-hover:opacity-50 transition-opacity" />
                         </button>
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">
+                        {(() => {
+                          const status = account.status || 'acildi';
+                          const config = statusConfig[status];
+                          return (
+                            <span className={`px-2 py-1 rounded text-xs font-medium ${config.bgColor} ${config.color}`}>
+                              {config.label}
+                            </span>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -671,6 +699,23 @@ export default function BackgroundPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            {/* Status */}
+            <div className="space-y-2">
+              <Label className="text-muted-foreground font-mono text-xs">DURUM</Label>
+              <Select value={editStatus} onValueChange={(value) => setEditStatus(value as AccountStatus)}>
+                <SelectTrigger className="cyber-input font-mono">
+                  <SelectValue placeholder="Durum seçin" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(statusConfig).map(([key, config]) => (
+                    <SelectItem key={key} value={key} className="font-mono">
+                      <span className={config.color}>{config.label}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <Button
