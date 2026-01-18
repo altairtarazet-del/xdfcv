@@ -33,7 +33,9 @@ import { SMTPDevMailbox, SMTPDevMessage } from '@/types/mail';
 
 interface Account {
   id: string;
-  name: string;
+  name?: string;
+  address?: string;
+  mailboxes?: SMTPDevMailbox[];
 }
 
 export default function Dashboard() {
@@ -58,12 +60,16 @@ export default function Dashboard() {
 
       if (error) throw error;
       
-      const accountList = data.accounts || [];
+      const accountList = Array.isArray(data?.accounts) ? data.accounts : [];
       setAccounts(accountList);
       
-      // Auto-select first account
+      // Auto-select first account and set its mailboxes
       if (accountList.length > 0 && !selectedAccount) {
-        setSelectedAccount(accountList[0]);
+        const firstAccount = accountList[0];
+        setSelectedAccount(firstAccount);
+        if (firstAccount.mailboxes) {
+          setMailboxes(firstAccount.mailboxes);
+        }
       }
     } catch (error: any) {
       console.error('Error fetching accounts:', error);
@@ -78,6 +84,14 @@ export default function Dashboard() {
   }, [toast, selectedAccount]);
 
   const fetchMailboxes = useCallback(async (accountId: string) => {
+    // First check if mailboxes are already loaded from the account
+    const account = accounts.find(a => a.id === accountId);
+    if (account?.mailboxes && account.mailboxes.length > 0) {
+      setMailboxes(account.mailboxes);
+      setIsLoadingMailboxes(false);
+      return;
+    }
+    
     setIsLoadingMailboxes(true);
     try {
       const { data, error } = await supabase.functions.invoke('smtp-api', {
@@ -85,7 +99,8 @@ export default function Dashboard() {
       });
 
       if (error) throw error;
-      setMailboxes(data.mailboxes || []);
+      const mailboxList = Array.isArray(data?.mailboxes) ? data.mailboxes : [];
+      setMailboxes(mailboxList);
     } catch (error: any) {
       console.error('Error fetching mailboxes:', error);
       toast({
@@ -96,7 +111,7 @@ export default function Dashboard() {
     } finally {
       setIsLoadingMailboxes(false);
     }
-  }, [toast]);
+  }, [toast, accounts]);
 
   const fetchMessages = useCallback(async (accountId: string, mailboxId: string) => {
     setIsLoadingMessages(true);
@@ -117,7 +132,8 @@ export default function Dashboard() {
       });
 
       if (error) throw error;
-      setMessages(data.messages || []);
+      const messageList = Array.isArray(data?.messages) ? data.messages : [];
+      setMessages(messageList);
     } catch (error: any) {
       console.error('Error fetching messages:', error);
       toast({

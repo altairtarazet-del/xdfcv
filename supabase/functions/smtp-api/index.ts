@@ -29,15 +29,28 @@ serve(async (req) => {
 
     switch (action) {
       case 'getAccounts': {
-        // Get list of accounts
         const response = await fetch(`${SMTP_API_URL}/accounts`, { headers });
         if (!response.ok) {
           const text = await response.text();
           console.error('API Error Response:', text);
-          throw new Error(`API Error: ${response.status} - ${text.substring(0, 200)}`);
+          throw new Error(`API Error: ${response.status}`);
         }
         const data = await response.json();
-        result = { accounts: data.data || data };
+        // SMTP.dev returns { member: [...] } structure
+        const accounts = data.member || data.data || [];
+        // Map to simpler structure with mailboxes included
+        result = { 
+          accounts: accounts.map((acc: any) => ({
+            id: acc.id,
+            name: acc.address || acc.name,
+            address: acc.address,
+            mailboxes: (acc.mailboxes || []).map((mb: any) => ({
+              id: mb.id,
+              name: mb.path || mb.name,
+              path: mb.path,
+            })),
+          }))
+        };
         break;
       }
 
@@ -51,7 +64,14 @@ serve(async (req) => {
           throw new Error(`API Error: ${response.status}`);
         }
         const data = await response.json();
-        result = { mailboxes: data.data || data };
+        const mailboxes = data.member || data.data || [];
+        result = { 
+          mailboxes: mailboxes.map((mb: any) => ({
+            id: mb.id,
+            name: mb.path || mb.name,
+            path: mb.path,
+          }))
+        };
         break;
       }
 
@@ -66,7 +86,7 @@ serve(async (req) => {
           throw new Error(`API Error: ${response.status}`);
         }
         const data = await response.json();
-        let messages = data.data || data || [];
+        let messages = data.member || data.data || [];
 
         // Apply filters
         if (filters) {
@@ -74,25 +94,27 @@ serve(async (req) => {
 
           if (filters.timeFilterMinutes) {
             const cutoff = new Date(now.getTime() - filters.timeFilterMinutes * 60000);
-            messages = messages.filter((m: any) => new Date(m.createdAt || m.date) >= cutoff);
+            messages = messages.filter((m: any) => {
+              const msgDate = new Date(m.createdAt || m.date || m.receivedAt);
+              return msgDate >= cutoff;
+            });
           }
 
           if (filters.allowedSenders?.length) {
-            messages = messages.filter((m: any) => 
-              filters.allowedSenders.some((s: string) => {
-                const fromAddr = m.from?.address || m.from || '';
-                return s.startsWith('*@') 
+            messages = messages.filter((m: any) => {
+              const fromAddr = m.from?.address || m.from || '';
+              return filters.allowedSenders.some((s: string) => 
+                s.startsWith('*@') 
                   ? fromAddr.endsWith(s.slice(1))
-                  : fromAddr === s;
-              })
-            );
+                  : fromAddr === s
+              );
+            });
           }
 
           if (filters.allowedReceivers?.length) {
             messages = messages.filter((m: any) => {
-              const toAddrs = Array.isArray(m.to) 
-                ? m.to.map((t: any) => t.address || t) 
-                : [m.to];
+              const toList = Array.isArray(m.to) ? m.to : [m.to];
+              const toAddrs = toList.map((t: any) => t?.address || t || '');
               return toAddrs.some((addr: string) => filters.allowedReceivers.includes(addr));
             });
           }
