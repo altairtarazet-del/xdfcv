@@ -128,40 +128,6 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* Role Info Section */}
-        {profile?.custom_role && (
-          <div className="cyber-card rounded-lg p-6 space-y-4">
-            <div className="flex items-center gap-3 mb-4">
-              <Shield size={24} className="text-primary" />
-              <h2 className="font-mono font-bold text-foreground">Rol Bilgileri</h2>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 text-sm font-mono">
-              <div>
-                <span className="text-muted-foreground">Rol:</span>
-                <p className="text-primary">{profile.custom_role.name}</p>
-              </div>
-              {profile.permissions?.time_filter_minutes && (
-                <div>
-                  <span className="text-muted-foreground">Zaman Filtresi:</span>
-                  <p className="text-foreground">Son {profile.permissions.time_filter_minutes} dakika</p>
-                </div>
-              )}
-              {profile.permissions?.allowed_mailboxes && (
-                <div className="col-span-2">
-                  <span className="text-muted-foreground">İzin Verilen Posta Kutuları:</span>
-                  <p className="text-foreground">{profile.permissions.allowed_mailboxes.join(', ')}</p>
-                </div>
-              )}
-              {profile.permissions?.allowed_senders && (
-                <div className="col-span-2">
-                  <span className="text-muted-foreground">İzin Verilen Göndericiler:</span>
-                  <p className="text-foreground">{profile.permissions.allowed_senders.join(', ')}</p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
 
         {/* Password Section */}
         <div className="cyber-card rounded-lg p-6 space-y-4">

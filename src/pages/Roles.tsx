@@ -80,6 +80,20 @@ const availablePermissions: PermissionItem[] = [
     type: 'toggle',
   },
   {
+    id: 'can_delete_account',
+    label: 'Hesap Silme',
+    description: 'Mail hesabını silebilir',
+    icon: <Trash2 size={16} />,
+    type: 'toggle',
+  },
+  {
+    id: 'can_delete_emails',
+    label: 'Tüm Mailleri Silme',
+    description: 'Hesaptaki tüm mailleri silebilir (inbox + çöp kutusu)',
+    icon: <Trash2 size={16} />,
+    type: 'toggle',
+  },
+  {
     id: 'time_filter_minutes',
     label: 'Zaman Filtresi',
     description: 'Sadece son X dakikadaki mailleri görebilir',

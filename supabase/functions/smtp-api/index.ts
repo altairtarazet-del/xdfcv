@@ -205,6 +205,98 @@ serve(async (req) => {
         break;
       }
 
+      case 'deleteAccount': {
+        if (!accountId) throw new Error('accountId required');
+
+        console.log('Deleting account:', accountId);
+        const response = await fetch(`${SMTP_API_URL}/accounts/${accountId}`, {
+          method: 'DELETE',
+          headers,
+        });
+        
+        if (!response.ok) {
+          const text = await response.text();
+          console.error('API Error Response:', text);
+          throw new Error(`API Error: ${response.status}`);
+        }
+        result = { success: true, message: 'Account deleted' };
+        break;
+      }
+
+      case 'deleteAllMessages': {
+        if (!accountId) throw new Error('accountId required');
+        if (!mailboxId) throw new Error('mailboxId required');
+
+        console.log('Deleting all messages from mailbox:', mailboxId);
+        
+        // First get all messages
+        const listResponse = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailboxId}/messages`, { headers });
+        if (!listResponse.ok) {
+          throw new Error(`Failed to list messages: ${listResponse.status}`);
+        }
+        const listData = await listResponse.json();
+        const messages = listData.member || listData.data || [];
+        
+        // Delete each message
+        let deletedCount = 0;
+        for (const msg of messages) {
+          try {
+            const delResponse = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailboxId}/messages/${msg.id}`, {
+              method: 'DELETE',
+              headers,
+            });
+            if (delResponse.ok) deletedCount++;
+          } catch (e) {
+            console.error('Failed to delete message:', msg.id, e);
+          }
+        }
+        
+        result = { success: true, deletedCount, totalMessages: messages.length };
+        break;
+      }
+
+      case 'deleteAllMailboxMessages': {
+        // Delete messages from all mailboxes (inbox + trash)
+        if (!accountId) throw new Error('accountId required');
+
+        console.log('Deleting all messages from all mailboxes for account:', accountId);
+        
+        // First get all mailboxes
+        const mbResponse = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes`, { headers });
+        if (!mbResponse.ok) {
+          throw new Error(`Failed to list mailboxes: ${mbResponse.status}`);
+        }
+        const mbData = await mbResponse.json();
+        const mailboxes = mbData.member || mbData.data || [];
+        
+        let totalDeleted = 0;
+        
+        for (const mailbox of mailboxes) {
+          // Get messages in this mailbox
+          const listResponse = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailbox.id}/messages`, { headers });
+          if (!listResponse.ok) continue;
+          
+          const listData = await listResponse.json();
+          const messages = listData.member || listData.data || [];
+          
+          // Delete each message
+          for (const msg of messages) {
+            try {
+              const delResponse = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailbox.id}/messages/${msg.id}`, {
+                method: 'DELETE',
+                headers,
+              });
+              if (delResponse.ok) totalDeleted++;
+            } catch (e) {
+              console.error('Failed to delete message:', msg.id, e);
+            }
+          }
+        }
+        
+        result = { success: true, deletedCount: totalDeleted };
+        break;
+      }
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }

@@ -34,6 +34,8 @@ export interface RolePermission {
   realtime_enabled: boolean;
   can_create_email: boolean;
   can_change_password: boolean;
+  can_delete_account: boolean;
+  can_delete_emails: boolean;
   created_at: string;
   updated_at: string;
 }
