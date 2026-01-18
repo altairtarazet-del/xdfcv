@@ -31,6 +31,7 @@ export interface RolePermission {
   allowed_mailboxes: string[] | null;
   allowed_senders: string[] | null;
   allowed_receivers: string[] | null;
+  allowed_subjects: string[] | null;
   realtime_enabled: boolean;
   can_create_email: boolean;
   can_change_password: boolean;
