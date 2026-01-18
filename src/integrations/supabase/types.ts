@@ -287,6 +287,10 @@ export type Database = {
           time_filter_minutes: number
         }[]
       }
+      has_cash_permission: {
+        Args: { _permission: string; _user_id: string }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
