@@ -79,7 +79,10 @@ serve(async (req) => {
         if (!accountId) throw new Error('accountId required');
         if (!mailboxId) throw new Error('mailboxId required');
         
-        const response = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailboxId}/messages`, { headers });
+        // mailboxId should be the mailbox path like "INBOX", not the full ID
+        const url = `${SMTP_API_URL}/accounts/${accountId}/messages`;
+        console.log('Fetching messages from:', url);
+        const response = await fetch(url, { headers });
         if (!response.ok) {
           const text = await response.text();
           console.error('API Error Response:', text);
