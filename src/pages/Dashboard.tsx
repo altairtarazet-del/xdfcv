@@ -12,12 +12,18 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
 import { useToast } from '@/hooks/use-toast';
 import {
   Mail,
@@ -30,8 +36,11 @@ import {
   Server,
   ChevronLeft,
   ChevronRight,
+  ChevronsUpDown,
+  Check,
 } from 'lucide-react';
 import { SMTPDevMailbox, SMTPDevMessage } from '@/types/mail';
+import { cn } from '@/lib/utils';
 
 interface Account {
   id: string;
@@ -62,7 +71,7 @@ export default function Dashboard() {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isLoadingFullMessage, setIsLoadingFullMessage] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  
+  const [accountSearchOpen, setAccountSearchOpen] = useState(false);
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [totalMessages, setTotalMessages] = useState(0);
@@ -328,29 +337,62 @@ export default function Dashboard() {
             <Server size={18} className="text-primary" />
             <span className="font-mono text-sm text-muted-foreground">Hesap:</span>
           </div>
-          <Select
-            value={selectedAccount?.id || ''}
-            onValueChange={(value) => {
-              const account = accounts.find((a) => a.id === value) || null;
-              // Prevent mismatched accountId+mailboxId fetches (causes SMTP.dev 404)
-              setSelectedMailbox(null);
-              setSelectedMessage(null);
-              setMessages([]);
-              setMailboxes(account?.mailboxes ?? []);
-              setSelectedAccount(account);
-            }}
-          >
-            <SelectTrigger className="w-64 cyber-input font-mono">
-              <SelectValue placeholder="Hesap seçin..." />
-            </SelectTrigger>
-            <SelectContent>
-              {accounts.map((account) => (
-                <SelectItem key={account.id} value={account.id} className="font-mono">
-                  {account.name || account.id}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Popover open={accountSearchOpen} onOpenChange={setAccountSearchOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={accountSearchOpen}
+                className="w-80 justify-between cyber-input font-mono"
+              >
+                {selectedAccount
+                  ? (selectedAccount.name || selectedAccount.address || selectedAccount.id)
+                  : "Hesap seçin..."}
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 p-0">
+              <Command>
+                <CommandInput placeholder="Hesap ara..." className="font-mono" />
+                <CommandList>
+                  <CommandEmpty className="font-mono text-sm py-4 text-center">
+                    Hesap bulunamadı.
+                  </CommandEmpty>
+                  <CommandGroup>
+                    {accounts.map((account) => (
+                      <CommandItem
+                        key={account.id}
+                        value={`${account.name || ''} ${account.address || ''} ${account.id}`}
+                        onSelect={() => {
+                          // Prevent mismatched accountId+mailboxId fetches (causes SMTP.dev 404)
+                          setSelectedMailbox(null);
+                          setSelectedMessage(null);
+                          setMessages([]);
+                          setMailboxes(account.mailboxes ?? []);
+                          setSelectedAccount(account);
+                          setAccountSearchOpen(false);
+                        }}
+                        className="font-mono"
+                      >
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            selectedAccount?.id === account.id ? "opacity-100" : "opacity-0"
+                          )}
+                        />
+                        <div className="flex flex-col">
+                          <span className="text-sm">{account.name || account.id}</span>
+                          {account.address && account.address !== account.name && (
+                            <span className="text-xs text-muted-foreground">{account.address}</span>
+                          )}
+                        </div>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
           <Button
             variant="ghost"
             size="icon"
