@@ -44,21 +44,30 @@ export type Database = {
           created_by: string | null
           date_of_birth: string
           email: string
+          first_name: string | null
           id: string
+          last_name: string | null
+          middle_name: string | null
         }
         Insert: {
           created_at?: string | null
           created_by?: string | null
           date_of_birth: string
           email: string
+          first_name?: string | null
           id?: string
+          last_name?: string | null
+          middle_name?: string | null
         }
         Update: {
           created_at?: string | null
           created_by?: string | null
           date_of_birth?: string
           email?: string
+          first_name?: string | null
           id?: string
+          last_name?: string | null
+          middle_name?: string | null
         }
         Relationships: []
       }

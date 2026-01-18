@@ -258,6 +258,9 @@ export default function EmailManagementPage() {
           email: fullEmail,
           date_of_birth: dateOfBirth,
           created_by: userId,
+          first_name: firstName,
+          middle_name: middleName || null,
+          last_name: lastName,
         });
 
       if (dbError) {
