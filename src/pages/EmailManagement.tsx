@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Key, Mail, RefreshCw, Shield, Eye, EyeOff, Server, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
+import { Plus, Key, Mail, RefreshCw, Shield, Eye, EyeOff, Server, ChevronLeft, ChevronRight, AlertCircle, Trash2 } from 'lucide-react';
 import { z } from 'zod';
 
 // Username validation schema (lowercase, no Turkish chars, no spaces)
@@ -72,6 +72,8 @@ export default function EmailManagementPage() {
   // Check permissions
   const canCreateEmail = isAdmin || profile?.permissions?.can_create_email;
   const canChangePassword = isAdmin || profile?.permissions?.can_change_password;
+  const canDeleteAccount = isAdmin || profile?.permissions?.can_delete_account;
+  const canDeleteEmails = isAdmin || profile?.permissions?.can_delete_emails;
 
   const fetchAccounts = useCallback(async (page?: number) => {
     setIsLoading(true);
@@ -240,8 +242,74 @@ export default function EmailManagementPage() {
     setIsPasswordDialogOpen(true);
   };
 
+  const handleDeleteAccount = async (account: Account) => {
+    if (!confirm(`"${account.address || account.name || account.id}" hesabını silmek istediğinize emin misiniz? Bu işlem geri alınamaz.`)) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('smtp-api', {
+        body: {
+          action: 'deleteAccount',
+          accountId: account.id,
+        },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: 'Başarılı',
+        description: 'Hesap silindi',
+      });
+
+      fetchAccounts(currentPage);
+    } catch (error: any) {
+      console.error('Error deleting account:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Hata',
+        description: error.message || 'Hesap silinirken bir hata oluştu',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteAllEmails = async (account: Account) => {
+    if (!confirm(`"${account.address || account.name || account.id}" hesabındaki TÜM mailleri (inbox + çöp kutusu) silmek istediğinize emin misiniz? Bu işlem geri alınamaz.`)) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('smtp-api', {
+        body: {
+          action: 'deleteAllMailboxMessages',
+          accountId: account.id,
+        },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: 'Başarılı',
+        description: `${data.deletedCount || 0} mail silindi`,
+      });
+    } catch (error: any) {
+      console.error('Error deleting emails:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Hata',
+        description: error.message || 'Mailler silinirken bir hata oluştu',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // Access control
-  if (!canCreateEmail && !canChangePassword) {
+  if (!canCreateEmail && !canChangePassword && !canDeleteAccount && !canDeleteEmails) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-full">
@@ -406,17 +474,44 @@ export default function EmailManagementPage() {
                       </span>
                     </TableCell>
                     <TableCell>
-                      {canChangePassword && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => openPasswordDialog(account)}
-                          className="hover:bg-primary/10 hover:text-primary font-mono text-xs"
-                        >
-                          <Key size={14} className="mr-1" />
-                          Şifre Değiştir
-                        </Button>
-                      )}
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {canChangePassword && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openPasswordDialog(account)}
+                            disabled={isSubmitting}
+                            className="hover:bg-primary/10 hover:text-primary font-mono text-xs"
+                          >
+                            <Key size={14} className="mr-1" />
+                            Şifre
+                          </Button>
+                        )}
+                        {canDeleteEmails && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteAllEmails(account)}
+                            disabled={isSubmitting}
+                            className="hover:bg-orange-500/10 hover:text-orange-500 font-mono text-xs"
+                          >
+                            <Trash2 size={14} className="mr-1" />
+                            Mailler
+                          </Button>
+                        )}
+                        {canDeleteAccount && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteAccount(account)}
+                            disabled={isSubmitting}
+                            className="hover:bg-destructive/10 hover:text-destructive font-mono text-xs"
+                          >
+                            <Trash2 size={14} className="mr-1" />
+                            Hesap
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
