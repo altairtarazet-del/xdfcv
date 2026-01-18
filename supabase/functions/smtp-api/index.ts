@@ -180,9 +180,28 @@ serve(async (req) => {
               return toAddrs.some((addr: string) => filters.allowedReceivers.includes(addr));
             });
           }
+
+          // Subject filtering with wildcard support
+          if (filters.allowedSubjects?.length) {
+            messages = messages.filter((m: any) => {
+              const subject = (m.subject || '').toLowerCase();
+              return filters.allowedSubjects.some((pattern: string) => {
+                const p = pattern.toLowerCase();
+                // Wildcard support: *code* or Checkr:*
+                if (p.startsWith('*') && p.endsWith('*') && p.length > 2) {
+                  return subject.includes(p.slice(1, -1));
+                } else if (p.startsWith('*')) {
+                  return subject.endsWith(p.slice(1));
+                } else if (p.endsWith('*')) {
+                  return subject.startsWith(p.slice(0, -1));
+                }
+                return subject === p;
+              });
+            });
+          }
         }
 
-        result = { 
+        result = {
           messages,
           totalItems: data.totalItems || messages.length,
           view: data.view || null,

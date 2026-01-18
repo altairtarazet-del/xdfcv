@@ -119,6 +119,14 @@ const availablePermissions: PermissionItem[] = [
     placeholder: 'no-reply@doordash.com, *@uber.com',
   },
   {
+    id: 'allowed_subjects',
+    label: 'İzin Verilen Konu Başlıkları',
+    description: 'Sadece belirtilen konu başlıklarını içeren mailleri gösterir (*code* gibi wildcard destekler)',
+    icon: <Mail size={16} />,
+    type: 'textarea',
+    placeholder: 'Checkr: One-time access code confirmation, *verification*',
+  },
+  {
     id: 'allowed_receivers',
     label: 'İzin Verilen Alıcılar',
     description: 'Sadece belirtilen alıcılara gelen mailleri görebilir',
@@ -229,6 +237,7 @@ export default function RolesPage() {
     time_filter_minutes: '',
     allowed_mailboxes: '',
     allowed_senders: '',
+    allowed_subjects: '',
     allowed_receivers: '',
   });
   const [activePermissions, setActivePermissions] = useState<string[]>([]);
@@ -335,6 +344,9 @@ export default function RolesPage() {
           allowed_senders: permissionValues.allowed_senders 
             ? permissionValues.allowed_senders.split(',').map((s: string) => s.trim()).filter(Boolean) 
             : null,
+          allowed_subjects: permissionValues.allowed_subjects 
+            ? permissionValues.allowed_subjects.split(',').map((s: string) => s.trim()).filter(Boolean) 
+            : null,
           allowed_receivers: permissionValues.allowed_receivers 
             ? permissionValues.allowed_receivers.split(',').map((s: string) => s.trim()).filter(Boolean) 
             : null,
@@ -409,6 +421,7 @@ export default function RolesPage() {
       time_filter_minutes: perms?.time_filter_minutes?.toString() || '',
       allowed_mailboxes: perms?.allowed_mailboxes?.join(', ') || '',
       allowed_senders: perms?.allowed_senders?.join(', ') || '',
+      allowed_subjects: perms?.allowed_subjects?.join(', ') || '',
       allowed_receivers: perms?.allowed_receivers?.join(', ') || '',
     });
 
@@ -420,6 +433,7 @@ export default function RolesPage() {
     if (perms?.time_filter_minutes) active.push('time_filter_minutes');
     if (perms?.allowed_mailboxes?.length) active.push('allowed_mailboxes');
     if (perms?.allowed_senders?.length) active.push('allowed_senders');
+    if (perms?.allowed_subjects?.length) active.push('allowed_subjects');
     if (perms?.allowed_receivers?.length) active.push('allowed_receivers');
     setActivePermissions(active);
 
@@ -436,6 +450,7 @@ export default function RolesPage() {
       time_filter_minutes: '',
       allowed_mailboxes: '',
       allowed_senders: '',
+      allowed_subjects: '',
       allowed_receivers: '',
     });
     setActivePermissions([]);

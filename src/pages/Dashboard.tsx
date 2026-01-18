@@ -169,6 +169,7 @@ export default function Dashboard() {
             timeFilterMinutes: permissions?.time_filter_minutes,
             allowedSenders: permissions?.allowed_senders,
             allowedReceivers: permissions?.allowed_receivers,
+            allowedSubjects: permissions?.allowed_subjects,
           },
         },
       });

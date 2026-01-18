@@ -94,6 +94,7 @@ export type Database = {
           allowed_mailboxes: string[] | null
           allowed_receivers: string[] | null
           allowed_senders: string[] | null
+          allowed_subjects: string[] | null
           can_change_password: boolean | null
           can_create_email: boolean | null
           can_delete_account: boolean | null
@@ -109,6 +110,7 @@ export type Database = {
           allowed_mailboxes?: string[] | null
           allowed_receivers?: string[] | null
           allowed_senders?: string[] | null
+          allowed_subjects?: string[] | null
           can_change_password?: boolean | null
           can_create_email?: boolean | null
           can_delete_account?: boolean | null
@@ -124,6 +126,7 @@ export type Database = {
           allowed_mailboxes?: string[] | null
           allowed_receivers?: string[] | null
           allowed_senders?: string[] | null
+          allowed_subjects?: string[] | null
           can_change_password?: boolean | null
           can_create_email?: boolean | null
           can_delete_account?: boolean | null
