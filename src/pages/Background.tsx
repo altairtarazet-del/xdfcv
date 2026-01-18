@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Table,
   TableBody,
@@ -12,7 +13,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
-import { RefreshCw, Shield, FileSearch, Search, Mail, Calendar } from 'lucide-react';
+import { RefreshCw, Shield, FileSearch, Search, Mail, Calendar, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 
@@ -29,6 +30,7 @@ export default function BackgroundPage() {
   const { toast } = useToast();
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Check permissions - same as email management
   const canManageEmails = isAdmin || profile?.permissions?.can_create_email || profile?.permissions?.can_change_password;
@@ -69,11 +71,23 @@ export default function BackgroundPage() {
   const formatDateOfBirth = (dateString: string) => {
     try {
       const date = new Date(dateString);
-      return format(date, 'dd/MM/yyyy', { locale: tr });
+      return format(date, 'MM/dd/yyyy', { locale: tr });
     } catch {
       return dateString;
     }
   };
+
+  // Filter accounts based on search query
+  const filteredAccounts = useMemo(() => {
+    if (!searchQuery.trim()) return accounts;
+    
+    const query = searchQuery.toLowerCase().trim();
+    return accounts.filter((account) => {
+      const email = account.email.toLowerCase();
+      const dob = formatDateOfBirth(account.date_of_birth).toLowerCase();
+      return email.includes(query) || dob.includes(query);
+    });
+  }, [accounts, searchQuery]);
 
   // Access control
   if (!canManageEmails) {
@@ -116,6 +130,26 @@ export default function BackgroundPage() {
           </Button>
         </div>
 
+        {/* Search Bar */}
+        <div className="relative">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Email veya doğum tarihine göre ara..."
+            className="cyber-input font-mono pl-10 pr-10"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+
         {/* Accounts Table */}
         <div className="cyber-card rounded-lg overflow-hidden">
           <Table>
@@ -145,20 +179,22 @@ export default function BackgroundPage() {
                     </span>
                   </TableCell>
                 </TableRow>
-              ) : accounts.length === 0 ? (
+              ) : filteredAccounts.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={3} className="text-center py-8">
                     <FileSearch size={32} className="mx-auto text-muted-foreground mb-2" />
                     <span className="text-muted-foreground font-mono">
-                      Henüz kayıtlı email hesabı yok
+                      {searchQuery ? 'Arama sonucu bulunamadı' : 'Henüz kayıtlı email hesabı yok'}
                     </span>
-                    <p className="text-muted-foreground font-mono text-xs mt-1">
-                      Email oluşturma sayfasından yeni hesap ekleyebilirsiniz
-                    </p>
+                    {!searchQuery && (
+                      <p className="text-muted-foreground font-mono text-xs mt-1">
+                        Email oluşturma sayfasından yeni hesap ekleyebilirsiniz
+                      </p>
+                    )}
                   </TableCell>
                 </TableRow>
               ) : (
-                accounts.map((account) => (
+                filteredAccounts.map((account) => (
                   <TableRow key={account.id} className="border-b border-border/30">
                     <TableCell className="font-mono text-sm">
                       <span className="px-2 py-1 bg-primary/20 text-primary rounded">
@@ -189,7 +225,10 @@ export default function BackgroundPage() {
           {accounts.length > 0 && (
             <div className="flex items-center justify-between p-4 border-t border-border/30">
               <span className="font-mono text-xs text-muted-foreground">
-                Toplam: {accounts.length} hesap
+                {searchQuery 
+                  ? `${filteredAccounts.length} / ${accounts.length} hesap gösteriliyor`
+                  : `Toplam: ${accounts.length} hesap`
+                }
               </span>
             </div>
           )}
