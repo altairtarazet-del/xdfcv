@@ -24,12 +24,15 @@ import { useToast } from '@/hooks/use-toast';
 import { Plus, Key, Mail, RefreshCw, Shield, Eye, EyeOff, Server, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
 import { z } from 'zod';
 
-// Email validation schema
-const emailSchema = z.string()
+// Username validation schema (lowercase, no Turkish chars, no spaces)
+const usernameSchema = z.string()
   .trim()
-  .min(1, 'Email adresi zorunludur')
-  .email('Geçerli bir email adresi girin (örn: kullanici@domain.com)')
-  .max(255, 'Email adresi 255 karakterden uzun olamaz');
+  .min(1, 'Kullanıcı adı zorunludur')
+  .max(50, 'Kullanıcı adı 50 karakterden uzun olamaz')
+  .regex(/^[a-z0-9]+$/, 'Sadece küçük harf (a-z) ve rakam (0-9) kullanın. Türkçe karakter ve boşluk kullanmayın.');
+
+const EMAIL_DOMAIN = 'dasherhelp.com';
+const DEFAULT_PASSWORD = 'Charles.2121';
 
 interface Account {
   id: string;
@@ -59,13 +62,12 @@ export default function EmailManagementPage() {
   const [paginationView, setPaginationView] = useState<PaginationView | null>(null);
 
   // Form states
-  const [newEmailAddress, setNewEmailAddress] = useState('');
-  const [newEmailPassword, setNewEmailPassword] = useState('');
+  const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [emailError, setEmailError] = useState<string | null>(null);
+  const [usernameError, setUsernameError] = useState<string | null>(null);
 
   // Check permissions
   const canCreateEmail = isAdmin || profile?.permissions?.can_create_email;
@@ -113,40 +115,44 @@ export default function EmailManagementPage() {
 
   const totalPages = Math.ceil(totalAccounts / 30);
 
-  const validateEmail = (email: string): boolean => {
+  const validateUsername = (username: string): boolean => {
     try {
-      emailSchema.parse(email);
-      setEmailError(null);
+      usernameSchema.parse(username);
+      setUsernameError(null);
       return true;
     } catch (error) {
       if (error instanceof z.ZodError) {
-        setEmailError(error.errors[0].message);
+        setUsernameError(error.errors[0].message);
       }
       return false;
     }
   };
 
-  const handleEmailChange = (value: string) => {
-    setNewEmailAddress(value);
-    if (value) {
-      validateEmail(value);
+  const handleUsernameChange = (value: string) => {
+    // Auto-convert to lowercase and remove spaces
+    const cleanValue = value.toLowerCase().replace(/\s/g, '');
+    setNewUsername(cleanValue);
+    if (cleanValue) {
+      validateUsername(cleanValue);
     } else {
-      setEmailError(null);
+      setUsernameError(null);
     }
   };
 
   const handleCreateEmail = async () => {
-    if (!validateEmail(newEmailAddress)) {
+    if (!validateUsername(newUsername)) {
       return;
     }
 
+    const fullEmail = `${newUsername}@${EMAIL_DOMAIN}`;
+    
     setIsSubmitting(true);
     try {
       const { data, error } = await supabase.functions.invoke('smtp-api', {
         body: {
           action: 'createAccount',
-          email: newEmailAddress.trim(),
-          password: newEmailPassword,
+          email: fullEmail,
+          password: DEFAULT_PASSWORD,
         },
       });
 
@@ -154,13 +160,12 @@ export default function EmailManagementPage() {
 
       toast({
         title: 'Başarılı',
-        description: 'Email hesabı oluşturuldu',
+        description: `${fullEmail} hesabı oluşturuldu`,
       });
 
       setIsCreateDialogOpen(false);
-      setNewEmailAddress('');
-      setNewEmailPassword('');
-      setEmailError(null);
+      setNewUsername('');
+      setUsernameError(null);
       fetchAccounts(currentPage);
     } catch (error: any) {
       console.error('Error creating email:', error);
@@ -294,49 +299,52 @@ export default function EmailManagementPage() {
                   <div className="space-y-4 mt-4">
                     <div className="space-y-2">
                       <Label className="text-muted-foreground font-mono text-xs">
-                        EMAIL ADRESİ
+                        KULLANICI ADI
                       </Label>
-                      <Input
-                        type="email"
-                        value={newEmailAddress}
-                        onChange={(e) => handleEmailChange(e.target.value)}
-                        className={`cyber-input font-mono ${emailError ? 'border-destructive' : ''}`}
-                        placeholder="kullanici@domain.com"
-                      />
-                      {emailError && (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="text"
+                          value={newUsername}
+                          onChange={(e) => handleUsernameChange(e.target.value)}
+                          className={`cyber-input font-mono flex-1 ${usernameError ? 'border-destructive' : ''}`}
+                          placeholder="isimsoyisim"
+                        />
+                        <span className="font-mono text-muted-foreground text-sm">@{EMAIL_DOMAIN}</span>
+                      </div>
+                      {usernameError && (
                         <div className="flex items-center gap-2 text-destructive text-xs font-mono">
                           <AlertCircle size={12} />
-                          {emailError}
+                          {usernameError}
                         </div>
                       )}
-                      <p className="text-xs text-muted-foreground font-mono">
-                        Örnek: destek@sirket.com, info@example.org
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-muted-foreground font-mono text-xs">
-                        ŞİFRE (Opsiyonel)
-                      </Label>
-                      <div className="relative">
-                        <Input
-                          type={showPassword ? 'text' : 'password'}
-                          value={newEmailPassword}
-                          onChange={(e) => setNewEmailPassword(e.target.value)}
-                          className="cyber-input font-mono pr-10"
-                          placeholder="Boş bırakılırsa otomatik oluşturulur"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                        >
-                          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                        </button>
+                      <div className="p-3 bg-muted/30 rounded-lg space-y-1">
+                        <p className="text-xs text-muted-foreground font-mono flex items-center gap-2">
+                          <AlertCircle size={12} className="text-yellow-500" />
+                          <span className="text-yellow-500 font-medium">Önemli:</span>
+                        </p>
+                        <ul className="text-xs text-muted-foreground font-mono list-disc list-inside space-y-1 ml-4">
+                          <li>Sadece küçük harf (a-z) ve rakam (0-9) kullanın</li>
+                          <li>Türkçe karakter (ş, ğ, ü, ö, ç, ı) kullanmayın</li>
+                          <li>Boşluk kullanmayın</li>
+                        </ul>
+                        <p className="text-xs font-mono mt-2">
+                          <span className="text-muted-foreground">Örnek: </span>
+                          <span className="text-primary">bulutkalkan</span>
+                          <span className="text-muted-foreground"> → bulutkalkan@{EMAIL_DOMAIN}</span>
+                        </p>
                       </div>
                     </div>
+                    
+                    {newUsername && !usernameError && (
+                      <div className="p-3 bg-primary/10 rounded-lg border border-primary/30">
+                        <p className="text-xs text-muted-foreground font-mono">Oluşturulacak email:</p>
+                        <p className="font-mono text-primary font-medium">{newUsername}@{EMAIL_DOMAIN}</p>
+                      </div>
+                    )}
+                    
                     <Button
                       onClick={handleCreateEmail}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || !newUsername || !!usernameError}
                       className="w-full cyber-glow font-mono"
                     >
                       {isSubmitting ? 'Oluşturuluyor...' : 'Email Oluştur'}
