@@ -629,9 +629,22 @@ export default function BackgroundPage() {
             <div className="space-y-2">
               <Label className="text-muted-foreground font-mono text-xs flex items-center gap-2">
                 <Calendar size={14} />
-                DOĞUM TARİHİ *
+                DOĞUM TARİHİ (AY/GÜN/YIL) *
               </Label>
               <div className="grid grid-cols-3 gap-2">
+                <Select value={editDobMonth} onValueChange={setEditDobMonth}>
+                  <SelectTrigger className="cyber-input font-mono">
+                    <SelectValue placeholder="Ay" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {monthOptions.map((month) => (
+                      <SelectItem key={month.value} value={month.value}>
+                        {month.value}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
                 <Select value={editDobDay} onValueChange={setEditDobDay}>
                   <SelectTrigger className="cyber-input font-mono">
                     <SelectValue placeholder="Gün" />
@@ -640,19 +653,6 @@ export default function BackgroundPage() {
                     {dayOptions.map((day) => (
                       <SelectItem key={day} value={day.toString()}>
                         {day}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select value={editDobMonth} onValueChange={setEditDobMonth}>
-                  <SelectTrigger className="cyber-input font-mono">
-                    <SelectValue placeholder="Ay" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {monthOptions.map((month) => (
-                      <SelectItem key={month.value} value={month.value}>
-                        {month.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
