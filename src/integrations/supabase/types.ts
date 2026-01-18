@@ -70,6 +70,8 @@ export type Database = {
           allowed_mailboxes: string[] | null
           allowed_receivers: string[] | null
           allowed_senders: string[] | null
+          can_change_password: boolean | null
+          can_create_email: boolean | null
           created_at: string
           custom_role_id: string
           id: string
@@ -81,6 +83,8 @@ export type Database = {
           allowed_mailboxes?: string[] | null
           allowed_receivers?: string[] | null
           allowed_senders?: string[] | null
+          can_change_password?: boolean | null
+          can_create_email?: boolean | null
           created_at?: string
           custom_role_id: string
           id?: string
@@ -92,6 +96,8 @@ export type Database = {
           allowed_mailboxes?: string[] | null
           allowed_receivers?: string[] | null
           allowed_senders?: string[] | null
+          can_change_password?: boolean | null
+          can_create_email?: boolean | null
           created_at?: string
           custom_role_id?: string
           id?: string

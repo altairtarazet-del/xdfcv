@@ -54,6 +54,49 @@ serve(async (req) => {
         break;
       }
 
+      case 'createAccount': {
+        const { email, password } = await req.json().catch(() => ({}));
+        
+        const createBody: any = {};
+        if (email) createBody.address = email;
+        if (password) createBody.password = password;
+
+        const response = await fetch(`${SMTP_API_URL}/accounts`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(createBody),
+        });
+        
+        if (!response.ok) {
+          const text = await response.text();
+          console.error('API Error Response:', text);
+          throw new Error(`API Error: ${response.status}`);
+        }
+        result = await response.json();
+        break;
+      }
+
+      case 'changePassword': {
+        const { accountId: accId, password: newPass } = await req.json().catch(() => ({}));
+        
+        if (!accId) throw new Error('accountId required');
+        if (!newPass) throw new Error('password required');
+
+        const response = await fetch(`${SMTP_API_URL}/accounts/${accId}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ password: newPass }),
+        });
+        
+        if (!response.ok) {
+          const text = await response.text();
+          console.error('API Error Response:', text);
+          throw new Error(`API Error: ${response.status}`);
+        }
+        result = await response.json();
+        break;
+      }
+
       case 'getMailboxes': {
         if (!accountId) throw new Error('accountId required');
         

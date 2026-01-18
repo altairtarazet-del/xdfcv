@@ -23,11 +23,178 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Trash2, Edit, Shield, Clock, Mail, Users } from 'lucide-react';
+import { Plus, Trash2, Edit, Shield, Clock, Mail, Users, GripVertical, Key, PlusCircle } from 'lucide-react';
 import { CustomRole, RolePermission } from '@/types/auth';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
+} from '@dnd-kit/core';
+import {
+  useSortable,
+  SortableContext,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface RoleWithPermissions extends CustomRole {
   permissions?: RolePermission | null;
+}
+
+interface PermissionItem {
+  id: string;
+  label: string;
+  description: string;
+  icon: React.ReactNode;
+  type: 'toggle' | 'input' | 'textarea';
+  inputType?: string;
+  placeholder?: string;
+}
+
+const availablePermissions: PermissionItem[] = [
+  {
+    id: 'realtime_enabled',
+    label: 'Gerçek Zamanlı Güncelleme',
+    description: 'Yeni mail geldiğinde otomatik güncelle',
+    icon: <Clock size={16} />,
+    type: 'toggle',
+  },
+  {
+    id: 'can_create_email',
+    label: 'Email Oluşturma',
+    description: 'Yeni mail hesabı oluşturabilir',
+    icon: <PlusCircle size={16} />,
+    type: 'toggle',
+  },
+  {
+    id: 'can_change_password',
+    label: 'Şifre Değiştirme',
+    description: 'Mail hesabı şifresi değiştirebilir',
+    icon: <Key size={16} />,
+    type: 'toggle',
+  },
+  {
+    id: 'time_filter_minutes',
+    label: 'Zaman Filtresi',
+    description: 'Sadece son X dakikadaki mailleri görebilir',
+    icon: <Clock size={16} />,
+    type: 'input',
+    inputType: 'number',
+    placeholder: 'Dakika (örn: 20)',
+  },
+  {
+    id: 'allowed_mailboxes',
+    label: 'İzin Verilen Posta Kutuları',
+    description: 'Sadece belirtilen posta kutularını görebilir',
+    icon: <Mail size={16} />,
+    type: 'textarea',
+    placeholder: 'mailbox-id-1, mailbox-id-2',
+  },
+  {
+    id: 'allowed_senders',
+    label: 'İzin Verilen Göndericiler',
+    description: 'Sadece belirtilen göndericilerden gelen mailleri görebilir',
+    icon: <Users size={16} />,
+    type: 'textarea',
+    placeholder: 'no-reply@doordash.com, *@uber.com',
+  },
+  {
+    id: 'allowed_receivers',
+    label: 'İzin Verilen Alıcılar',
+    description: 'Sadece belirtilen alıcılara gelen mailleri görebilir',
+    icon: <Users size={16} />,
+    type: 'textarea',
+    placeholder: 'receiver@example.com',
+  },
+];
+
+interface DraggablePermissionProps {
+  permission: PermissionItem;
+  value: any;
+  onChange: (value: any) => void;
+  isActive?: boolean;
+}
+
+function DraggablePermission({ permission, value, onChange, isActive }: DraggablePermissionProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: permission.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`cyber-card p-4 rounded-lg border ${
+        isActive ? 'border-primary/50 bg-primary/5' : 'border-border/30'
+      } ${isDragging ? 'shadow-lg' : ''}`}
+    >
+      <div className="flex items-start gap-3">
+        <button
+          {...attributes}
+          {...listeners}
+          className="mt-1 cursor-grab active:cursor-grabbing text-muted-foreground hover:text-primary"
+        >
+          <GripVertical size={18} />
+        </button>
+
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-primary">{permission.icon}</span>
+            <span className="font-mono text-sm font-medium text-foreground">
+              {permission.label}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground font-mono mb-3">
+            {permission.description}
+          </p>
+
+          {permission.type === 'toggle' && (
+            <Switch
+              checked={!!value}
+              onCheckedChange={onChange}
+            />
+          )}
+
+          {permission.type === 'input' && (
+            <Input
+              type={permission.inputType}
+              value={value || ''}
+              onChange={(e) => onChange(e.target.value)}
+              className="cyber-input font-mono text-sm"
+              placeholder={permission.placeholder}
+            />
+          )}
+
+          {permission.type === 'textarea' && (
+            <Textarea
+              value={value || ''}
+              onChange={(e) => onChange(e.target.value)}
+              className="cyber-input font-mono text-sm resize-none"
+              placeholder={permission.placeholder}
+              rows={2}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function RolesPage() {
@@ -41,11 +208,26 @@ export default function RolesPage() {
   // Form state
   const [formName, setFormName] = useState('');
   const [formDescription, setFormDescription] = useState('');
-  const [formTimeFilter, setFormTimeFilter] = useState<string>('');
-  const [formMailboxes, setFormMailboxes] = useState('');
-  const [formSenders, setFormSenders] = useState('');
-  const [formReceivers, setFormReceivers] = useState('');
-  const [formRealtime, setFormRealtime] = useState(true);
+  const [permissionValues, setPermissionValues] = useState<Record<string, any>>({
+    realtime_enabled: true,
+    can_create_email: false,
+    can_change_password: false,
+    time_filter_minutes: '',
+    allowed_mailboxes: '',
+    allowed_senders: '',
+    allowed_receivers: '',
+  });
+  const [activePermissions, setActivePermissions] = useState<string[]>([]);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor)
+  );
 
   useEffect(() => {
     if (isAdmin) {
@@ -62,7 +244,6 @@ export default function RolesPage() {
 
       if (error) throw error;
 
-      // Fetch permissions for each role
       const rolesWithPermissions: RoleWithPermissions[] = await Promise.all(
         (rolesData || []).map(async (role) => {
           const { data: permData } = await supabase
@@ -73,7 +254,7 @@ export default function RolesPage() {
 
           return {
             ...role,
-            permissions: permData,
+            permissions: permData as RolePermission | null,
           };
         })
       );
@@ -105,7 +286,6 @@ export default function RolesPage() {
       let roleId = editingRole?.id;
 
       if (editingRole) {
-        // Update existing role
         const { error } = await supabase
           .from('custom_roles')
           .update({
@@ -116,7 +296,6 @@ export default function RolesPage() {
 
         if (error) throw error;
       } else {
-        // Create new role
         const { data, error } = await supabase
           .from('custom_roles')
           .insert({
@@ -130,18 +309,26 @@ export default function RolesPage() {
         roleId = data.id;
       }
 
-      // Save permissions
       if (roleId) {
         const permissions = {
           custom_role_id: roleId,
-          time_filter_minutes: formTimeFilter ? parseInt(formTimeFilter) : null,
-          allowed_mailboxes: formMailboxes ? formMailboxes.split(',').map(s => s.trim()) : null,
-          allowed_senders: formSenders ? formSenders.split(',').map(s => s.trim()) : null,
-          allowed_receivers: formReceivers ? formReceivers.split(',').map(s => s.trim()) : null,
-          realtime_enabled: formRealtime,
+          time_filter_minutes: permissionValues.time_filter_minutes 
+            ? parseInt(permissionValues.time_filter_minutes) 
+            : null,
+          allowed_mailboxes: permissionValues.allowed_mailboxes 
+            ? permissionValues.allowed_mailboxes.split(',').map((s: string) => s.trim()).filter(Boolean) 
+            : null,
+          allowed_senders: permissionValues.allowed_senders 
+            ? permissionValues.allowed_senders.split(',').map((s: string) => s.trim()).filter(Boolean) 
+            : null,
+          allowed_receivers: permissionValues.allowed_receivers 
+            ? permissionValues.allowed_receivers.split(',').map((s: string) => s.trim()).filter(Boolean) 
+            : null,
+          realtime_enabled: !!permissionValues.realtime_enabled,
+          can_create_email: !!permissionValues.can_create_email,
+          can_change_password: !!permissionValues.can_change_password,
         };
 
-        // Upsert permissions
         const { error: permError } = await supabase
           .from('role_permissions')
           .upsert(permissions, {
@@ -199,23 +386,95 @@ export default function RolesPage() {
     setEditingRole(role);
     setFormName(role.name);
     setFormDescription(role.description || '');
-    setFormTimeFilter(role.permissions?.time_filter_minutes?.toString() || '');
-    setFormMailboxes(role.permissions?.allowed_mailboxes?.join(', ') || '');
-    setFormSenders(role.permissions?.allowed_senders?.join(', ') || '');
-    setFormReceivers(role.permissions?.allowed_receivers?.join(', ') || '');
-    setFormRealtime(role.permissions?.realtime_enabled ?? true);
+    
+    const perms = role.permissions;
+    setPermissionValues({
+      realtime_enabled: perms?.realtime_enabled ?? true,
+      can_create_email: perms?.can_create_email ?? false,
+      can_change_password: perms?.can_change_password ?? false,
+      time_filter_minutes: perms?.time_filter_minutes?.toString() || '',
+      allowed_mailboxes: perms?.allowed_mailboxes?.join(', ') || '',
+      allowed_senders: perms?.allowed_senders?.join(', ') || '',
+      allowed_receivers: perms?.allowed_receivers?.join(', ') || '',
+    });
+
+    // Set active permissions based on which ones have values
+    const active: string[] = [];
+    if (perms?.realtime_enabled) active.push('realtime_enabled');
+    if (perms?.can_create_email) active.push('can_create_email');
+    if (perms?.can_change_password) active.push('can_change_password');
+    if (perms?.time_filter_minutes) active.push('time_filter_minutes');
+    if (perms?.allowed_mailboxes?.length) active.push('allowed_mailboxes');
+    if (perms?.allowed_senders?.length) active.push('allowed_senders');
+    if (perms?.allowed_receivers?.length) active.push('allowed_receivers');
+    setActivePermissions(active);
+
     setIsDialogOpen(true);
   };
 
   const resetForm = () => {
     setFormName('');
     setFormDescription('');
-    setFormTimeFilter('');
-    setFormMailboxes('');
-    setFormSenders('');
-    setFormReceivers('');
-    setFormRealtime(true);
+    setPermissionValues({
+      realtime_enabled: true,
+      can_create_email: false,
+      can_change_password: false,
+      time_filter_minutes: '',
+      allowed_mailboxes: '',
+      allowed_senders: '',
+      allowed_receivers: '',
+    });
+    setActivePermissions([]);
     setEditingRole(null);
+  };
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setDraggedId(event.active.id as string);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setDraggedId(null);
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = activePermissions.indexOf(active.id as string);
+      const newIndex = activePermissions.indexOf(over.id as string);
+
+      const newOrder = [...activePermissions];
+      newOrder.splice(oldIndex, 1);
+      newOrder.splice(newIndex, 0, active.id as string);
+      setActivePermissions(newOrder);
+    }
+  };
+
+  const togglePermission = (permId: string) => {
+    if (activePermissions.includes(permId)) {
+      setActivePermissions(activePermissions.filter(id => id !== permId));
+      // Reset value when removing
+      const perm = availablePermissions.find(p => p.id === permId);
+      if (perm?.type === 'toggle') {
+        setPermissionValues(prev => ({ ...prev, [permId]: false }));
+      } else {
+        setPermissionValues(prev => ({ ...prev, [permId]: '' }));
+      }
+    } else {
+      setActivePermissions([...activePermissions, permId]);
+      // Set default value when adding
+      const perm = availablePermissions.find(p => p.id === permId);
+      if (perm?.type === 'toggle') {
+        setPermissionValues(prev => ({ ...prev, [permId]: true }));
+      }
+    }
+  };
+
+  const updatePermissionValue = (permId: string, value: any) => {
+    setPermissionValues(prev => ({ ...prev, [permId]: value }));
+  };
+
+  const getActivePermissionObjects = () => {
+    return activePermissions
+      .map(id => availablePermissions.find(p => p.id === id))
+      .filter(Boolean) as PermissionItem[];
   };
 
   if (!isAdmin) {
@@ -244,7 +503,7 @@ export default function RolesPage() {
               Rol Yönetimi
             </h1>
             <p className="text-muted-foreground font-mono text-sm">
-              Özel roller ve izinleri yönetin
+              Özel roller ve izinleri yönetin - Sürükle bırak ile yetki atayın
             </p>
           </div>
 
@@ -258,115 +517,110 @@ export default function RolesPage() {
                 Yeni Rol
               </Button>
             </DialogTrigger>
-            <DialogContent className="cyber-card border-primary/30 max-w-lg">
+            <DialogContent className="cyber-card border-primary/30 max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
               <DialogHeader>
                 <DialogTitle className="font-mono text-foreground">
                   {editingRole ? 'Rol Düzenle' : 'Yeni Rol Oluştur'}
                 </DialogTitle>
               </DialogHeader>
-              <div className="space-y-4 mt-4 max-h-[60vh] overflow-y-auto pr-2">
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground font-mono text-xs">ROL ADI</Label>
-                  <Input
-                    value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                    className="cyber-input font-mono"
-                    placeholder="Developer, QA Tester, Viewer..."
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground font-mono text-xs">AÇIKLAMA</Label>
-                  <Textarea
-                    value={formDescription}
-                    onChange={(e) => setFormDescription(e.target.value)}
-                    className="cyber-input font-mono resize-none"
-                    placeholder="Bu rol için açıklama..."
-                    rows={2}
-                  />
+              
+              <div className="flex-1 overflow-y-auto pr-2 space-y-6 mt-4">
+                {/* Basic Info */}
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground font-mono text-xs">ROL ADI</Label>
+                    <Input
+                      value={formName}
+                      onChange={(e) => setFormName(e.target.value)}
+                      className="cyber-input font-mono"
+                      placeholder="Developer, QA Tester, Viewer..."
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground font-mono text-xs">AÇIKLAMA</Label>
+                    <Textarea
+                      value={formDescription}
+                      onChange={(e) => setFormDescription(e.target.value)}
+                      className="cyber-input font-mono resize-none"
+                      placeholder="Bu rol için açıklama..."
+                      rows={2}
+                    />
+                  </div>
                 </div>
 
+                {/* Permission Selection */}
                 <div className="border-t border-border/30 pt-4">
                   <h3 className="text-sm font-mono text-foreground mb-3 flex items-center gap-2">
                     <Shield size={16} className="text-primary" />
-                    İzin Filtreleri
+                    Mevcut Yetkiler
                   </h3>
-
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label className="text-muted-foreground font-mono text-xs flex items-center gap-2">
-                        <Clock size={14} />
-                        ZAMAN FİLTRESİ (dakika)
-                      </Label>
-                      <Input
-                        type="number"
-                        value={formTimeFilter}
-                        onChange={(e) => setFormTimeFilter(e.target.value)}
-                        className="cyber-input font-mono"
-                        placeholder="Örn: 20 (son 20 dakika)"
-                      />
-                      <p className="text-xs text-muted-foreground font-mono">
-                        Boş bırakılırsa tüm mailleri görebilir
-                      </p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className="text-muted-foreground font-mono text-xs flex items-center gap-2">
-                        <Mail size={14} />
-                        İZİN VERİLEN POSTA KUTULARI
-                      </Label>
-                      <Input
-                        value={formMailboxes}
-                        onChange={(e) => setFormMailboxes(e.target.value)}
-                        className="cyber-input font-mono"
-                        placeholder="mailbox-id-1, mailbox-id-2"
-                      />
-                      <p className="text-xs text-muted-foreground font-mono">
-                        Virgülle ayırarak birden fazla ekleyebilirsiniz
-                      </p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className="text-muted-foreground font-mono text-xs flex items-center gap-2">
-                        <Users size={14} />
-                        İZİN VERİLEN GÖNDERİCİLER
-                      </Label>
-                      <Input
-                        value={formSenders}
-                        onChange={(e) => setFormSenders(e.target.value)}
-                        className="cyber-input font-mono"
-                        placeholder="sender@example.com, *@domain.com"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className="text-muted-foreground font-mono text-xs flex items-center gap-2">
-                        <Users size={14} />
-                        İZİN VERİLEN ALICILAR
-                      </Label>
-                      <Input
-                        value={formReceivers}
-                        onChange={(e) => setFormReceivers(e.target.value)}
-                        className="cyber-input font-mono"
-                        placeholder="receiver@example.com"
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between py-2">
-                      <div>
-                        <Label className="text-muted-foreground font-mono text-xs">
-                          GERÇEK ZAMANLI GÜNCELLEME
-                        </Label>
-                        <p className="text-xs text-muted-foreground font-mono">
-                          Yeni mail geldiğinde otomatik güncelle
-                        </p>
-                      </div>
-                      <Switch
-                        checked={formRealtime}
-                        onCheckedChange={setFormRealtime}
-                      />
-                    </div>
+                  <p className="text-xs text-muted-foreground font-mono mb-4">
+                    Rol için eklemek istediğiniz yetkilere tıklayın
+                  </p>
+                  
+                  <div className="flex flex-wrap gap-2 mb-6">
+                    {availablePermissions.map((perm) => (
+                      <button
+                        key={perm.id}
+                        onClick={() => togglePermission(perm.id)}
+                        className={`px-3 py-2 rounded-lg font-mono text-xs flex items-center gap-2 transition-all ${
+                          activePermissions.includes(perm.id)
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+                        }`}
+                      >
+                        {perm.icon}
+                        {perm.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
+
+                {/* Active Permissions - Drag & Drop */}
+                {activePermissions.length > 0 && (
+                  <div className="border-t border-border/30 pt-4">
+                    <h3 className="text-sm font-mono text-foreground mb-3 flex items-center gap-2">
+                      <GripVertical size={16} className="text-primary" />
+                      Atanan Yetkiler
+                    </h3>
+                    <p className="text-xs text-muted-foreground font-mono mb-4">
+                      Sürükleyerek sıralayın, değerleri ayarlayın
+                    </p>
+
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragStart={handleDragStart}
+                      onDragEnd={handleDragEnd}
+                    >
+                      <SortableContext
+                        items={activePermissions}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        <div className="space-y-3">
+                          {getActivePermissionObjects().map((perm) => (
+                            <DraggablePermission
+                              key={perm.id}
+                              permission={perm}
+                              value={permissionValues[perm.id]}
+                              onChange={(val) => updatePermissionValue(perm.id, val)}
+                              isActive={activePermissions.includes(perm.id)}
+                            />
+                          ))}
+                        </div>
+                      </SortableContext>
+                      <DragOverlay>
+                        {draggedId ? (
+                          <div className="cyber-card p-4 rounded-lg border border-primary shadow-lg opacity-90">
+                            <span className="font-mono text-sm">
+                              {availablePermissions.find(p => p.id === draggedId)?.label}
+                            </span>
+                          </div>
+                        ) : null}
+                      </DragOverlay>
+                    </DndContext>
+                  </div>
+                )}
 
                 <Button onClick={handleSaveRole} className="w-full cyber-glow font-mono">
                   {editingRole ? 'Rolü Güncelle' : 'Rol Oluştur'}
@@ -383,15 +637,14 @@ export default function RolesPage() {
               <TableRow className="border-b border-border/50">
                 <TableHead className="font-mono text-muted-foreground">ROL ADI</TableHead>
                 <TableHead className="font-mono text-muted-foreground">AÇIKLAMA</TableHead>
-                <TableHead className="font-mono text-muted-foreground">ZAMAN FİLTRESİ</TableHead>
-                <TableHead className="font-mono text-muted-foreground">GERÇEK ZAMANLI</TableHead>
+                <TableHead className="font-mono text-muted-foreground">YETKİLER</TableHead>
                 <TableHead className="font-mono text-muted-foreground">İŞLEMLER</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8">
+                  <TableCell colSpan={4} className="text-center py-8">
                     <span className="text-muted-foreground font-mono animate-pulse">
                       Yükleniyor...
                     </span>
@@ -399,7 +652,7 @@ export default function RolesPage() {
                 </TableRow>
               ) : roles.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8">
+                  <TableCell colSpan={4} className="text-center py-8">
                     <span className="text-muted-foreground font-mono">
                       Henüz rol oluşturulmamış
                     </span>
@@ -416,19 +669,34 @@ export default function RolesPage() {
                     <TableCell className="font-mono text-sm text-muted-foreground">
                       {role.description || '-'}
                     </TableCell>
-                    <TableCell className="font-mono text-sm">
-                      {role.permissions?.time_filter_minutes
-                        ? `Son ${role.permissions.time_filter_minutes} dk`
-                        : 'Tümü'}
-                    </TableCell>
                     <TableCell>
-                      <span className={`px-2 py-1 rounded text-xs font-mono ${
-                        role.permissions?.realtime_enabled
-                          ? 'bg-primary/20 text-primary'
-                          : 'bg-muted text-muted-foreground'
-                      }`}>
-                        {role.permissions?.realtime_enabled ? 'Aktif' : 'Pasif'}
-                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        {role.permissions?.realtime_enabled && (
+                          <span className="px-2 py-0.5 bg-primary/20 text-primary rounded text-xs font-mono">
+                            Canlı
+                          </span>
+                        )}
+                        {role.permissions?.can_create_email && (
+                          <span className="px-2 py-0.5 bg-green-500/20 text-green-400 rounded text-xs font-mono">
+                            Mail Oluştur
+                          </span>
+                        )}
+                        {role.permissions?.can_change_password && (
+                          <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 rounded text-xs font-mono">
+                            Şifre Değiştir
+                          </span>
+                        )}
+                        {role.permissions?.time_filter_minutes && (
+                          <span className="px-2 py-0.5 bg-muted text-muted-foreground rounded text-xs font-mono">
+                            {role.permissions.time_filter_minutes}dk
+                          </span>
+                        )}
+                        {role.permissions?.allowed_senders?.length ? (
+                          <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs font-mono">
+                            {role.permissions.allowed_senders.length} gönderici
+                          </span>
+                        ) : null}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">

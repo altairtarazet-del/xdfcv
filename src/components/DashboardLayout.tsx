@@ -12,6 +12,7 @@ import {
   Activity,
   Menu,
   X,
+  Server,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -46,10 +47,13 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
   if (!user) return null;
 
+  const canManageEmails = isAdmin || profile?.permissions?.can_create_email || profile?.permissions?.can_change_password;
+
   const navItems = [
     { to: '/dashboard', icon: Mail, label: 'Postalar', show: true },
     { to: '/dashboard/users', icon: Users, label: 'Kullanıcılar', show: isAdmin },
     { to: '/dashboard/roles', icon: Shield, label: 'Roller', show: isAdmin },
+    { to: '/dashboard/emails', icon: Server, label: 'Email Yönetimi', show: canManageEmails },
     { to: '/dashboard/settings', icon: Settings, label: 'Ayarlar', show: true },
   ];
 
