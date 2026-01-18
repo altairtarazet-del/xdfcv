@@ -21,7 +21,15 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Key, Mail, RefreshCw, Shield, Eye, EyeOff, Server, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Key, Mail, RefreshCw, Shield, Eye, EyeOff, Server, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
+import { z } from 'zod';
+
+// Email validation schema
+const emailSchema = z.string()
+  .trim()
+  .min(1, 'Email adresi zorunludur')
+  .email('Geçerli bir email adresi girin (örn: kullanici@domain.com)')
+  .max(255, 'Email adresi 255 karakterden uzun olamaz');
 
 interface Account {
   id: string;
@@ -57,6 +65,7 @@ export default function EmailManagementPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
 
   // Check permissions
   const canCreateEmail = isAdmin || profile?.permissions?.can_create_email;
@@ -104,13 +113,30 @@ export default function EmailManagementPage() {
 
   const totalPages = Math.ceil(totalAccounts / 30);
 
+  const validateEmail = (email: string): boolean => {
+    try {
+      emailSchema.parse(email);
+      setEmailError(null);
+      return true;
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        setEmailError(error.errors[0].message);
+      }
+      return false;
+    }
+  };
+
+  const handleEmailChange = (value: string) => {
+    setNewEmailAddress(value);
+    if (value) {
+      validateEmail(value);
+    } else {
+      setEmailError(null);
+    }
+  };
+
   const handleCreateEmail = async () => {
-    if (!newEmailAddress) {
-      toast({
-        variant: 'destructive',
-        title: 'Hata',
-        description: 'Email adresi zorunludur',
-      });
+    if (!validateEmail(newEmailAddress)) {
       return;
     }
 
@@ -119,7 +145,7 @@ export default function EmailManagementPage() {
       const { data, error } = await supabase.functions.invoke('smtp-api', {
         body: {
           action: 'createAccount',
-          email: newEmailAddress,
+          email: newEmailAddress.trim(),
           password: newEmailPassword,
         },
       });
@@ -134,7 +160,8 @@ export default function EmailManagementPage() {
       setIsCreateDialogOpen(false);
       setNewEmailAddress('');
       setNewEmailPassword('');
-      fetchAccounts();
+      setEmailError(null);
+      fetchAccounts(currentPage);
     } catch (error: any) {
       console.error('Error creating email:', error);
       toast({
@@ -272,10 +299,19 @@ export default function EmailManagementPage() {
                       <Input
                         type="email"
                         value={newEmailAddress}
-                        onChange={(e) => setNewEmailAddress(e.target.value)}
-                        className="cyber-input font-mono"
-                        placeholder="user@example.com"
+                        onChange={(e) => handleEmailChange(e.target.value)}
+                        className={`cyber-input font-mono ${emailError ? 'border-destructive' : ''}`}
+                        placeholder="kullanici@domain.com"
                       />
+                      {emailError && (
+                        <div className="flex items-center gap-2 text-destructive text-xs font-mono">
+                          <AlertCircle size={12} />
+                          {emailError}
+                        </div>
+                      )}
+                      <p className="text-xs text-muted-foreground font-mono">
+                        Örnek: destek@sirket.com, info@example.org
+                      </p>
                     </div>
                     <div className="space-y-2">
                       <Label className="text-muted-foreground font-mono text-xs">
