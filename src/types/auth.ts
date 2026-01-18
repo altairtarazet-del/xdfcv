@@ -38,6 +38,12 @@ export interface RolePermission {
   can_delete_account: boolean;
   can_delete_emails: boolean;
   can_edit_background: boolean;
+  // Cash permissions
+  can_view_cash: boolean;
+  can_manage_cash: boolean;
+  can_add_payment: boolean;
+  can_process_refund: boolean;
+  can_edit_cash_settings: boolean;
   created_at: string;
   updated_at: string;
 }

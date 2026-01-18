@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Trash2, Edit, Shield, Clock, Mail, Users, GripVertical, Key, PlusCircle } from 'lucide-react';
+import { Plus, Trash2, Edit, Shield, Clock, Mail, Users, GripVertical, Key, PlusCircle, Wallet, DollarSign, RefreshCcw, Settings, Eye } from 'lucide-react';
 import { CustomRole, RolePermission } from '@/types/auth';
 import {
   DndContext,
@@ -98,6 +98,42 @@ const availablePermissions: PermissionItem[] = [
     label: 'Background Düzenleme',
     description: 'Background sayfasında isim ve doğum tarihi düzenleyebilir',
     icon: <Edit size={16} />,
+    type: 'toggle',
+  },
+  // Cash/Kasa permissions
+  {
+    id: 'can_view_cash',
+    label: 'Kasa Görüntüleme',
+    description: 'Kasa sayfasını ve işlemleri görebilir',
+    icon: <Eye size={16} />,
+    type: 'toggle',
+  },
+  {
+    id: 'can_manage_cash',
+    label: 'Kasa Yönetimi',
+    description: 'Kasa işlemlerini yönetebilir (tüm yetkiler)',
+    icon: <Wallet size={16} />,
+    type: 'toggle',
+  },
+  {
+    id: 'can_add_payment',
+    label: 'Ödeme Ekleme',
+    description: 'Yeni ödeme kaydı ekleyebilir',
+    icon: <DollarSign size={16} />,
+    type: 'toggle',
+  },
+  {
+    id: 'can_process_refund',
+    label: 'İade İşleme',
+    description: 'İade işlemi yapabilir',
+    icon: <RefreshCcw size={16} />,
+    type: 'toggle',
+  },
+  {
+    id: 'can_edit_cash_settings',
+    label: 'Kasa Ayarları',
+    description: 'Varsayılan ödeme tutarlarını düzenleyebilir',
+    icon: <Settings size={16} />,
     type: 'toggle',
   },
   {
@@ -244,6 +280,11 @@ export default function RolesPage() {
     can_delete_account: false,
     can_delete_emails: false,
     can_edit_background: false,
+    can_view_cash: false,
+    can_manage_cash: false,
+    can_add_payment: false,
+    can_process_refund: false,
+    can_edit_cash_settings: false,
     time_filter_minutes: '',
     allowed_mailboxes: '',
     allowed_senders: '',
@@ -366,6 +407,11 @@ export default function RolesPage() {
           can_delete_account: !!permissionValues.can_delete_account,
           can_delete_emails: !!permissionValues.can_delete_emails,
           can_edit_background: !!permissionValues.can_edit_background,
+          can_view_cash: !!permissionValues.can_view_cash,
+          can_manage_cash: !!permissionValues.can_manage_cash,
+          can_add_payment: !!permissionValues.can_add_payment,
+          can_process_refund: !!permissionValues.can_process_refund,
+          can_edit_cash_settings: !!permissionValues.can_edit_cash_settings,
         };
 
         const { error: permError } = await supabase
@@ -434,6 +480,11 @@ export default function RolesPage() {
       can_delete_account: perms?.can_delete_account ?? false,
       can_delete_emails: perms?.can_delete_emails ?? false,
       can_edit_background: perms?.can_edit_background ?? false,
+      can_view_cash: (perms as any)?.can_view_cash ?? false,
+      can_manage_cash: (perms as any)?.can_manage_cash ?? false,
+      can_add_payment: (perms as any)?.can_add_payment ?? false,
+      can_process_refund: (perms as any)?.can_process_refund ?? false,
+      can_edit_cash_settings: (perms as any)?.can_edit_cash_settings ?? false,
       time_filter_minutes: perms?.time_filter_minutes?.toString() || '',
       allowed_mailboxes: perms?.allowed_mailboxes?.join(', ') || '',
       allowed_senders: perms?.allowed_senders?.join(', ') || '',
@@ -449,6 +500,11 @@ export default function RolesPage() {
     if (perms?.can_delete_account) active.push('can_delete_account');
     if (perms?.can_delete_emails) active.push('can_delete_emails');
     if (perms?.can_edit_background) active.push('can_edit_background');
+    if ((perms as any)?.can_view_cash) active.push('can_view_cash');
+    if ((perms as any)?.can_manage_cash) active.push('can_manage_cash');
+    if ((perms as any)?.can_add_payment) active.push('can_add_payment');
+    if ((perms as any)?.can_process_refund) active.push('can_process_refund');
+    if ((perms as any)?.can_edit_cash_settings) active.push('can_edit_cash_settings');
     if (perms?.time_filter_minutes) active.push('time_filter_minutes');
     if (perms?.allowed_mailboxes?.length) active.push('allowed_mailboxes');
     if (perms?.allowed_senders?.length) active.push('allowed_senders');
@@ -469,6 +525,11 @@ export default function RolesPage() {
       can_delete_account: false,
       can_delete_emails: false,
       can_edit_background: false,
+      can_view_cash: false,
+      can_manage_cash: false,
+      can_add_payment: false,
+      can_process_refund: false,
+      can_edit_cash_settings: false,
       time_filter_minutes: '',
       allowed_mailboxes: '',
       allowed_senders: '',

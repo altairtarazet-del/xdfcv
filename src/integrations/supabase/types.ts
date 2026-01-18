@@ -172,11 +172,16 @@ export type Database = {
           allowed_receivers: string[] | null
           allowed_senders: string[] | null
           allowed_subjects: string[] | null
+          can_add_payment: boolean | null
           can_change_password: boolean | null
           can_create_email: boolean | null
           can_delete_account: boolean | null
           can_delete_emails: boolean | null
           can_edit_background: boolean | null
+          can_edit_cash_settings: boolean | null
+          can_manage_cash: boolean | null
+          can_process_refund: boolean | null
+          can_view_cash: boolean | null
           created_at: string
           custom_role_id: string
           id: string
@@ -189,11 +194,16 @@ export type Database = {
           allowed_receivers?: string[] | null
           allowed_senders?: string[] | null
           allowed_subjects?: string[] | null
+          can_add_payment?: boolean | null
           can_change_password?: boolean | null
           can_create_email?: boolean | null
           can_delete_account?: boolean | null
           can_delete_emails?: boolean | null
           can_edit_background?: boolean | null
+          can_edit_cash_settings?: boolean | null
+          can_manage_cash?: boolean | null
+          can_process_refund?: boolean | null
+          can_view_cash?: boolean | null
           created_at?: string
           custom_role_id: string
           id?: string
@@ -206,11 +216,16 @@ export type Database = {
           allowed_receivers?: string[] | null
           allowed_senders?: string[] | null
           allowed_subjects?: string[] | null
+          can_add_payment?: boolean | null
           can_change_password?: boolean | null
           can_create_email?: boolean | null
           can_delete_account?: boolean | null
           can_delete_emails?: boolean | null
           can_edit_background?: boolean | null
+          can_edit_cash_settings?: boolean | null
+          can_manage_cash?: boolean | null
+          can_process_refund?: boolean | null
+          can_view_cash?: boolean | null
           created_at?: string
           custom_role_id?: string
           id?: string

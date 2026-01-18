@@ -118,7 +118,13 @@ export default function CashPage() {
   const [settingsFirstPayment, setSettingsFirstPayment] = useState('');
   const [settingsSecondPayment, setSettingsSecondPayment] = useState('');
 
-  const canManageEmails = isAdmin || profile?.permissions?.can_create_email;
+  // Permission checks
+  const permissions = profile?.permissions as any;
+  const canViewCash = isAdmin || permissions?.can_view_cash || permissions?.can_manage_cash;
+  const canManageCash = isAdmin || permissions?.can_manage_cash;
+  const canAddPayment = isAdmin || permissions?.can_manage_cash || permissions?.can_add_payment;
+  const canProcessRefund = isAdmin || permissions?.can_manage_cash || permissions?.can_process_refund;
+  const canEditSettings = isAdmin || permissions?.can_manage_cash || permissions?.can_edit_cash_settings;
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -363,7 +369,7 @@ export default function CashPage() {
   };
 
   // Access control
-  if (!isAdmin) {
+  if (!canViewCash) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-full">
@@ -371,7 +377,7 @@ export default function CashPage() {
             <Shield size={48} className="mx-auto text-muted-foreground mb-4" />
             <h2 className="text-xl font-mono text-foreground">Erişim Engellendi</h2>
             <p className="text-muted-foreground font-mono text-sm">
-              Bu sayfayı görüntülemek için admin yetkisi gerekiyor
+              Bu sayfayı görüntülemek için gerekli yetki bulunmuyor
             </p>
           </div>
         </div>
@@ -394,15 +400,17 @@ export default function CashPage() {
           </div>
           
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={openSettingsDialog}
-              className="hover:bg-primary/10 font-mono text-xs"
-            >
-              <Settings size={14} className="mr-1" />
-              Ayarlar
-            </Button>
+            {canEditSettings && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={openSettingsDialog}
+                className="hover:bg-primary/10 font-mono text-xs"
+              >
+                <Settings size={14} className="mr-1" />
+                Ayarlar
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -590,7 +598,7 @@ export default function CashPage() {
                       <TableCell>
                         <div className="flex items-center gap-1 flex-wrap">
                           {/* Payment buttons */}
-                          {!hasFirstPayment && (
+                          {canAddPayment && !hasFirstPayment && (
                             <Button
                               variant="outline"
                               size="sm"
@@ -601,7 +609,7 @@ export default function CashPage() {
                               1. Ödeme
                             </Button>
                           )}
-                          {hasFirstPayment && !hasSecondPayment && (
+                          {canAddPayment && hasFirstPayment && !hasSecondPayment && (
                             <Button
                               variant="outline"
                               size="sm"
@@ -614,7 +622,7 @@ export default function CashPage() {
                           )}
                           
                           {/* Refund buttons */}
-                          {hasFirstPayment && !hasFirstRefund && (account.status === 'kapandi' || account.status === 'suspend') && (
+                          {canProcessRefund && hasFirstPayment && !hasFirstRefund && (account.status === 'kapandi' || account.status === 'suspend') && (
                             <Button
                               variant="outline"
                               size="sm"
@@ -625,7 +633,7 @@ export default function CashPage() {
                               1. İade
                             </Button>
                           )}
-                          {hasSecondPayment && !hasSecondRefund && (account.status === 'kapandi' || account.status === 'suspend') && (
+                          {canProcessRefund && hasSecondPayment && !hasSecondRefund && (account.status === 'kapandi' || account.status === 'suspend') && (
                             <Button
                               variant="outline"
                               size="sm"
