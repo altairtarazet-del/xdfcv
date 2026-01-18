@@ -31,12 +31,25 @@ import {
 } from '@/components/ui/select';
 import { z } from 'zod';
 
-// Username validation schema (lowercase, no Turkish chars, no spaces)
-const usernameSchema = z.string()
+// Name validation schema (uppercase, no Turkish chars, no spaces, letters only)
+const nameSchema = z.string()
   .trim()
-  .min(1, 'Kullanıcı adı zorunludur')
-  .max(50, 'Kullanıcı adı 50 karakterden uzun olamaz')
-  .regex(/^[a-z0-9]+$/, 'Sadece küçük harf (a-z) ve rakam (0-9) kullanın. Türkçe karakter ve boşluk kullanmayın.');
+  .min(1, 'Bu alan zorunludur')
+  .max(50, 'En fazla 50 karakter olabilir')
+  .regex(/^[A-Z]+$/, 'Sadece büyük harf (A-Z) kullanın. Türkçe karakter, rakam ve boşluk kullanmayın.');
+
+// Helper function to convert Turkish characters to English equivalents
+const convertTurkishToEnglish = (str: string): string => {
+  const turkishMap: Record<string, string> = {
+    'ş': 's', 'Ş': 'S',
+    'ğ': 'g', 'Ğ': 'G',
+    'ü': 'u', 'Ü': 'U',
+    'ö': 'o', 'Ö': 'O',
+    'ç': 'c', 'Ç': 'C',
+    'ı': 'i', 'İ': 'I',
+  };
+  return str.split('').map(char => turkishMap[char] || char).join('');
+};
 
 const EMAIL_DOMAIN = 'dasherhelp.com';
 const DEFAULT_PASSWORD = 'Charles.2121';
@@ -69,17 +82,26 @@ export default function EmailManagementPage() {
   const [paginationView, setPaginationView] = useState<PaginationView | null>(null);
 
   // Form states
-  const [newUsername, setNewUsername] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [middleName, setMiddleName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [firstNameError, setFirstNameError] = useState<string | null>(null);
+  const [middleNameError, setMiddleNameError] = useState<string | null>(null);
+  const [lastNameError, setLastNameError] = useState<string | null>(null);
   
   // DOB states
   const [dobDay, setDobDay] = useState('');
   const [dobMonth, setDobMonth] = useState('');
   const [dobYear, setDobYear] = useState('');
+
+  // Auto-generate username from first + last name
+  const generatedUsername = (firstName && lastName) 
+    ? (firstName + lastName).toLowerCase() 
+    : '';
 
   // Check permissions
   const canCreateEmail = isAdmin || profile?.permissions?.can_create_email;
@@ -157,32 +179,46 @@ export default function EmailManagementPage() {
 
   const totalPages = Math.ceil(totalAccounts / 30);
 
-  const validateUsername = (username: string): boolean => {
+  const validateName = (name: string, setError: (error: string | null) => void, isRequired: boolean = true): boolean => {
+    if (!name && !isRequired) {
+      setError(null);
+      return true;
+    }
     try {
-      usernameSchema.parse(username);
-      setUsernameError(null);
+      nameSchema.parse(name);
+      setError(null);
       return true;
     } catch (error) {
       if (error instanceof z.ZodError) {
-        setUsernameError(error.errors[0].message);
+        setError(error.errors[0].message);
       }
       return false;
     }
   };
 
-  const handleUsernameChange = (value: string) => {
-    // Auto-convert to lowercase and remove spaces
-    const cleanValue = value.toLowerCase().replace(/\s/g, '');
-    setNewUsername(cleanValue);
-    if (cleanValue) {
-      validateUsername(cleanValue);
+  const handleNameChange = (
+    value: string, 
+    setter: (value: string) => void, 
+    setError: (error: string | null) => void,
+    isRequired: boolean = true
+  ) => {
+    // Convert Turkish chars to English and make uppercase, remove spaces
+    const cleanValue = convertTurkishToEnglish(value).toUpperCase().replace(/\s/g, '');
+    setter(cleanValue);
+    if (cleanValue || isRequired) {
+      validateName(cleanValue, setError, isRequired);
     } else {
-      setUsernameError(null);
+      setError(null);
     }
   };
 
   const handleCreateEmail = async () => {
-    if (!validateUsername(newUsername)) {
+    // Validate names
+    const isFirstNameValid = validateName(firstName, setFirstNameError, true);
+    const isMiddleNameValid = validateName(middleName, setMiddleNameError, false);
+    const isLastNameValid = validateName(lastName, setLastNameError, true);
+    
+    if (!isFirstNameValid || !isMiddleNameValid || !isLastNameValid) {
       return;
     }
 
@@ -196,7 +232,7 @@ export default function EmailManagementPage() {
       return;
     }
 
-    const fullEmail = `${newUsername}@${EMAIL_DOMAIN}`;
+    const fullEmail = `${generatedUsername}@${EMAIL_DOMAIN}`;
     const dateOfBirth = `${dobYear}-${dobMonth.padStart(2, '0')}-${dobDay.padStart(2, '0')}`;
     
     setIsSubmitting(true);
@@ -240,8 +276,12 @@ export default function EmailManagementPage() {
       }
 
       setIsCreateDialogOpen(false);
-      setNewUsername('');
-      setUsernameError(null);
+      setFirstName('');
+      setMiddleName('');
+      setLastName('');
+      setFirstNameError(null);
+      setMiddleNameError(null);
+      setLastNameError(null);
       setDobDay('');
       setDobMonth('');
       setDobYear('');
@@ -455,42 +495,82 @@ export default function EmailManagementPage() {
                     </DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4 mt-4">
+                    {/* First Name */}
                     <div className="space-y-2">
                       <Label className="text-muted-foreground font-mono text-xs">
-                        KULLANICI ADI
+                        AD (First Name) *
                       </Label>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="text"
-                          value={newUsername}
-                          onChange={(e) => handleUsernameChange(e.target.value)}
-                          className={`cyber-input font-mono flex-1 ${usernameError ? 'border-destructive' : ''}`}
-                          placeholder="isimsoyisim"
-                        />
-                        <span className="font-mono text-muted-foreground text-sm">@{EMAIL_DOMAIN}</span>
-                      </div>
-                      {usernameError && (
+                      <Input
+                        type="text"
+                        value={firstName}
+                        onChange={(e) => handleNameChange(e.target.value, setFirstName, setFirstNameError, true)}
+                        className={`cyber-input font-mono ${firstNameError ? 'border-destructive' : ''}`}
+                        placeholder="AHMET"
+                      />
+                      {firstNameError && (
                         <div className="flex items-center gap-2 text-destructive text-xs font-mono">
                           <AlertCircle size={12} />
-                          {usernameError}
+                          {firstNameError}
                         </div>
                       )}
-                      <div className="p-3 bg-muted/30 rounded-lg space-y-1">
-                        <p className="text-xs text-muted-foreground font-mono flex items-center gap-2">
-                          <AlertCircle size={12} className="text-yellow-500" />
-                          <span className="text-yellow-500 font-medium">Önemli:</span>
-                        </p>
-                        <ul className="text-xs text-muted-foreground font-mono list-disc list-inside space-y-1 ml-4">
-                          <li>Sadece küçük harf (a-z) ve rakam (0-9) kullanın</li>
-                          <li>Türkçe karakter (ş, ğ, ü, ö, ç, ı) kullanmayın</li>
-                          <li>Boşluk kullanmayın</li>
-                        </ul>
-                        <p className="text-xs font-mono mt-2">
-                          <span className="text-muted-foreground">Örnek: </span>
-                          <span className="text-primary">bulutkalkan</span>
-                          <span className="text-muted-foreground"> → bulutkalkan@{EMAIL_DOMAIN}</span>
-                        </p>
-                      </div>
+                    </div>
+
+                    {/* Middle Name */}
+                    <div className="space-y-2">
+                      <Label className="text-muted-foreground font-mono text-xs">
+                        İKİNCİ AD (Middle Name)
+                      </Label>
+                      <Input
+                        type="text"
+                        value={middleName}
+                        onChange={(e) => handleNameChange(e.target.value, setMiddleName, setMiddleNameError, false)}
+                        className={`cyber-input font-mono ${middleNameError ? 'border-destructive' : ''}`}
+                        placeholder="ALI (opsiyonel)"
+                      />
+                      {middleNameError && (
+                        <div className="flex items-center gap-2 text-destructive text-xs font-mono">
+                          <AlertCircle size={12} />
+                          {middleNameError}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Last Name */}
+                    <div className="space-y-2">
+                      <Label className="text-muted-foreground font-mono text-xs">
+                        SOYAD (Last Name) *
+                      </Label>
+                      <Input
+                        type="text"
+                        value={lastName}
+                        onChange={(e) => handleNameChange(e.target.value, setLastName, setLastNameError, true)}
+                        className={`cyber-input font-mono ${lastNameError ? 'border-destructive' : ''}`}
+                        placeholder="YILMAZ"
+                      />
+                      {lastNameError && (
+                        <div className="flex items-center gap-2 text-destructive text-xs font-mono">
+                          <AlertCircle size={12} />
+                          {lastNameError}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="p-3 bg-muted/30 rounded-lg space-y-1">
+                      <p className="text-xs text-muted-foreground font-mono flex items-center gap-2">
+                        <AlertCircle size={12} className="text-yellow-500" />
+                        <span className="text-yellow-500 font-medium">Önemli:</span>
+                      </p>
+                      <ul className="text-xs text-muted-foreground font-mono list-disc list-inside space-y-1 ml-4">
+                        <li>İsimler otomatik BÜYÜK HARFE çevrilir</li>
+                        <li>Türkçe karakterler otomatik çevrilir (ş→s, ğ→g, ü→u, ö→o, ç→c, ı→i)</li>
+                        <li>Email: ad + soyad (küçük harflerle)</li>
+                      </ul>
+                      <p className="text-xs font-mono mt-2">
+                        <span className="text-muted-foreground">Örnek: </span>
+                        <span className="text-foreground">AHMET YILMAZ</span>
+                        <span className="text-muted-foreground"> → </span>
+                        <span className="text-primary">ahmetyilmaz@{EMAIL_DOMAIN}</span>
+                      </p>
                     </div>
                     
                     {/* DOB Fields */}
@@ -552,10 +632,14 @@ export default function EmailManagementPage() {
                       </div>
                     </div>
 
-                    {newUsername && !usernameError && dobDay && dobMonth && dobYear && (
+                    {firstName && lastName && !firstNameError && !lastNameError && !middleNameError && dobDay && dobMonth && dobYear && (
                       <div className="p-3 bg-primary/10 rounded-lg border border-primary/30">
-                        <p className="text-xs text-muted-foreground font-mono">Oluşturulacak email:</p>
-                        <p className="font-mono text-primary font-medium">{newUsername}@{EMAIL_DOMAIN}</p>
+                        <p className="text-xs text-muted-foreground font-mono">İsim:</p>
+                        <p className="font-mono text-foreground font-medium">
+                          {firstName} {middleName ? middleName + ' ' : ''}{lastName}
+                        </p>
+                        <p className="text-xs text-muted-foreground font-mono mt-2">Oluşturulacak email:</p>
+                        <p className="font-mono text-primary font-medium">{generatedUsername}@{EMAIL_DOMAIN}</p>
                         <p className="text-xs text-muted-foreground font-mono mt-1">
                           DOB: {dobMonth.padStart(2, '0')}/{dobDay.padStart(2, '0')}/{dobYear}
                         </p>
@@ -564,7 +648,7 @@ export default function EmailManagementPage() {
                     
                     <Button
                       onClick={handleCreateEmail}
-                      disabled={isSubmitting || !newUsername || !!usernameError || !dobDay || !dobMonth || !dobYear}
+                      disabled={isSubmitting || !firstName || !lastName || !!firstNameError || !!lastNameError || !!middleNameError || !dobDay || !dobMonth || !dobYear}
                       className="w-full cyber-glow font-mono"
                     >
                       {isSubmitting ? 'Oluşturuluyor...' : 'Email Oluştur'}
