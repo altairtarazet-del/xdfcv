@@ -160,6 +160,9 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (selectedAccount && selectedMailbox) {
+      // Guard: if mailbox belongs to a previous account, skip fetch
+      if (!mailboxes.some((m) => m.id === selectedMailbox.id)) return;
+
       fetchMessages(selectedAccount.id, selectedMailbox.id);
 
       // Set up polling for realtime updates if enabled
@@ -171,7 +174,7 @@ export default function Dashboard() {
         return () => clearInterval(interval);
       }
     }
-  }, [selectedAccount, selectedMailbox, fetchMessages, profile?.permissions?.realtime_enabled]);
+  }, [selectedAccount, selectedMailbox, mailboxes, fetchMessages, profile?.permissions?.realtime_enabled]);
 
   const filteredMailboxes = mailboxes.filter((mailbox) => {
     if (profile?.permissions?.allowed_mailboxes?.length) {
@@ -236,8 +239,13 @@ export default function Dashboard() {
           <Select
             value={selectedAccount?.id || ''}
             onValueChange={(value) => {
-              const account = accounts.find((a) => a.id === value);
-              setSelectedAccount(account || null);
+              const account = accounts.find((a) => a.id === value) || null;
+              // Prevent mismatched accountId+mailboxId fetches (causes SMTP.dev 404)
+              setSelectedMailbox(null);
+              setSelectedMessage(null);
+              setMessages([]);
+              setMailboxes(account?.mailboxes ?? []);
+              setSelectedAccount(account);
             }}
           >
             <SelectTrigger className="w-64 cyber-input font-mono">
