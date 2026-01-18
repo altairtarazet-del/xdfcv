@@ -18,7 +18,9 @@ serve(async (req) => {
       throw new Error('SMTP API key not configured');
     }
 
-    const { action, accountId, mailboxId, messageId, filters } = await req.json();
+    // Parse body once and extract all needed values
+    const body = await req.json();
+    const { action, accountId, mailboxId, messageId, filters, page, email, password } = body;
 
     const headers = {
       'X-API-KEY': apiKey,
@@ -29,16 +31,21 @@ serve(async (req) => {
 
     switch (action) {
       case 'getAccounts': {
-        const response = await fetch(`${SMTP_API_URL}/accounts`, { headers });
+        // Add page parameter for pagination
+        const url = page ? `${SMTP_API_URL}/accounts?page=${page}` : `${SMTP_API_URL}/accounts`;
+        console.log('Fetching accounts from:', url);
+        const response = await fetch(url, { headers });
         if (!response.ok) {
           const text = await response.text();
           console.error('API Error Response:', text);
           throw new Error(`API Error: ${response.status}`);
         }
         const data = await response.json();
-        // SMTP.dev returns { member: [...] } structure
+        console.log('Accounts response:', JSON.stringify(data));
+        
+        // SMTP.dev returns { member: [...], totalItems, view } structure
         const accounts = data.member || data.data || [];
-        // Map to simpler structure with mailboxes included
+        
         result = { 
           accounts: accounts.map((acc: any) => ({
             id: acc.id,
@@ -49,18 +56,20 @@ serve(async (req) => {
               name: mb.path || mb.name,
               path: mb.path,
             })),
-          }))
+          })),
+          totalItems: data.totalItems || accounts.length,
+          view: data.view || null,
         };
         break;
       }
 
       case 'createAccount': {
-        const { email, password } = await req.json().catch(() => ({}));
-        
+        // Use already parsed body values
         const createBody: any = {};
         if (email) createBody.address = email;
         if (password) createBody.password = password;
 
+        console.log('Creating account with:', JSON.stringify(createBody));
         const response = await fetch(`${SMTP_API_URL}/accounts`, {
           method: 'POST',
           headers,
@@ -77,15 +86,15 @@ serve(async (req) => {
       }
 
       case 'changePassword': {
-        const { accountId: accId, password: newPass } = await req.json().catch(() => ({}));
-        
-        if (!accId) throw new Error('accountId required');
-        if (!newPass) throw new Error('password required');
+        // Use already parsed body values
+        if (!accountId) throw new Error('accountId required');
+        if (!password) throw new Error('password required');
 
-        const response = await fetch(`${SMTP_API_URL}/accounts/${accId}`, {
+        console.log('Changing password for account:', accountId);
+        const response = await fetch(`${SMTP_API_URL}/accounts/${accountId}`, {
           method: 'PATCH',
           headers,
-          body: JSON.stringify({ password: newPass }),
+          body: JSON.stringify({ password }),
         });
         
         if (!response.ok) {
@@ -122,9 +131,10 @@ serve(async (req) => {
         if (!accountId) throw new Error('accountId required');
         if (!mailboxId) throw new Error('mailboxId required');
         
-        // Per docs: list messages is scoped to a mailbox
-        // GET /accounts/{accountId}/mailboxes/{mailboxId}/messages
-        const url = `${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailboxId}/messages`;
+        // Add page parameter for pagination
+        const url = page 
+          ? `${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailboxId}/messages?page=${page}`
+          : `${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailboxId}/messages`;
         console.log('Fetching messages from:', url);
         const response = await fetch(url, { headers });
         if (!response.ok) {
@@ -133,6 +143,8 @@ serve(async (req) => {
           throw new Error(`API Error: ${response.status}`);
         }
         const data = await response.json();
+        console.log('Messages response totalItems:', data.totalItems, 'view:', JSON.stringify(data.view));
+        
         let messages = data.member || data.data || [];
 
         // Apply filters
@@ -167,7 +179,11 @@ serve(async (req) => {
           }
         }
 
-        result = { messages };
+        result = { 
+          messages,
+          totalItems: data.totalItems || messages.length,
+          view: data.view || null,
+        };
         break;
       }
 

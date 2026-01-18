@@ -28,6 +28,8 @@ import {
   User,
   Paperclip,
   Server,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { SMTPDevMailbox, SMTPDevMessage } from '@/types/mail';
 
@@ -36,6 +38,13 @@ interface Account {
   name?: string;
   address?: string;
   mailboxes?: SMTPDevMailbox[];
+}
+
+interface PaginationView {
+  first?: string;
+  last?: string;
+  next?: string;
+  previous?: string;
 }
 
 export default function Dashboard() {
@@ -51,6 +60,11 @@ export default function Dashboard() {
   const [isLoadingMailboxes, setIsLoadingMailboxes] = useState(false);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalMessages, setTotalMessages] = useState(0);
+  const [paginationView, setPaginationView] = useState<PaginationView | null>(null);
 
   const fetchAccounts = useCallback(async () => {
     try {
@@ -113,7 +127,7 @@ export default function Dashboard() {
     }
   }, [toast, accounts]);
 
-  const fetchMessages = useCallback(async (accountId: string, mailboxId: string) => {
+  const fetchMessages = useCallback(async (accountId: string, mailboxId: string, page?: number) => {
     setIsLoadingMessages(true);
     try {
       const permissions = profile?.permissions;
@@ -123,6 +137,7 @@ export default function Dashboard() {
           action: 'getMessages',
           accountId,
           mailboxId,
+          page: page || currentPage,
           filters: {
             timeFilterMinutes: permissions?.time_filter_minutes,
             allowedSenders: permissions?.allowed_senders,
@@ -134,6 +149,8 @@ export default function Dashboard() {
       if (error) throw error;
       const messageList = Array.isArray(data?.messages) ? data.messages : [];
       setMessages(messageList);
+      setTotalMessages(data?.totalItems || messageList.length);
+      setPaginationView(data?.view || null);
     } catch (error: any) {
       console.error('Error fetching messages:', error);
       toast({
@@ -144,7 +161,7 @@ export default function Dashboard() {
     } finally {
       setIsLoadingMessages(false);
     }
-  }, [profile?.permissions, toast]);
+  }, [profile?.permissions, toast, currentPage]);
 
   useEffect(() => {
     fetchAccounts();
@@ -163,18 +180,39 @@ export default function Dashboard() {
       // Guard: if mailbox belongs to a previous account, skip fetch
       if (!mailboxes.some((m) => m.id === selectedMailbox.id)) return;
 
-      fetchMessages(selectedAccount.id, selectedMailbox.id);
+      fetchMessages(selectedAccount.id, selectedMailbox.id, currentPage);
 
       // Set up polling for realtime updates if enabled
       if (profile?.permissions?.realtime_enabled !== false) {
         const interval = setInterval(() => {
-          fetchMessages(selectedAccount.id, selectedMailbox.id);
+          fetchMessages(selectedAccount.id, selectedMailbox.id, currentPage);
         }, 10000);
 
         return () => clearInterval(interval);
       }
     }
-  }, [selectedAccount, selectedMailbox, mailboxes, fetchMessages, profile?.permissions?.realtime_enabled]);
+  }, [selectedAccount, selectedMailbox, mailboxes, fetchMessages, profile?.permissions?.realtime_enabled, currentPage]);
+
+  // Reset pagination when mailbox changes
+  useEffect(() => {
+    setCurrentPage(1);
+    setTotalMessages(0);
+    setPaginationView(null);
+  }, [selectedMailbox]);
+
+  const handlePrevPage = () => {
+    if (paginationView?.previous && currentPage > 1) {
+      setCurrentPage(prev => prev - 1);
+    }
+  };
+
+  const handleNextPage = () => {
+    if (paginationView?.next) {
+      setCurrentPage(prev => prev + 1);
+    }
+  };
+
+  const totalPages = Math.ceil(totalMessages / 30); // SMTP.dev returns 30 per page
 
   const filteredMailboxes = mailboxes.filter((mailbox) => {
     if (profile?.permissions?.allowed_mailboxes?.length) {
@@ -448,6 +486,40 @@ export default function Dashboard() {
                         </div>
                       </button>
                     ))}
+                  </div>
+                )}
+
+                {/* Pagination Controls */}
+                {totalMessages > 0 && (
+                  <div className="flex items-center justify-between pt-4 mt-4 border-t border-border/30">
+                    <span className="font-mono text-xs text-muted-foreground">
+                      Toplam: {totalMessages} mesaj
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handlePrevPage}
+                        disabled={currentPage <= 1 || isLoadingMessages}
+                        className="hover:bg-primary/10 font-mono text-xs"
+                      >
+                        <ChevronLeft size={16} className="mr-1" />
+                        Önceki
+                      </Button>
+                      <span className="font-mono text-sm text-foreground px-2">
+                        {currentPage} / {totalPages || 1}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleNextPage}
+                        disabled={!paginationView?.next || isLoadingMessages}
+                        className="hover:bg-primary/10 font-mono text-xs"
+                      >
+                        Sonraki
+                        <ChevronRight size={16} className="ml-1" />
+                      </Button>
+                    </div>
                   </div>
                 )}
               </ScrollArea>
