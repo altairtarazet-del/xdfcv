@@ -37,6 +37,7 @@ export interface RolePermission {
   can_change_password: boolean;
   can_delete_account: boolean;
   can_delete_emails: boolean;
+  can_edit_background: boolean;
   created_at: string;
   updated_at: string;
 }

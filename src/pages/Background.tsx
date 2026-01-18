@@ -4,6 +4,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Table,
   TableBody,
@@ -12,8 +13,21 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { RefreshCw, Shield, FileSearch, Search, Mail, Calendar, X, User, Copy } from 'lucide-react';
+import { RefreshCw, Shield, FileSearch, Search, Mail, Calendar, X, User, Copy, Edit, Download } from 'lucide-react';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 
@@ -34,9 +48,22 @@ export default function BackgroundPage() {
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSyncing, setIsSyncing] = useState(false);
+  
+  // Edit dialog state
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<EmailAccount | null>(null);
+  const [editFirstName, setEditFirstName] = useState('');
+  const [editMiddleName, setEditMiddleName] = useState('');
+  const [editLastName, setEditLastName] = useState('');
+  const [editDobDay, setEditDobDay] = useState('');
+  const [editDobMonth, setEditDobMonth] = useState('');
+  const [editDobYear, setEditDobYear] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Check permissions - same as email management
+  // Check permissions
   const canManageEmails = isAdmin || profile?.permissions?.can_create_email || profile?.permissions?.can_change_password;
+  const canEditBackground = isAdmin || profile?.permissions?.can_edit_background;
 
   const fetchAccounts = useCallback(async () => {
     setIsLoading(true);
@@ -64,11 +91,95 @@ export default function BackgroundPage() {
     fetchAccounts();
   }, [fetchAccounts]);
 
-  const handleBgcQuery = (account: EmailAccount) => {
-    toast({
-      title: 'Bilgi',
-      description: 'Bu özellik yakında eklenecek',
-    });
+  // Sync SMTP accounts to database
+  const handleSyncAccounts = async () => {
+    setIsSyncing(true);
+    try {
+      // Fetch all accounts from SMTP API
+      const { data: smtpData, error: smtpError } = await supabase.functions.invoke('smtp-api', {
+        body: { action: 'getAccounts', page: 1 },
+      });
+
+      if (smtpError) throw smtpError;
+
+      const smtpAccounts = smtpData?.accounts || [];
+      let syncedCount = 0;
+
+      // Get current user ID
+      const { data: session } = await supabase.auth.getSession();
+      const userId = session?.session?.user?.id;
+
+      for (const smtpAccount of smtpAccounts) {
+        const email = smtpAccount.address || smtpAccount.name;
+        if (!email) continue;
+
+        // Check if already exists
+        const { data: existing } = await supabase
+          .from('email_accounts')
+          .select('id')
+          .eq('email', email)
+          .maybeSingle();
+
+        if (!existing) {
+          // Extract name parts from email
+          const localPart = email.split('@')[0];
+          const parts = localPart
+            .replace(/[._]/g, ' ')
+            .replace(/\d+/g, '')
+            .trim()
+            .split(' ')
+            .filter(Boolean)
+            .map((word: string) => word.toUpperCase());
+
+          let firstName = '';
+          let middleName = '';
+          let lastName = '';
+
+          if (parts.length === 1) {
+            firstName = parts[0];
+          } else if (parts.length === 2) {
+            firstName = parts[0];
+            lastName = parts[1];
+          } else if (parts.length >= 3) {
+            firstName = parts[0];
+            middleName = parts.slice(1, -1).join(' ');
+            lastName = parts[parts.length - 1];
+          }
+
+          // Insert with default DOB (will need to be updated)
+          const { error: insertError } = await supabase
+            .from('email_accounts')
+            .insert({
+              email,
+              date_of_birth: '1990-01-01', // Default - needs to be updated
+              created_by: userId,
+              first_name: firstName || null,
+              middle_name: middleName || null,
+              last_name: lastName || null,
+            });
+
+          if (!insertError) {
+            syncedCount++;
+          }
+        }
+      }
+
+      toast({
+        title: 'Senkronizasyon Tamamlandı',
+        description: `${syncedCount} yeni hesap eklendi`,
+      });
+
+      fetchAccounts();
+    } catch (error: any) {
+      console.error('Error syncing accounts:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Hata',
+        description: 'Senkronizasyon sırasında bir hata oluştu',
+      });
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const formatDateOfBirth = (dateString: string) => {
@@ -82,7 +193,6 @@ export default function BackgroundPage() {
 
   // Get name parts - use saved values if available, otherwise extract from email
   const getNameParts = (account: EmailAccount) => {
-    // If we have saved name data, use it
     if (account.first_name || account.last_name) {
       return {
         first: account.first_name || '',
@@ -91,7 +201,6 @@ export default function BackgroundPage() {
       };
     }
     
-    // Fallback: extract from email for old records
     const localPart = account.email.split('@')[0];
     const parts = localPart
       .replace(/[._]/g, ' ')
@@ -133,6 +242,77 @@ export default function BackgroundPage() {
     }
   };
 
+  // Open edit dialog
+  const openEditDialog = (account: EmailAccount) => {
+    setEditingAccount(account);
+    setEditFirstName(account.first_name || '');
+    setEditMiddleName(account.middle_name || '');
+    setEditLastName(account.last_name || '');
+    
+    // Parse DOB
+    try {
+      const date = new Date(account.date_of_birth);
+      setEditDobDay(date.getDate().toString());
+      setEditDobMonth((date.getMonth() + 1).toString());
+      setEditDobYear(date.getFullYear().toString());
+    } catch {
+      setEditDobDay('');
+      setEditDobMonth('');
+      setEditDobYear('');
+    }
+    
+    setIsEditDialogOpen(true);
+  };
+
+  // Save edited account
+  const handleSaveEdit = async () => {
+    if (!editingAccount) return;
+
+    if (!editDobDay || !editDobMonth || !editDobYear) {
+      toast({
+        variant: 'destructive',
+        title: 'Hata',
+        description: 'Doğum tarihi zorunludur',
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const dateOfBirth = `${editDobYear}-${editDobMonth.padStart(2, '0')}-${editDobDay.padStart(2, '0')}`;
+
+      const { error } = await supabase
+        .from('email_accounts')
+        .update({
+          first_name: editFirstName.toUpperCase() || null,
+          middle_name: editMiddleName.toUpperCase() || null,
+          last_name: editLastName.toUpperCase() || null,
+          date_of_birth: dateOfBirth,
+        })
+        .eq('id', editingAccount.id);
+
+      if (error) throw error;
+
+      toast({
+        title: 'Başarılı',
+        description: 'Hesap bilgileri güncellendi',
+      });
+
+      setIsEditDialogOpen(false);
+      setEditingAccount(null);
+      fetchAccounts();
+    } catch (error: any) {
+      console.error('Error updating account:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Hata',
+        description: 'Güncelleme sırasında bir hata oluştu',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // Filter accounts based on search query
   const filteredAccounts = useMemo(() => {
     if (!searchQuery.trim()) return accounts;
@@ -141,9 +321,30 @@ export default function BackgroundPage() {
     return accounts.filter((account) => {
       const email = account.email.toLowerCase();
       const dob = formatDateOfBirth(account.date_of_birth).toLowerCase();
-      return email.includes(query) || dob.includes(query);
+      const firstName = (account.first_name || '').toLowerCase();
+      const lastName = (account.last_name || '').toLowerCase();
+      return email.includes(query) || dob.includes(query) || firstName.includes(query) || lastName.includes(query);
     });
   }, [accounts, searchQuery]);
+
+  // Generate day options
+  const dayOptions = Array.from({ length: 31 }, (_, i) => i + 1);
+  const monthOptions = [
+    { value: '1', label: 'Ocak' },
+    { value: '2', label: 'Şubat' },
+    { value: '3', label: 'Mart' },
+    { value: '4', label: 'Nisan' },
+    { value: '5', label: 'Mayıs' },
+    { value: '6', label: 'Haziran' },
+    { value: '7', label: 'Temmuz' },
+    { value: '8', label: 'Ağustos' },
+    { value: '9', label: 'Eylül' },
+    { value: '10', label: 'Ekim' },
+    { value: '11', label: 'Kasım' },
+    { value: '12', label: 'Aralık' },
+  ];
+  const currentYear = new Date().getFullYear();
+  const yearOptions = Array.from({ length: 80 }, (_, i) => currentYear - 18 - i);
 
   // Access control
   if (!canManageEmails) {
@@ -176,14 +377,28 @@ export default function BackgroundPage() {
             </p>
           </div>
 
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={fetchAccounts}
-            className="hover:bg-primary/10"
-          >
-            <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
-          </Button>
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSyncAccounts}
+                disabled={isSyncing}
+                className="hover:bg-primary/10 font-mono text-xs"
+              >
+                <Download size={14} className={`mr-1 ${isSyncing ? 'animate-bounce' : ''}`} />
+                {isSyncing ? 'Senkronize ediliyor...' : 'SMTP Senkronize Et'}
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={fetchAccounts}
+              className="hover:bg-primary/10"
+            >
+              <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
+            </Button>
+          </div>
         </div>
 
         {/* Search Bar */}
@@ -193,7 +408,7 @@ export default function BackgroundPage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Email veya doğum tarihine göre ara..."
+            placeholder="Email, isim veya doğum tarihine göre ara..."
             className="cyber-input font-mono pl-10 pr-10"
           />
           {searchQuery && (
@@ -322,15 +537,19 @@ export default function BackgroundPage() {
                         </button>
                       </TableCell>
                       <TableCell>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleBgcQuery(account)}
-                          className="hover:bg-primary/10 hover:text-primary hover:border-primary font-mono text-xs"
-                        >
-                          <Search size={14} className="mr-1" />
-                          BGC Sorgula
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          {canEditBackground && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openEditDialog(account)}
+                              className="hover:bg-primary/10 hover:text-primary hover:border-primary font-mono text-xs"
+                            >
+                              <Edit size={14} className="mr-1" />
+                              Düzenle
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -352,6 +571,118 @@ export default function BackgroundPage() {
           )}
         </div>
       </div>
+
+      {/* Edit Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="cyber-card border-primary/30">
+          <DialogHeader>
+            <DialogTitle className="font-mono text-foreground flex items-center gap-2">
+              <Edit size={20} className="text-primary" />
+              Hesap Bilgilerini Düzenle
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            {/* Email (read-only) */}
+            <div className="space-y-2">
+              <Label className="text-muted-foreground font-mono text-xs">EMAIL</Label>
+              <Input
+                value={editingAccount?.email || ''}
+                disabled
+                className="cyber-input font-mono opacity-50"
+              />
+            </div>
+
+            {/* First Name */}
+            <div className="space-y-2">
+              <Label className="text-muted-foreground font-mono text-xs">FIRST NAME *</Label>
+              <Input
+                value={editFirstName}
+                onChange={(e) => setEditFirstName(e.target.value.toUpperCase())}
+                className="cyber-input font-mono"
+                placeholder="JOHN"
+              />
+            </div>
+
+            {/* Middle Name */}
+            <div className="space-y-2">
+              <Label className="text-muted-foreground font-mono text-xs">MIDDLE NAME</Label>
+              <Input
+                value={editMiddleName}
+                onChange={(e) => setEditMiddleName(e.target.value.toUpperCase())}
+                className="cyber-input font-mono"
+                placeholder="WILLIAM"
+              />
+            </div>
+
+            {/* Last Name */}
+            <div className="space-y-2">
+              <Label className="text-muted-foreground font-mono text-xs">LAST NAME *</Label>
+              <Input
+                value={editLastName}
+                onChange={(e) => setEditLastName(e.target.value.toUpperCase())}
+                className="cyber-input font-mono"
+                placeholder="DOE"
+              />
+            </div>
+
+            {/* DOB */}
+            <div className="space-y-2">
+              <Label className="text-muted-foreground font-mono text-xs flex items-center gap-2">
+                <Calendar size={14} />
+                DOĞUM TARİHİ *
+              </Label>
+              <div className="grid grid-cols-3 gap-2">
+                <Select value={editDobDay} onValueChange={setEditDobDay}>
+                  <SelectTrigger className="cyber-input font-mono">
+                    <SelectValue placeholder="Gün" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {dayOptions.map((day) => (
+                      <SelectItem key={day} value={day.toString()}>
+                        {day}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={editDobMonth} onValueChange={setEditDobMonth}>
+                  <SelectTrigger className="cyber-input font-mono">
+                    <SelectValue placeholder="Ay" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {monthOptions.map((month) => (
+                      <SelectItem key={month.value} value={month.value}>
+                        {month.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={editDobYear} onValueChange={setEditDobYear}>
+                  <SelectTrigger className="cyber-input font-mono">
+                    <SelectValue placeholder="Yıl" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {yearOptions.map((year) => (
+                      <SelectItem key={year} value={year.toString()}>
+                        {year}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <Button
+              onClick={handleSaveEdit}
+              disabled={isSubmitting}
+              className="w-full cyber-glow font-mono"
+            >
+              {isSubmitting ? 'Kaydediliyor...' : 'Kaydet'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

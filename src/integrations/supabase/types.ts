@@ -108,6 +108,7 @@ export type Database = {
           can_create_email: boolean | null
           can_delete_account: boolean | null
           can_delete_emails: boolean | null
+          can_edit_background: boolean | null
           created_at: string
           custom_role_id: string
           id: string
@@ -124,6 +125,7 @@ export type Database = {
           can_create_email?: boolean | null
           can_delete_account?: boolean | null
           can_delete_emails?: boolean | null
+          can_edit_background?: boolean | null
           created_at?: string
           custom_role_id: string
           id?: string
@@ -140,6 +142,7 @@ export type Database = {
           can_create_email?: boolean | null
           can_delete_account?: boolean | null
           can_delete_emails?: boolean | null
+          can_edit_background?: boolean | null
           created_at?: string
           custom_role_id?: string
           id?: string
