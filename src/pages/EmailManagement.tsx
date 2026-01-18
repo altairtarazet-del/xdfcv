@@ -75,24 +75,52 @@ export default function EmailManagementPage() {
   const canDeleteAccount = isAdmin || profile?.permissions?.can_delete_account;
   const canDeleteEmails = isAdmin || profile?.permissions?.can_delete_emails;
 
-  const fetchAccounts = useCallback(async (page?: number) => {
+  const [apiError, setApiError] = useState<string | null>(null);
+
+  const fetchAccounts = useCallback(async (page?: number, retryCount = 0) => {
     setIsLoading(true);
+    setApiError(null);
     try {
       const { data, error } = await supabase.functions.invoke('smtp-api', {
         body: { action: 'getAccounts', page: page || currentPage },
       });
 
       if (error) throw error;
+      
+      // Check for API error in response
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+      
       const accountList = Array.isArray(data?.accounts) ? data.accounts : [];
       setAccounts(accountList);
       setTotalAccounts(data?.totalItems || accountList.length);
       setPaginationView(data?.view || null);
     } catch (error: any) {
       console.error('Error fetching accounts:', error);
+      const errorMessage = error?.message || 'Bilinmeyen hata';
+      
+      // Check if it's a server error (500, 502, 503, 504)
+      const isServerError = errorMessage.includes('500') || errorMessage.includes('502') || 
+                           errorMessage.includes('503') || errorMessage.includes('504');
+      
+      // Auto-retry once for server errors
+      if (isServerError && retryCount < 1) {
+        console.log('Server error, retrying in 2 seconds...');
+        setTimeout(() => fetchAccounts(page, retryCount + 1), 2000);
+        return;
+      }
+      
+      setApiError(isServerError 
+        ? 'SMTP.dev servisi geçici olarak kullanılamıyor. Lütfen birkaç dakika bekleyip tekrar deneyin.'
+        : 'Hesaplar yüklenirken bir hata oluştu');
+      
       toast({
         variant: 'destructive',
-        title: 'Hata',
-        description: 'Hesaplar yüklenirken bir hata oluştu',
+        title: 'Bağlantı Hatası',
+        description: isServerError 
+          ? 'Mail servisi geçici olarak yanıt vermiyor. Lütfen tekrar deneyin.'
+          : 'Hesaplar yüklenirken bir hata oluştu',
       });
     } finally {
       setIsLoading(false);
@@ -451,6 +479,22 @@ export default function EmailManagementPage() {
                     <span className="text-muted-foreground font-mono animate-pulse">
                       Yükleniyor...
                     </span>
+                  </TableCell>
+                </TableRow>
+              ) : apiError ? (
+                <TableRow>
+                  <TableCell colSpan={3} className="text-center py-8">
+                    <AlertCircle size={32} className="mx-auto text-destructive mb-2" />
+                    <p className="text-destructive font-mono text-sm mb-2">{apiError}</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fetchAccounts(currentPage)}
+                      className="font-mono"
+                    >
+                      <RefreshCw size={14} className="mr-2" />
+                      Tekrar Dene
+                    </Button>
                   </TableCell>
                 </TableRow>
               ) : accounts.length === 0 ? (
