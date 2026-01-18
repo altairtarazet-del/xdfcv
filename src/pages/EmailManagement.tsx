@@ -487,18 +487,6 @@ export default function EmailManagementPage() {
                         DOĞUM TARİHİ
                       </Label>
                       <div className="grid grid-cols-3 gap-2">
-                        <Select value={dobDay} onValueChange={setDobDay}>
-                          <SelectTrigger className="cyber-input font-mono">
-                            <SelectValue placeholder="Gün" />
-                          </SelectTrigger>
-                          <SelectContent className="bg-background border-border z-50">
-                            {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
-                              <SelectItem key={day} value={String(day)} className="font-mono">
-                                {String(day).padStart(2, '0')}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
                         <Select value={dobMonth} onValueChange={setDobMonth}>
                           <SelectTrigger className="cyber-input font-mono">
                             <SelectValue placeholder="Ay" />
@@ -524,6 +512,18 @@ export default function EmailManagementPage() {
                             ))}
                           </SelectContent>
                         </Select>
+                        <Select value={dobDay} onValueChange={setDobDay}>
+                          <SelectTrigger className="cyber-input font-mono">
+                            <SelectValue placeholder="Gün" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-background border-border z-50">
+                            {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+                              <SelectItem key={day} value={String(day)} className="font-mono">
+                                {String(day).padStart(2, '0')}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <Select value={dobYear} onValueChange={setDobYear}>
                           <SelectTrigger className="cyber-input font-mono">
                             <SelectValue placeholder="Yıl" />
@@ -544,7 +544,7 @@ export default function EmailManagementPage() {
                         <p className="text-xs text-muted-foreground font-mono">Oluşturulacak email:</p>
                         <p className="font-mono text-primary font-medium">{newUsername}@{EMAIL_DOMAIN}</p>
                         <p className="text-xs text-muted-foreground font-mono mt-1">
-                          DOB: {dobDay.padStart(2, '0')}/{dobMonth.padStart(2, '0')}/{dobYear}
+                          DOB: {dobMonth.padStart(2, '0')}/{dobDay.padStart(2, '0')}/{dobYear}
                         </p>
                       </div>
                     )}
