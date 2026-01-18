@@ -16,14 +16,13 @@ const authSchema = z.object({
 });
 
 export default function Auth() {
-  const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [terminalText, setTerminalText] = useState('');
   
-  const { signIn, signUp, user } = useAuth();
+  const { signIn, user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -34,9 +33,7 @@ export default function Auth() {
   }, [user, navigate]);
 
   useEffect(() => {
-    const text = isLogin 
-      ? '> Güvenli bağlantı kuruluyor...\n> Kimlik doğrulama modülü aktif'
-      : '> Yeni kullanıcı kaydı başlatılıyor...\n> Güvenlik protokolleri yükleniyor';
+    const text = '> Güvenli bağlantı kuruluyor...\n> Kimlik doğrulama modülü aktif\n> Erişim için yetkilendirme bekleniyor...';
     
     let i = 0;
     setTerminalText('');
@@ -50,7 +47,7 @@ export default function Auth() {
     }, 30);
 
     return () => clearInterval(interval);
-  }, [isLogin]);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,45 +65,20 @@ export default function Auth() {
         return;
       }
 
-      if (isLogin) {
-        const { error } = await signIn(email, password);
-        if (error) {
-          toast({
-            variant: 'destructive',
-            title: 'Giriş Başarısız',
-            description: error.message === 'Invalid login credentials' 
-              ? 'E-posta veya şifre hatalı' 
-              : error.message,
-          });
-        } else {
-          toast({
-            title: 'Giriş Başarılı',
-            description: 'Sisteme hoş geldiniz!',
-          });
-        }
+      const { error } = await signIn(email, password);
+      if (error) {
+        toast({
+          variant: 'destructive',
+          title: 'Giriş Başarısız',
+          description: error.message === 'Invalid login credentials' 
+            ? 'E-posta veya şifre hatalı' 
+            : error.message,
+        });
       } else {
-        const { error } = await signUp(email, password);
-        if (error) {
-          if (error.message.includes('already registered')) {
-            toast({
-              variant: 'destructive',
-              title: 'Kayıt Başarısız',
-              description: 'Bu e-posta adresi zaten kayıtlı',
-            });
-          } else {
-            toast({
-              variant: 'destructive',
-              title: 'Kayıt Başarısız',
-              description: error.message,
-            });
-          }
-        } else {
-          toast({
-            title: 'Kayıt Başarılı',
-            description: 'Hesabınız oluşturuldu, giriş yapabilirsiniz.',
-          });
-          setIsLogin(true);
-        }
+        toast({
+          title: 'Giriş Başarılı',
+          description: 'Sisteme hoş geldiniz!',
+        });
       }
     } finally {
       setIsLoading(false);
@@ -140,29 +112,10 @@ export default function Auth() {
 
         {/* Auth Form */}
         <div className="cyber-card rounded-lg p-6">
-          <div className="flex mb-6">
-            <button
-              type="button"
-              onClick={() => setIsLogin(true)}
-              className={`flex-1 py-2 font-mono text-sm transition-all border-b-2 ${
-                isLogin 
-                  ? 'border-primary text-primary cyber-glow-text' 
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              GİRİŞ YAP
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsLogin(false)}
-              className={`flex-1 py-2 font-mono text-sm transition-all border-b-2 ${
-                !isLogin 
-                  ? 'border-primary text-primary cyber-glow-text' 
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              KAYIT OL
-            </button>
+          <div className="mb-6 pb-2 border-b border-primary/30">
+            <h2 className="font-mono text-lg text-primary cyber-glow-text text-center">
+              SİSTEM GİRİŞİ
+            </h2>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -178,7 +131,7 @@ export default function Auth() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="cyber-input pl-10 font-mono"
-                  placeholder="admin@dashermail.com"
+                  placeholder="user@dashermail.com"
                   required
                 />
               </div>
@@ -217,13 +170,17 @@ export default function Auth() {
               {isLoading ? (
                 <span className="flex items-center gap-2">
                   <span className="animate-spin">⟳</span>
-                  İŞLENİYOR...
+                  DOĞRULANIYOR...
                 </span>
               ) : (
-                isLogin ? 'SİSTEME GİRİŞ' : 'HESAP OLUŞTUR'
+                'SİSTEME GİRİŞ'
               )}
             </Button>
           </form>
+
+          <p className="text-center text-muted-foreground text-xs mt-4 font-mono">
+            Hesap için sistem yöneticinize başvurun
+          </p>
         </div>
 
         {/* Footer */}
