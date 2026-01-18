@@ -21,6 +21,7 @@ export interface SMTPDevMessage {
   date?: string;
   createdAt?: string;
   attachments?: Array<{
+    id?: string;
     filename: string;
     contentType?: string;
     size?: number;

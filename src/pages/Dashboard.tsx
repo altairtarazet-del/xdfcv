@@ -72,6 +72,7 @@ export default function Dashboard() {
   const [isLoadingFullMessage, setIsLoadingFullMessage] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [accountSearchOpen, setAccountSearchOpen] = useState(false);
+  const [downloadingAttachment, setDownloadingAttachment] = useState<string | null>(null);
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [totalMessages, setTotalMessages] = useState(0);
@@ -274,6 +275,66 @@ export default function Dashboard() {
   const handleCloseMessageDialog = () => {
     setSelectedMessage(null);
     setFullMessageData(null);
+  };
+
+  const handleDownloadAttachment = async (attachment: { id?: string; filename: string; contentType?: string }) => {
+    if (!selectedAccount || !selectedMailbox || !selectedMessage || !attachment.id) {
+      toast({
+        variant: 'destructive',
+        title: 'Hata',
+        description: 'Ek indirilemedi - gerekli bilgiler eksik',
+      });
+      return;
+    }
+
+    setDownloadingAttachment(attachment.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('smtp-api', {
+        body: {
+          action: 'getAttachment',
+          accountId: selectedAccount.id,
+          mailboxId: selectedMailbox.id,
+          messageId: selectedMessage.id,
+          attachmentId: attachment.id,
+          filename: attachment.filename,
+        },
+      });
+
+      if (error) throw error;
+
+      // Convert base64 to blob and download
+      const byteCharacters = atob(data.data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: data.contentType || 'application/octet-stream' });
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = attachment.filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: 'Başarılı',
+        description: `${attachment.filename} indirildi`,
+      });
+    } catch (error: any) {
+      console.error('Error downloading attachment:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Hata',
+        description: 'Ek indirilirken bir hata oluştu',
+      });
+    } finally {
+      setDownloadingAttachment(null);
+    }
   };
 
   const totalPages = Math.ceil(totalMessages / 30); // SMTP.dev returns 30 per page
@@ -661,13 +722,18 @@ export default function Dashboard() {
                       <span className="text-muted-foreground">Ekler:</span>
                       <div className="flex flex-wrap gap-2 mt-1">
                         {(fullMessageData?.attachments || selectedMessage.attachments)?.map((att, i) => (
-                          <span
+                          <button
                             key={i}
-                            className="px-2 py-1 bg-muted rounded text-xs flex items-center gap-1"
+                            onClick={() => handleDownloadAttachment(att)}
+                            className="px-2 py-1 bg-muted rounded text-xs flex items-center gap-1 hover:bg-primary/20 transition-colors cursor-pointer"
+                            title="İndirmek için tıkla"
                           >
                             <Paperclip size={12} />
                             {att.filename}
-                          </span>
+                            {downloadingAttachment === att.id && (
+                              <RefreshCw size={12} className="animate-spin ml-1" />
+                            )}
+                          </button>
                         ))}
                       </div>
                     </div>

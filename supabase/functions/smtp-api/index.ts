@@ -224,6 +224,37 @@ serve(async (req) => {
         break;
       }
 
+      case 'getAttachment': {
+        const { attachmentId } = body;
+        if (!accountId) throw new Error('accountId required');
+        if (!mailboxId) throw new Error('mailboxId required');
+        if (!messageId) throw new Error('messageId required');
+        if (!attachmentId) throw new Error('attachmentId required');
+
+        console.log('Fetching attachment:', attachmentId);
+        const response = await fetch(
+          `${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailboxId}/messages/${messageId}/attachments/${attachmentId}`,
+          { headers }
+        );
+        if (!response.ok) {
+          const text = await response.text();
+          console.error('API Error Response:', text);
+          throw new Error(`API Error: ${response.status}`);
+        }
+        
+        // Get the attachment data as arrayBuffer then convert to base64
+        const arrayBuffer = await response.arrayBuffer();
+        const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+        const contentType = response.headers.get('content-type') || 'application/octet-stream';
+        
+        result = { 
+          data: base64, 
+          contentType,
+          filename: body.filename || 'attachment'
+        };
+        break;
+      }
+
       case 'deleteAccount': {
         if (!accountId) throw new Error('accountId required');
 
