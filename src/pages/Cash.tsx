@@ -157,47 +157,51 @@ export default function CashPage() {
     fetchData();
   }, [fetchData]);
 
-  // Calculate accounts with payment info
+  // Calculate accounts with payment info (exclude 'acildi' status)
   const accountsWithPayments: AccountWithPayments[] = useMemo(() => {
-    return accounts.map(account => {
-      const accountTransactions = transactions.filter(t => t.email_account_id === account.id);
-      
-      const firstPayment = accountTransactions.find(t => t.transaction_type === 'payment' && t.payment_stage === 'first_payment');
-      const secondPayment = accountTransactions.find(t => t.transaction_type === 'payment' && t.payment_stage === 'second_payment');
-      const firstRefund = accountTransactions.find(t => t.transaction_type === 'refund' && t.payment_stage === 'first_payment');
-      const secondRefund = accountTransactions.find(t => t.transaction_type === 'refund' && t.payment_stage === 'second_payment');
-      
-      const totalPaid = (firstPayment?.amount || 0) + (secondPayment?.amount || 0);
-      const totalRefunded = (firstRefund?.amount || 0) + (secondRefund?.amount || 0);
-      
-      // Determine status display
-      let statusDisplay: 'kasada' | 'iade_edildi' | 'beklemede' = 'beklemede';
-      if (totalRefunded > 0 && totalRefunded >= totalPaid) {
-        statusDisplay = 'iade_edildi';
-      } else if (account.status === 'aktif' || account.status === 'acildi') {
-        statusDisplay = 'kasada';
-      } else if (account.status === 'kapandi') {
-        statusDisplay = totalRefunded > 0 ? 'iade_edildi' : 'beklemede';
-      }
-      
-      return {
-        ...account,
-        first_payment: firstPayment?.amount || null,
-        second_payment: secondPayment?.amount || null,
-        first_refund: firstRefund?.amount || null,
-        second_refund: secondRefund?.amount || null,
-        total_paid: totalPaid,
-        total_refunded: totalRefunded,
-        status_display: statusDisplay,
-      };
-    });
+    // Filter out 'acildi' accounts - payments start after background
+    return accounts
+      .filter(account => account.status !== 'acildi')
+      .map(account => {
+        const accountTransactions = transactions.filter(t => t.email_account_id === account.id);
+        
+        const firstPayment = accountTransactions.find(t => t.transaction_type === 'payment' && t.payment_stage === 'first_payment');
+        const secondPayment = accountTransactions.find(t => t.transaction_type === 'payment' && t.payment_stage === 'second_payment');
+        const firstRefund = accountTransactions.find(t => t.transaction_type === 'refund' && t.payment_stage === 'first_payment');
+        const secondRefund = accountTransactions.find(t => t.transaction_type === 'refund' && t.payment_stage === 'second_payment');
+        
+        const totalPaid = (firstPayment?.amount || 0) + (secondPayment?.amount || 0);
+        const totalRefunded = (firstRefund?.amount || 0) + (secondRefund?.amount || 0);
+        
+        // Determine status display
+        let statusDisplay: 'kasada' | 'iade_edildi' | 'beklemede' = 'beklemede';
+        if (totalRefunded > 0 && totalRefunded >= totalPaid) {
+          statusDisplay = 'iade_edildi';
+        } else if (account.status === 'aktif') {
+          statusDisplay = 'kasada';
+        } else if (account.status === 'kapandi') {
+          statusDisplay = totalRefunded > 0 ? 'iade_edildi' : 'beklemede';
+        }
+        
+        return {
+          ...account,
+          first_payment: firstPayment?.amount || null,
+          second_payment: secondPayment?.amount || null,
+          first_refund: firstRefund?.amount || null,
+          second_refund: secondRefund?.amount || null,
+          total_paid: totalPaid,
+          total_refunded: totalRefunded,
+          status_display: statusDisplay,
+        };
+      });
   }, [accounts, transactions]);
 
   // Filter accounts
   const filteredAccounts = useMemo(() => {
     let result = accountsWithPayments;
     
-    if (filterStatus !== 'all') {
+    // Don't filter by 'acildi' since they're already excluded
+    if (filterStatus !== 'all' && filterStatus !== 'acildi') {
       result = result.filter(a => a.status === filterStatus);
     }
     
@@ -213,20 +217,42 @@ export default function CashPage() {
     return result;
   }, [accountsWithPayments, filterStatus, searchQuery]);
 
-  // Calculate totals
+  // Calculate totals with new logic:
+  // Brüt Kasa = All payments total
+  // Net Kasa = Only 'aktif' accounts' payments
+  // Total Refund = All refunds
   const totals = useMemo(() => {
-    const totalIn = transactions
+    // Brüt Kasa: All payment transactions
+    const brutKasa = transactions
       .filter(t => t.transaction_type === 'payment')
       .reduce((sum, t) => sum + Number(t.amount), 0);
-    const totalOut = transactions
+    
+    // Total Refunds
+    const totalRefund = transactions
       .filter(t => t.transaction_type === 'refund')
       .reduce((sum, t) => sum + Number(t.amount), 0);
+    
+    // Net Kasa: Only payments from 'aktif' accounts
+    const aktifAccountIds = new Set(
+      accounts
+        .filter(a => a.status === 'aktif')
+        .map(a => a.id)
+    );
+    
+    const netKasa = transactions
+      .filter(t => 
+        t.transaction_type === 'payment' && 
+        t.email_account_id &&
+        aktifAccountIds.has(t.email_account_id)
+      )
+      .reduce((sum, t) => sum + Number(t.amount), 0);
+    
     return {
-      totalIn,
-      totalOut,
-      net: totalIn - totalOut,
+      brutKasa,
+      totalRefund,
+      netKasa,
     };
-  }, [transactions]);
+  }, [transactions, accounts]);
 
   // Open payment dialog
   const openPaymentDialog = (account: EmailAccount, stage: 'first_payment' | 'second_payment') => {
@@ -426,24 +452,25 @@ export default function CashPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card className="cyber-card">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-mono text-muted-foreground">Toplam Giren</CardTitle>
+              <CardTitle className="text-sm font-mono text-muted-foreground">Brüt Kasa</CardTitle>
               <TrendingUp className="h-4 w-4 text-green-500" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold font-mono text-green-400">
-                ${totals.totalIn.toLocaleString()}
+                ${totals.brutKasa.toLocaleString()}
               </div>
+              <p className="text-xs text-muted-foreground mt-1">Tüm ödemeler</p>
             </CardContent>
           </Card>
           
           <Card className="cyber-card">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-mono text-muted-foreground">Toplam Çıkan (İade)</CardTitle>
+              <CardTitle className="text-sm font-mono text-muted-foreground">Toplam İade</CardTitle>
               <TrendingDown className="h-4 w-4 text-red-500" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold font-mono text-red-400">
-                ${totals.totalOut.toLocaleString()}
+                ${totals.totalRefund.toLocaleString()}
               </div>
             </CardContent>
           </Card>
@@ -454,9 +481,10 @@ export default function CashPage() {
               <DollarSign className="h-4 w-4 text-primary" />
             </CardHeader>
             <CardContent>
-              <div className={`text-2xl font-bold font-mono ${totals.net >= 0 ? 'text-primary' : 'text-red-400'}`}>
-                ${totals.net.toLocaleString()}
+              <div className={`text-2xl font-bold font-mono ${totals.netKasa >= 0 ? 'text-primary' : 'text-red-400'}`}>
+                ${totals.netKasa.toLocaleString()}
               </div>
+              <p className="text-xs text-muted-foreground mt-1">Sadece aktif hesaplar</p>
             </CardContent>
           </Card>
         </div>
@@ -488,11 +516,14 @@ export default function CashPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all" className="font-mono">Tüm Durumlar</SelectItem>
-              {Object.entries(statusConfig).map(([key, config]) => (
-                <SelectItem key={key} value={key} className="font-mono">
-                  <span className={config.color}>{config.label}</span>
-                </SelectItem>
-              ))}
+              {/* Exclude 'acildi' from filter options since those accounts aren't shown */}
+              {Object.entries(statusConfig)
+                .filter(([key]) => key !== 'acildi')
+                .map(([key, config]) => (
+                  <SelectItem key={key} value={key} className="font-mono">
+                    <span className={config.color}>{config.label}</span>
+                  </SelectItem>
+                ))}
             </SelectContent>
           </Select>
         </div>
