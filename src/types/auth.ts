@@ -1,0 +1,43 @@
+export type AppRole = 'admin' | 'moderator' | 'user';
+
+export interface UserProfile {
+  id: string;
+  user_id: string;
+  email: string;
+  display_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomRole {
+  id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserRole {
+  id: string;
+  user_id: string;
+  role: AppRole;
+  custom_role_id: string | null;
+}
+
+export interface RolePermission {
+  id: string;
+  custom_role_id: string;
+  time_filter_minutes: number | null;
+  allowed_mailboxes: string[] | null;
+  allowed_senders: string[] | null;
+  allowed_receivers: string[] | null;
+  realtime_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserWithRole extends UserProfile {
+  role?: AppRole;
+  custom_role?: CustomRole | null;
+  permissions?: RolePermission | null;
+}
