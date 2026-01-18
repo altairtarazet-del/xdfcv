@@ -18,27 +18,53 @@ serve(async (req) => {
       throw new Error('SMTP API key not configured');
     }
 
-    const { action, mailboxId, filters } = await req.json();
+    const { action, accountId, mailboxId, messageId, filters } = await req.json();
 
     const headers = {
-      'Authorization': `Bearer ${apiKey}`,
+      'X-API-KEY': apiKey,
       'Content-Type': 'application/json',
     };
 
     let result;
 
     switch (action) {
+      case 'getAccounts': {
+        // Get list of accounts
+        const response = await fetch(`${SMTP_API_URL}/accounts`, { headers });
+        if (!response.ok) {
+          const text = await response.text();
+          console.error('API Error Response:', text);
+          throw new Error(`API Error: ${response.status} - ${text.substring(0, 200)}`);
+        }
+        const data = await response.json();
+        result = { accounts: data.data || data };
+        break;
+      }
+
       case 'getMailboxes': {
-        const response = await fetch(`${SMTP_API_URL}/mailboxes`, { headers });
+        if (!accountId) throw new Error('accountId required');
+        
+        const response = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes`, { headers });
+        if (!response.ok) {
+          const text = await response.text();
+          console.error('API Error Response:', text);
+          throw new Error(`API Error: ${response.status}`);
+        }
         const data = await response.json();
         result = { mailboxes: data.data || data };
         break;
       }
 
       case 'getMessages': {
+        if (!accountId) throw new Error('accountId required');
         if (!mailboxId) throw new Error('mailboxId required');
         
-        const response = await fetch(`${SMTP_API_URL}/mailboxes/${mailboxId}/messages`, { headers });
+        const response = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailboxId}/messages`, { headers });
+        if (!response.ok) {
+          const text = await response.text();
+          console.error('API Error Response:', text);
+          throw new Error(`API Error: ${response.status}`);
+        }
         const data = await response.json();
         let messages = data.data || data || [];
 
@@ -48,23 +74,27 @@ serve(async (req) => {
 
           if (filters.timeFilterMinutes) {
             const cutoff = new Date(now.getTime() - filters.timeFilterMinutes * 60000);
-            messages = messages.filter((m: any) => new Date(m.date) >= cutoff);
+            messages = messages.filter((m: any) => new Date(m.createdAt || m.date) >= cutoff);
           }
 
           if (filters.allowedSenders?.length) {
             messages = messages.filter((m: any) => 
-              filters.allowedSenders.some((s: string) => 
-                s.startsWith('*@') 
-                  ? m.from.address.endsWith(s.slice(1))
-                  : m.from.address === s
-              )
+              filters.allowedSenders.some((s: string) => {
+                const fromAddr = m.from?.address || m.from || '';
+                return s.startsWith('*@') 
+                  ? fromAddr.endsWith(s.slice(1))
+                  : fromAddr === s;
+              })
             );
           }
 
           if (filters.allowedReceivers?.length) {
-            messages = messages.filter((m: any) =>
-              m.to.some((t: any) => filters.allowedReceivers.includes(t.address))
-            );
+            messages = messages.filter((m: any) => {
+              const toAddrs = Array.isArray(m.to) 
+                ? m.to.map((t: any) => t.address || t) 
+                : [m.to];
+              return toAddrs.some((addr: string) => filters.allowedReceivers.includes(addr));
+            });
           }
         }
 
@@ -73,11 +103,16 @@ serve(async (req) => {
       }
 
       case 'getMessage': {
+        if (!accountId) throw new Error('accountId required');
         if (!mailboxId) throw new Error('mailboxId required');
-        const { messageId } = await req.json();
         if (!messageId) throw new Error('messageId required');
 
-        const response = await fetch(`${SMTP_API_URL}/mailboxes/${mailboxId}/messages/${messageId}`, { headers });
+        const response = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailboxId}/messages/${messageId}`, { headers });
+        if (!response.ok) {
+          const text = await response.text();
+          console.error('API Error Response:', text);
+          throw new Error(`API Error: ${response.status}`);
+        }
         result = await response.json();
         break;
       }
