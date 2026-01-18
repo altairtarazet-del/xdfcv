@@ -13,7 +13,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
-import { RefreshCw, Shield, FileSearch, Search, Mail, Calendar, X } from 'lucide-react';
+import { RefreshCw, Shield, FileSearch, Search, Mail, Calendar, X, User, Copy } from 'lucide-react';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 
@@ -74,6 +74,38 @@ export default function BackgroundPage() {
       return format(date, 'MM/dd/yyyy', { locale: tr });
     } catch {
       return dateString;
+    }
+  };
+
+  // Extract name from email (e.g., john.doe@example.com -> John Doe)
+  const extractNameFromEmail = (email: string) => {
+    const localPart = email.split('@')[0];
+    // Replace dots, underscores, numbers with spaces and capitalize
+    const name = localPart
+      .replace(/[._]/g, ' ')
+      .replace(/\d+/g, '')
+      .trim()
+      .split(' ')
+      .filter(Boolean)
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+    return name || localPart;
+  };
+
+  // Copy to clipboard
+  const copyToClipboard = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({
+        title: 'Kopyalandı',
+        description: `${label} panoya kopyalandı`,
+      });
+    } catch {
+      toast({
+        variant: 'destructive',
+        title: 'Hata',
+        description: 'Kopyalama başarısız',
+      });
     }
   };
 
@@ -157,6 +189,12 @@ export default function BackgroundPage() {
               <TableRow className="border-b border-border/50">
                 <TableHead className="font-mono text-muted-foreground">
                   <div className="flex items-center gap-2">
+                    <User size={14} />
+                    İSİM
+                  </div>
+                </TableHead>
+                <TableHead className="font-mono text-muted-foreground">
+                  <div className="flex items-center gap-2">
                     <Mail size={14} />
                     EMAIL
                   </div>
@@ -173,7 +211,7 @@ export default function BackgroundPage() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={3} className="text-center py-8">
+                  <TableCell colSpan={4} className="text-center py-8">
                     <span className="text-muted-foreground font-mono animate-pulse">
                       Yükleniyor...
                     </span>
@@ -181,7 +219,7 @@ export default function BackgroundPage() {
                 </TableRow>
               ) : filteredAccounts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={3} className="text-center py-8">
+                  <TableCell colSpan={4} className="text-center py-8">
                     <FileSearch size={32} className="mx-auto text-muted-foreground mb-2" />
                     <span className="text-muted-foreground font-mono">
                       {searchQuery ? 'Arama sonucu bulunamadı' : 'Henüz kayıtlı email hesabı yok'}
@@ -194,29 +232,55 @@ export default function BackgroundPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredAccounts.map((account) => (
-                  <TableRow key={account.id} className="border-b border-border/30">
-                    <TableCell className="font-mono text-sm">
-                      <span className="px-2 py-1 bg-primary/20 text-primary rounded">
-                        {account.email}
-                      </span>
-                    </TableCell>
-                    <TableCell className="font-mono text-sm text-foreground">
-                      {formatDateOfBirth(account.date_of_birth)}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleBgcQuery(account)}
-                        className="hover:bg-primary/10 hover:text-primary hover:border-primary font-mono text-xs"
-                      >
-                        <Search size={14} className="mr-1" />
-                        BGC Sorgula
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
+                filteredAccounts.map((account) => {
+                  const name = extractNameFromEmail(account.email);
+                  const dob = formatDateOfBirth(account.date_of_birth);
+                  return (
+                    <TableRow key={account.id} className="border-b border-border/30">
+                      <TableCell className="font-mono text-sm">
+                        <button
+                          onClick={() => copyToClipboard(name, 'İsim')}
+                          className="px-2 py-1 bg-secondary/50 text-foreground rounded hover:bg-secondary transition-colors cursor-pointer flex items-center gap-1 group"
+                          title="Kopyalamak için tıkla"
+                        >
+                          {name}
+                          <Copy size={12} className="opacity-0 group-hover:opacity-50 transition-opacity" />
+                        </button>
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">
+                        <button
+                          onClick={() => copyToClipboard(account.email, 'Email')}
+                          className="px-2 py-1 bg-primary/20 text-primary rounded hover:bg-primary/30 transition-colors cursor-pointer flex items-center gap-1 group"
+                          title="Kopyalamak için tıkla"
+                        >
+                          {account.email}
+                          <Copy size={12} className="opacity-0 group-hover:opacity-50 transition-opacity" />
+                        </button>
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">
+                        <button
+                          onClick={() => copyToClipboard(dob, 'Doğum tarihi')}
+                          className="text-foreground hover:text-primary transition-colors cursor-pointer flex items-center gap-1 group"
+                          title="Kopyalamak için tıkla"
+                        >
+                          {dob}
+                          <Copy size={12} className="opacity-0 group-hover:opacity-50 transition-opacity" />
+                        </button>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleBgcQuery(account)}
+                          className="hover:bg-primary/10 hover:text-primary hover:border-primary font-mono text-xs"
+                        >
+                          <Search size={14} className="mr-1" />
+                          BGC Sorgula
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
