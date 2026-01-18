@@ -27,7 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { RefreshCw, Shield, FileSearch, Search, Mail, Calendar, X, User, Copy, Edit, Download } from 'lucide-react';
+import { RefreshCw, Shield, FileSearch, Search, Mail, Calendar, X, User, Copy, Edit, Filter } from 'lucide-react';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 
@@ -59,6 +59,7 @@ export default function BackgroundPage() {
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState<AccountStatus | 'all'>('all');
   const [isSyncing, setIsSyncing] = useState(false);
   
   // Edit dialog state
@@ -99,9 +100,117 @@ export default function BackgroundPage() {
     }
   }, [toast]);
 
+  // Auto-sync SMTP accounts on page load
+  const syncMissingAccounts = useCallback(async () => {
+    try {
+      // Fetch all pages of SMTP accounts
+      let allSmtpAccounts: any[] = [];
+      let page = 1;
+      let hasMore = true;
+      
+      while (hasMore) {
+        const { data: smtpData, error: smtpError } = await supabase.functions.invoke('smtp-api', {
+          body: { action: 'getAccounts', page },
+        });
+
+        if (smtpError) throw smtpError;
+        
+        const smtpAccounts = smtpData?.accounts || [];
+        allSmtpAccounts = [...allSmtpAccounts, ...smtpAccounts];
+        
+        hasMore = !!smtpData?.view?.next;
+        page++;
+        
+        if (page > 50) break;
+      }
+
+      // Get all existing emails from database
+      const existingEmails = new Set(accounts.map(a => a.email.toLowerCase()));
+      
+      // Get current user ID
+      const { data: session } = await supabase.auth.getSession();
+      const userId = session?.session?.user?.id;
+
+      let syncedCount = 0;
+      const newAccounts: any[] = [];
+
+      for (const smtpAccount of allSmtpAccounts) {
+        const email = (smtpAccount.address || smtpAccount.name || '').toLowerCase();
+        if (!email || existingEmails.has(email)) continue;
+
+        // Extract name parts from email
+        const localPart = email.split('@')[0];
+        const parts = localPart
+          .replace(/[._]/g, ' ')
+          .replace(/\d+/g, '')
+          .trim()
+          .split(' ')
+          .filter(Boolean)
+          .map((word: string) => word.toUpperCase());
+
+        let firstName = '';
+        let middleName = '';
+        let lastName = '';
+
+        if (parts.length === 1) {
+          firstName = parts[0];
+        } else if (parts.length === 2) {
+          firstName = parts[0];
+          lastName = parts[1];
+        } else if (parts.length >= 3) {
+          firstName = parts[0];
+          middleName = parts.slice(1, -1).join(' ');
+          lastName = parts[parts.length - 1];
+        }
+
+        newAccounts.push({
+          email: smtpAccount.address || smtpAccount.name,
+          date_of_birth: '1990-01-01',
+          created_by: userId,
+          first_name: firstName || null,
+          middle_name: middleName || null,
+          last_name: lastName || null,
+        });
+      }
+
+      if (newAccounts.length > 0) {
+        const { error: insertError } = await supabase
+          .from('email_accounts')
+          .insert(newAccounts);
+
+        if (!insertError) {
+          syncedCount = newAccounts.length;
+          // Refresh accounts list
+          const { data: refreshedData } = await supabase
+            .from('email_accounts')
+            .select('*')
+            .order('created_at', { ascending: false });
+          
+          if (refreshedData) {
+            setAccounts(refreshedData);
+          }
+
+          toast({
+            title: 'Senkronizasyon',
+            description: `${syncedCount} yeni hesap otomatik eklendi`,
+          });
+        }
+      }
+    } catch (error: any) {
+      console.error('Auto-sync error:', error);
+    }
+  }, [accounts, toast]);
+
   useEffect(() => {
     fetchAccounts();
   }, [fetchAccounts]);
+
+  // Run auto-sync after initial load
+  useEffect(() => {
+    if (!isLoading && accounts.length >= 0) {
+      syncMissingAccounts();
+    }
+  }, [isLoading]); // Only run when loading completes
 
   // Sync SMTP accounts to database
   const handleSyncAccounts = async () => {
@@ -329,19 +438,29 @@ export default function BackgroundPage() {
     }
   };
 
-  // Filter accounts based on search query
+  // Filter accounts based on search query and status
   const filteredAccounts = useMemo(() => {
-    if (!searchQuery.trim()) return accounts;
+    let result = accounts;
     
-    const query = searchQuery.toLowerCase().trim();
-    return accounts.filter((account) => {
-      const email = account.email.toLowerCase();
-      const dob = formatDateOfBirth(account.date_of_birth).toLowerCase();
-      const firstName = (account.first_name || '').toLowerCase();
-      const lastName = (account.last_name || '').toLowerCase();
-      return email.includes(query) || dob.includes(query) || firstName.includes(query) || lastName.includes(query);
-    });
-  }, [accounts, searchQuery]);
+    // Apply status filter
+    if (filterStatus !== 'all') {
+      result = result.filter((account) => account.status === filterStatus);
+    }
+    
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      result = result.filter((account) => {
+        const email = account.email.toLowerCase();
+        const dob = formatDateOfBirth(account.date_of_birth).toLowerCase();
+        const firstName = (account.first_name || '').toLowerCase();
+        const lastName = (account.last_name || '').toLowerCase();
+        return email.includes(query) || dob.includes(query) || firstName.includes(query) || lastName.includes(query);
+      });
+    }
+    
+    return result;
+  }, [accounts, searchQuery, filterStatus]);
 
   // Generate day options
   const dayOptions = Array.from({ length: 31 }, (_, i) => i + 1);
@@ -393,48 +512,51 @@ export default function BackgroundPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            {isAdmin && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleSyncAccounts}
-                disabled={isSyncing}
-                className="hover:bg-primary/10 font-mono text-xs"
-              >
-                <Download size={14} className={`mr-1 ${isSyncing ? 'animate-bounce' : ''}`} />
-                {isSyncing ? 'Senkronize ediliyor...' : 'SMTP Senkronize Et'}
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={fetchAccounts}
-              className="hover:bg-primary/10"
-            >
-              <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
-            </Button>
-          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={fetchAccounts}
+            className="hover:bg-primary/10"
+          >
+            <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
+          </Button>
         </div>
 
-        {/* Search Bar */}
-        <div className="relative">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Email, isim veya doğum tarihine göre ara..."
-            className="cyber-input font-mono pl-10 pr-10"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X size={16} />
-            </button>
-          )}
+        {/* Search Bar and Filter */}
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="relative flex-1">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Email, isim veya doğum tarihine göre ara..."
+              className="cyber-input font-mono pl-10 pr-10"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
+          
+          <Select value={filterStatus} onValueChange={(value) => setFilterStatus(value as AccountStatus | 'all')}>
+            <SelectTrigger className="w-full sm:w-48 cyber-input font-mono">
+              <Filter size={14} className="mr-2 text-muted-foreground" />
+              <SelectValue placeholder="Tüm Durumlar" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all" className="font-mono">Tüm Durumlar</SelectItem>
+              {Object.entries(statusConfig).map(([key, config]) => (
+                <SelectItem key={key} value={key} className="font-mono">
+                  <span className={config.color}>{config.label}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Accounts Table */}

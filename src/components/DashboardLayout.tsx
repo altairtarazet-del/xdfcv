@@ -16,6 +16,7 @@ import {
   FileSearch,
   PanelLeftClose,
   PanelLeft,
+  Wallet,
 } from 'lucide-react';
 
 interface DashboardLayoutProps {
@@ -68,6 +69,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     { to: '/dashboard/roles', icon: Shield, label: 'Roller', show: isAdmin },
     { to: '/dashboard/emails', icon: Server, label: 'Email Yönetimi', show: canManageEmails },
     { to: '/dashboard/background', icon: FileSearch, label: 'Background', show: canManageEmails },
+    { to: '/dashboard/cash', icon: Wallet, label: 'Kasa', show: isAdmin },
     { to: '/dashboard/settings', icon: Settings, label: 'Ayarlar', show: true },
   ];
 

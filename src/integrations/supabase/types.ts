@@ -14,6 +14,71 @@ export type Database = {
   }
   public: {
     Tables: {
+      cash_settings: {
+        Row: {
+          first_payment_default: number
+          id: string
+          second_payment_default: number
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          first_payment_default?: number
+          id?: string
+          second_payment_default?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          first_payment_default?: number
+          id?: string
+          second_payment_default?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      cash_transactions: {
+        Row: {
+          amount: number
+          created_at: string
+          created_by: string | null
+          description: string | null
+          email_account_id: string | null
+          id: string
+          payment_stage: string
+          transaction_type: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          email_account_id?: string | null
+          id?: string
+          payment_stage: string
+          transaction_type: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          email_account_id?: string | null
+          id?: string
+          payment_stage?: string
+          transaction_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cash_transactions_email_account_id_fkey"
+            columns: ["email_account_id"]
+            isOneToOne: false
+            referencedRelation: "email_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       custom_roles: {
         Row: {
           created_at: string
