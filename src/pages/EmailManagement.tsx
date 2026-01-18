@@ -335,6 +335,19 @@ export default function EmailManagementPage() {
 
       if (error) throw error;
 
+      // Also delete from email_accounts table
+      const emailAddress = account.address || account.name;
+      if (emailAddress) {
+        const { error: dbError } = await supabase
+          .from('email_accounts')
+          .delete()
+          .eq('email', emailAddress);
+        
+        if (dbError) {
+          console.error('Error deleting from email_accounts:', dbError);
+        }
+      }
+
       toast({
         title: 'Başarılı',
         description: 'Hesap silindi',
