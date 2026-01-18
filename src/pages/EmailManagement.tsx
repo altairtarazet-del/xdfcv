@@ -21,12 +21,19 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Key, Mail, RefreshCw, Shield, Eye, EyeOff, Server } from 'lucide-react';
+import { Plus, Key, Mail, RefreshCw, Shield, Eye, EyeOff, Server, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface Account {
   id: string;
   name?: string;
   address?: string;
+}
+
+interface PaginationView {
+  first?: string;
+  last?: string;
+  next?: string;
+  previous?: string;
 }
 
 export default function EmailManagementPage() {
@@ -37,6 +44,11 @@ export default function EmailManagementPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalAccounts, setTotalAccounts] = useState(0);
+  const [paginationView, setPaginationView] = useState<PaginationView | null>(null);
 
   // Form states
   const [newEmailAddress, setNewEmailAddress] = useState('');
@@ -50,15 +62,18 @@ export default function EmailManagementPage() {
   const canCreateEmail = isAdmin || profile?.permissions?.can_create_email;
   const canChangePassword = isAdmin || profile?.permissions?.can_change_password;
 
-  const fetchAccounts = useCallback(async () => {
+  const fetchAccounts = useCallback(async (page?: number) => {
+    setIsLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('smtp-api', {
-        body: { action: 'getAccounts' },
+        body: { action: 'getAccounts', page: page || currentPage },
       });
 
       if (error) throw error;
       const accountList = Array.isArray(data?.accounts) ? data.accounts : [];
       setAccounts(accountList);
+      setTotalAccounts(data?.totalItems || accountList.length);
+      setPaginationView(data?.view || null);
     } catch (error: any) {
       console.error('Error fetching accounts:', error);
       toast({
@@ -69,11 +84,25 @@ export default function EmailManagementPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [toast]);
+  }, [toast, currentPage]);
 
   useEffect(() => {
-    fetchAccounts();
-  }, [fetchAccounts]);
+    fetchAccounts(currentPage);
+  }, [currentPage]);
+
+  const handlePrevPage = () => {
+    if (paginationView?.previous && currentPage > 1) {
+      setCurrentPage(prev => prev - 1);
+    }
+  };
+
+  const handleNextPage = () => {
+    if (paginationView?.next) {
+      setCurrentPage(prev => prev + 1);
+    }
+  };
+
+  const totalPages = Math.ceil(totalAccounts / 30);
 
   const handleCreateEmail = async () => {
     if (!newEmailAddress) {
@@ -214,7 +243,7 @@ export default function EmailManagementPage() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={fetchAccounts}
+              onClick={() => fetchAccounts(currentPage)}
               className="hover:bg-primary/10"
             >
               <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
@@ -350,6 +379,40 @@ export default function EmailManagementPage() {
               )}
             </TableBody>
           </Table>
+
+          {/* Pagination Controls */}
+          {totalAccounts > 0 && (
+            <div className="flex items-center justify-between p-4 border-t border-border/30">
+              <span className="font-mono text-xs text-muted-foreground">
+                Toplam: {totalAccounts} hesap
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handlePrevPage}
+                  disabled={currentPage <= 1 || isLoading}
+                  className="hover:bg-primary/10 font-mono text-xs"
+                >
+                  <ChevronLeft size={16} className="mr-1" />
+                  Önceki
+                </Button>
+                <span className="font-mono text-sm text-foreground px-2">
+                  {currentPage} / {totalPages || 1}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleNextPage}
+                  disabled={!paginationView?.next || isLoading}
+                  className="hover:bg-primary/10 font-mono text-xs"
+                >
+                  Sonraki
+                  <ChevronRight size={16} className="ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Change Password Dialog */}
