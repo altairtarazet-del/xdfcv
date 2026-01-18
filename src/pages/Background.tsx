@@ -77,19 +77,32 @@ export default function BackgroundPage() {
     }
   };
 
-  // Extract name from email (e.g., john.doe@example.com -> John Doe)
-  const extractNameFromEmail = (email: string) => {
+  // Extract name parts from email (e.g., john.middle.doe@example.com -> { first: "John", middle: "Middle", last: "Doe" })
+  const extractNamePartsFromEmail = (email: string) => {
     const localPart = email.split('@')[0];
-    // Replace dots, underscores, numbers with spaces and capitalize
-    const name = localPart
+    // Replace dots, underscores with spaces and remove numbers
+    const parts = localPart
       .replace(/[._]/g, ' ')
       .replace(/\d+/g, '')
       .trim()
       .split(' ')
       .filter(Boolean)
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ');
-    return name || localPart;
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+    
+    if (parts.length === 0) {
+      return { first: localPart, middle: '', last: '' };
+    } else if (parts.length === 1) {
+      return { first: parts[0], middle: '', last: '' };
+    } else if (parts.length === 2) {
+      return { first: parts[0], middle: '', last: parts[1] };
+    } else {
+      // First part is first name, last part is last name, everything in between is middle name
+      return { 
+        first: parts[0], 
+        middle: parts.slice(1, -1).join(' '), 
+        last: parts[parts.length - 1] 
+      };
+    }
   };
 
   // Copy to clipboard
@@ -190,9 +203,11 @@ export default function BackgroundPage() {
                 <TableHead className="font-mono text-muted-foreground">
                   <div className="flex items-center gap-2">
                     <User size={14} />
-                    İSİM
+                    FIRST NAME
                   </div>
                 </TableHead>
+                <TableHead className="font-mono text-muted-foreground">MIDDLE NAME</TableHead>
+                <TableHead className="font-mono text-muted-foreground">LAST NAME</TableHead>
                 <TableHead className="font-mono text-muted-foreground">
                   <div className="flex items-center gap-2">
                     <Mail size={14} />
@@ -211,7 +226,7 @@ export default function BackgroundPage() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-8">
+                  <TableCell colSpan={6} className="text-center py-8">
                     <span className="text-muted-foreground font-mono animate-pulse">
                       Yükleniyor...
                     </span>
@@ -219,7 +234,7 @@ export default function BackgroundPage() {
                 </TableRow>
               ) : filteredAccounts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-8">
+                  <TableCell colSpan={6} className="text-center py-8">
                     <FileSearch size={32} className="mx-auto text-muted-foreground mb-2" />
                     <span className="text-muted-foreground font-mono">
                       {searchQuery ? 'Arama sonucu bulunamadı' : 'Henüz kayıtlı email hesabı yok'}
@@ -233,19 +248,47 @@ export default function BackgroundPage() {
                 </TableRow>
               ) : (
                 filteredAccounts.map((account) => {
-                  const name = extractNameFromEmail(account.email);
+                  const nameParts = extractNamePartsFromEmail(account.email);
                   const dob = formatDateOfBirth(account.date_of_birth);
                   return (
                     <TableRow key={account.id} className="border-b border-border/30">
                       <TableCell className="font-mono text-sm">
                         <button
-                          onClick={() => copyToClipboard(name, 'İsim')}
+                          onClick={() => copyToClipboard(nameParts.first, 'First Name')}
                           className="px-2 py-1 bg-secondary/50 text-foreground rounded hover:bg-secondary transition-colors cursor-pointer flex items-center gap-1 group"
                           title="Kopyalamak için tıkla"
                         >
-                          {name}
+                          {nameParts.first || '-'}
                           <Copy size={12} className="opacity-0 group-hover:opacity-50 transition-opacity" />
                         </button>
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">
+                        {nameParts.middle ? (
+                          <button
+                            onClick={() => copyToClipboard(nameParts.middle, 'Middle Name')}
+                            className="px-2 py-1 bg-secondary/50 text-foreground rounded hover:bg-secondary transition-colors cursor-pointer flex items-center gap-1 group"
+                            title="Kopyalamak için tıkla"
+                          >
+                            {nameParts.middle}
+                            <Copy size={12} className="opacity-0 group-hover:opacity-50 transition-opacity" />
+                          </button>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">
+                        {nameParts.last ? (
+                          <button
+                            onClick={() => copyToClipboard(nameParts.last, 'Last Name')}
+                            className="px-2 py-1 bg-secondary/50 text-foreground rounded hover:bg-secondary transition-colors cursor-pointer flex items-center gap-1 group"
+                            title="Kopyalamak için tıkla"
+                          >
+                            {nameParts.last}
+                            <Copy size={12} className="opacity-0 group-hover:opacity-50 transition-opacity" />
+                          </button>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
                       </TableCell>
                       <TableCell className="font-mono text-sm">
                         <button
