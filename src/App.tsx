@@ -7,6 +7,7 @@ import { AuthProvider } from "@/hooks/useAuth";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
+import Overview from "./pages/Overview";
 import Users from "./pages/Users";
 import Roles from "./pages/Roles";
 import EmailManagement from "./pages/EmailManagement";
@@ -28,6 +29,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/dashboard/overview" element={<Overview />} />
             <Route path="/dashboard/users" element={<Users />} />
             <Route path="/dashboard/roles" element={<Roles />} />
             <Route path="/dashboard/emails" element={<EmailManagement />} />

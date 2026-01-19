@@ -17,6 +17,7 @@ import {
   PanelLeftClose,
   PanelLeft,
   Wallet,
+  LayoutDashboard,
 } from 'lucide-react';
 
 interface DashboardLayoutProps {
@@ -65,6 +66,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const canViewCash = isAdmin || profile?.permissions?.can_view_cash || profile?.permissions?.can_manage_cash;
 
   const navItems = [
+    { to: '/dashboard/overview', icon: LayoutDashboard, label: 'Genel Bakış', show: true },
     { to: '/dashboard', icon: Mail, label: 'Postalar', show: true },
     { to: '/dashboard/users', icon: Users, label: 'Kullanıcılar', show: isAdmin },
     { to: '/dashboard/roles', icon: Shield, label: 'Roller', show: isAdmin },
