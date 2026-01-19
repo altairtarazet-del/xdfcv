@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import DOMPurify from 'dompurify';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -751,7 +752,13 @@ export default function Dashboard() {
                   ) : fullMessageData?.html ? (
                     <div
                       className="prose prose-invert prose-sm max-w-none"
-                      dangerouslySetInnerHTML={{ __html: fullMessageData.html }}
+                      dangerouslySetInnerHTML={{ 
+                        __html: DOMPurify.sanitize(fullMessageData.html, {
+                          ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'a', 'img', 'table', 'tr', 'td', 'th', 'ul', 'ol', 'li', 'span', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'code', 'hr', 'thead', 'tbody', 'caption'],
+                          ALLOWED_ATTR: ['href', 'src', 'alt', 'target', 'style', 'class', 'width', 'height', 'border', 'cellpadding', 'cellspacing', 'align', 'valign'],
+                          ALLOW_DATA_ATTR: false
+                        })
+                      }}
                     />
                   ) : fullMessageData?.text ? (
                     <pre className="font-mono text-sm whitespace-pre-wrap text-foreground">
@@ -760,7 +767,13 @@ export default function Dashboard() {
                   ) : selectedMessage.html ? (
                     <div
                       className="prose prose-invert prose-sm max-w-none"
-                      dangerouslySetInnerHTML={{ __html: selectedMessage.html }}
+                      dangerouslySetInnerHTML={{ 
+                        __html: DOMPurify.sanitize(selectedMessage.html, {
+                          ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'a', 'img', 'table', 'tr', 'td', 'th', 'ul', 'ol', 'li', 'span', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'code', 'hr', 'thead', 'tbody', 'caption'],
+                          ALLOWED_ATTR: ['href', 'src', 'alt', 'target', 'style', 'class', 'width', 'height', 'border', 'cellpadding', 'cellspacing', 'align', 'valign'],
+                          ALLOW_DATA_ATTR: false
+                        })
+                      }}
                     />
                   ) : selectedMessage.text ? (
                     <pre className="font-mono text-sm whitespace-pre-wrap text-foreground">
