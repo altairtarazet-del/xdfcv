@@ -179,6 +179,7 @@ export type Database = {
           can_delete_emails: boolean | null
           can_edit_background: boolean | null
           can_edit_cash_settings: boolean | null
+          can_edit_transactions: boolean | null
           can_manage_cash: boolean | null
           can_process_refund: boolean | null
           can_view_cash: boolean | null
@@ -201,6 +202,7 @@ export type Database = {
           can_delete_emails?: boolean | null
           can_edit_background?: boolean | null
           can_edit_cash_settings?: boolean | null
+          can_edit_transactions?: boolean | null
           can_manage_cash?: boolean | null
           can_process_refund?: boolean | null
           can_view_cash?: boolean | null
@@ -223,6 +225,7 @@ export type Database = {
           can_delete_emails?: boolean | null
           can_edit_background?: boolean | null
           can_edit_cash_settings?: boolean | null
+          can_edit_transactions?: boolean | null
           can_manage_cash?: boolean | null
           can_process_refund?: boolean | null
           can_view_cash?: boolean | null
