@@ -100,7 +100,7 @@ export default function BackgroundPage() {
     }
   }, [toast]);
 
-  // Auto-sync SMTP accounts on page load
+  // Auto-sync SMTP accounts on page load (add missing, remove deleted)
   const syncMissingAccounts = useCallback(async () => {
     try {
       // Fetch all pages of SMTP accounts
@@ -124,6 +124,11 @@ export default function BackgroundPage() {
         if (page > 50) break;
       }
 
+      // Create a set of SMTP emails for quick lookup
+      const smtpEmails = new Set(
+        allSmtpAccounts.map(a => (a.address || a.name || '').toLowerCase())
+      );
+
       // Get all existing emails from database
       const existingEmails = new Set(accounts.map(a => a.email.toLowerCase()));
       
@@ -132,8 +137,10 @@ export default function BackgroundPage() {
       const userId = session?.session?.user?.id;
 
       let syncedCount = 0;
+      let deletedCount = 0;
       const newAccounts: any[] = [];
 
+      // 1. Find accounts to ADD (in SMTP but not in DB)
       for (const smtpAccount of allSmtpAccounts) {
         const email = (smtpAccount.address || smtpAccount.name || '').toLowerCase();
         if (!email || existingEmails.has(email)) continue;
@@ -173,6 +180,26 @@ export default function BackgroundPage() {
         });
       }
 
+      // 2. Find accounts to DELETE (in DB but not in SMTP)
+      const accountsToDelete = accounts.filter(
+        dbAccount => !smtpEmails.has(dbAccount.email.toLowerCase())
+      );
+
+      // Delete removed accounts from DB
+      if (accountsToDelete.length > 0) {
+        const idsToDelete = accountsToDelete.map(a => a.id);
+        
+        const { error: deleteError } = await supabase
+          .from('email_accounts')
+          .delete()
+          .in('id', idsToDelete);
+
+        if (!deleteError) {
+          deletedCount = accountsToDelete.length;
+        }
+      }
+
+      // Insert new accounts
       if (newAccounts.length > 0) {
         const { error: insertError } = await supabase
           .from('email_accounts')
@@ -180,21 +207,28 @@ export default function BackgroundPage() {
 
         if (!insertError) {
           syncedCount = newAccounts.length;
-          // Refresh accounts list
-          const { data: refreshedData } = await supabase
-            .from('email_accounts')
-            .select('*')
-            .order('created_at', { ascending: false });
-          
-          if (refreshedData) {
-            setAccounts(refreshedData);
-          }
-
-          toast({
-            title: 'Senkronizasyon',
-            description: `${syncedCount} yeni hesap otomatik eklendi`,
-          });
         }
+      }
+
+      // Refresh accounts list if any changes were made
+      if (syncedCount > 0 || deletedCount > 0) {
+        const { data: refreshedData } = await supabase
+          .from('email_accounts')
+          .select('*')
+          .order('created_at', { ascending: false });
+        
+        if (refreshedData) {
+          setAccounts(refreshedData);
+        }
+
+        const messages: string[] = [];
+        if (syncedCount > 0) messages.push(`${syncedCount} yeni hesap eklendi`);
+        if (deletedCount > 0) messages.push(`${deletedCount} silinen hesap kaldırıldı`);
+
+        toast({
+          title: 'Senkronizasyon',
+          description: messages.join(', '),
+        });
       }
     } catch (error: any) {
       console.error('Auto-sync error:', error);
