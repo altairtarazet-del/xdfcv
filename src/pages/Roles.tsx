@@ -137,6 +137,13 @@ const availablePermissions: PermissionItem[] = [
     type: 'toggle',
   },
   {
+    id: 'can_edit_transactions',
+    label: 'İşlem Düzenleme',
+    description: 'Ödeme ve iade işlemlerini düzenleyebilir (tutar, aşama değiştirme)',
+    icon: <Edit size={16} />,
+    type: 'toggle',
+  },
+  {
     id: 'time_filter_minutes',
     label: 'Zaman Filtresi',
     description: 'Sadece son X dakikadaki mailleri görebilir',
@@ -285,6 +292,7 @@ export default function RolesPage() {
     can_add_payment: false,
     can_process_refund: false,
     can_edit_cash_settings: false,
+    can_edit_transactions: false,
     time_filter_minutes: '',
     allowed_mailboxes: '',
     allowed_senders: '',
@@ -412,6 +420,7 @@ export default function RolesPage() {
           can_add_payment: !!permissionValues.can_add_payment,
           can_process_refund: !!permissionValues.can_process_refund,
           can_edit_cash_settings: !!permissionValues.can_edit_cash_settings,
+          can_edit_transactions: !!permissionValues.can_edit_transactions,
         };
 
         const { error: permError } = await supabase
@@ -485,6 +494,7 @@ export default function RolesPage() {
       can_add_payment: (perms as any)?.can_add_payment ?? false,
       can_process_refund: (perms as any)?.can_process_refund ?? false,
       can_edit_cash_settings: (perms as any)?.can_edit_cash_settings ?? false,
+      can_edit_transactions: (perms as any)?.can_edit_transactions ?? false,
       time_filter_minutes: perms?.time_filter_minutes?.toString() || '',
       allowed_mailboxes: perms?.allowed_mailboxes?.join(', ') || '',
       allowed_senders: perms?.allowed_senders?.join(', ') || '',

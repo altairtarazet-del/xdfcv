@@ -40,6 +40,8 @@ import {
   Undo2,
   Settings,
   FileSearch,
+  Edit,
+  Trash2,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -65,6 +67,15 @@ interface CashTransaction {
   created_at: string;
 }
 
+// All available payment stages
+const PAYMENT_STAGES = [
+  { value: 'first_payment', label: '1. Ödeme' },
+  { value: 'second_payment', label: '2. Ödeme' },
+  { value: 'third_payment', label: '3. Ödeme' },
+  { value: 'fourth_payment', label: '4. Ödeme' },
+  { value: 'other', label: 'Diğer' },
+] as const;
+
 interface CashSettings {
   id: string;
   first_payment_default: number;
@@ -72,10 +83,8 @@ interface CashSettings {
 }
 
 interface AccountWithPayments extends EmailAccount {
-  first_payment: number | null;
-  second_payment: number | null;
-  first_refund: number | null;
-  second_refund: number | null;
+  payments: { stage: string; amount: number; id: string; description: string | null }[];
+  refunds: { stage: string; amount: number; id: string; description: string | null }[];
   total_paid: number;
   total_refunded: number;
   status_display: 'kasada' | 'iade_edildi' | 'beklemede';
@@ -102,14 +111,14 @@ export default function CashPage() {
   // Payment dialog
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<EmailAccount | null>(null);
-  const [paymentStage, setPaymentStage] = useState<'first_payment' | 'second_payment'>('first_payment');
+  const [paymentStage, setPaymentStage] = useState<string>('first_payment');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentDescription, setPaymentDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Refund dialog
   const [isRefundDialogOpen, setIsRefundDialogOpen] = useState(false);
-  const [refundStage, setRefundStage] = useState<'first_payment' | 'second_payment'>('first_payment');
+  const [refundStage, setRefundStage] = useState<string>('first_payment');
   const [refundAmount, setRefundAmount] = useState('');
   const [refundDescription, setRefundDescription] = useState('');
   
@@ -117,6 +126,13 @@ export default function CashPage() {
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
   const [settingsFirstPayment, setSettingsFirstPayment] = useState('');
   const [settingsSecondPayment, setSettingsSecondPayment] = useState('');
+  
+  // Edit transaction dialog
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState<CashTransaction | null>(null);
+  const [editAmount, setEditAmount] = useState('');
+  const [editStage, setEditStage] = useState<string>('first_payment');
+  const [editDescription, setEditDescription] = useState('');
 
   // Permission checks
   const permissions = profile?.permissions as any;
@@ -125,6 +141,7 @@ export default function CashPage() {
   const canAddPayment = isAdmin || permissions?.can_manage_cash || permissions?.can_add_payment;
   const canProcessRefund = isAdmin || permissions?.can_manage_cash || permissions?.can_process_refund;
   const canEditSettings = isAdmin || permissions?.can_manage_cash || permissions?.can_edit_cash_settings;
+  const canEditTransactions = isAdmin || permissions?.can_manage_cash || permissions?.can_edit_transactions;
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -165,13 +182,17 @@ export default function CashPage() {
       .map(account => {
         const accountTransactions = transactions.filter(t => t.email_account_id === account.id);
         
-        const firstPayment = accountTransactions.find(t => t.transaction_type === 'payment' && t.payment_stage === 'first_payment');
-        const secondPayment = accountTransactions.find(t => t.transaction_type === 'payment' && t.payment_stage === 'second_payment');
-        const firstRefund = accountTransactions.find(t => t.transaction_type === 'refund' && t.payment_stage === 'first_payment');
-        const secondRefund = accountTransactions.find(t => t.transaction_type === 'refund' && t.payment_stage === 'second_payment');
+        // Get all payments and refunds
+        const payments = accountTransactions
+          .filter(t => t.transaction_type === 'payment')
+          .map(t => ({ stage: t.payment_stage, amount: t.amount, id: t.id, description: t.description }));
         
-        const totalPaid = (firstPayment?.amount || 0) + (secondPayment?.amount || 0);
-        const totalRefunded = (firstRefund?.amount || 0) + (secondRefund?.amount || 0);
+        const refunds = accountTransactions
+          .filter(t => t.transaction_type === 'refund')
+          .map(t => ({ stage: t.payment_stage, amount: t.amount, id: t.id, description: t.description }));
+        
+        const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+        const totalRefunded = refunds.reduce((sum, r) => sum + r.amount, 0);
         
         // Determine status display
         let statusDisplay: 'kasada' | 'iade_edildi' | 'beklemede' = 'beklemede';
@@ -185,10 +206,8 @@ export default function CashPage() {
         
         return {
           ...account,
-          first_payment: firstPayment?.amount || null,
-          second_payment: secondPayment?.amount || null,
-          first_refund: firstRefund?.amount || null,
-          second_refund: secondRefund?.amount || null,
+          payments,
+          refunds,
           total_paid: totalPaid,
           total_refunded: totalRefunded,
           status_display: statusDisplay,
@@ -254,25 +273,100 @@ export default function CashPage() {
     };
   }, [transactions, accounts]);
 
-  // Open payment dialog
-  const openPaymentDialog = (account: EmailAccount, stage: 'first_payment' | 'second_payment') => {
+  // Open payment dialog (with flexible stage)
+  const openPaymentDialog = (account: EmailAccount, stage?: string) => {
     setSelectedAccount(account);
-    setPaymentStage(stage);
-    setPaymentAmount(stage === 'first_payment' 
-      ? String(settings?.first_payment_default || 400)
-      : String(settings?.second_payment_default || 400)
-    );
+    // Find the next available payment stage
+    const existingPayments = transactions
+      .filter(t => t.email_account_id === account.id && t.transaction_type === 'payment')
+      .map(t => t.payment_stage);
+    
+    const nextStage = stage || PAYMENT_STAGES.find(s => !existingPayments.includes(s.value))?.value || 'first_payment';
+    setPaymentStage(nextStage);
+    setPaymentAmount(String(settings?.first_payment_default || 400));
     setPaymentDescription('');
     setIsPaymentDialogOpen(true);
   };
 
   // Open refund dialog
-  const openRefundDialog = (account: EmailAccount, stage: 'first_payment' | 'second_payment', amount: number) => {
+  const openRefundDialog = (account: EmailAccount, stage: string, amount: number) => {
     setSelectedAccount(account);
     setRefundStage(stage);
     setRefundAmount(String(amount));
     setRefundDescription('');
     setIsRefundDialogOpen(true);
+  };
+  
+  // Open edit transaction dialog
+  const openEditDialog = (transaction: CashTransaction, account: EmailAccount) => {
+    setSelectedAccount(account);
+    setEditingTransaction(transaction);
+    setEditAmount(String(transaction.amount));
+    setEditStage(transaction.payment_stage);
+    setEditDescription(transaction.description || '');
+    setIsEditDialogOpen(true);
+  };
+  
+  // Handle edit transaction
+  const handleEditTransaction = async () => {
+    if (!editingTransaction || !editAmount) return;
+    
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase.from('cash_transactions').update({
+        amount: parseFloat(editAmount),
+        payment_stage: editStage,
+        description: editDescription || null,
+      }).eq('id', editingTransaction.id);
+      
+      if (error) throw error;
+      
+      toast({
+        title: 'Başarılı',
+        description: 'İşlem güncellendi',
+      });
+      
+      setIsEditDialogOpen(false);
+      setEditingTransaction(null);
+      fetchData();
+    } catch (error: any) {
+      console.error('Error editing transaction:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Hata',
+        description: 'İşlem güncellenirken bir hata oluştu',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+  
+  // Handle delete transaction
+  const handleDeleteTransaction = async (transactionId: string) => {
+    if (!confirm('Bu işlemi silmek istediğinize emin misiniz?')) return;
+    
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase.from('cash_transactions').delete().eq('id', transactionId);
+      
+      if (error) throw error;
+      
+      toast({
+        title: 'Başarılı',
+        description: 'İşlem silindi',
+      });
+      
+      fetchData();
+    } catch (error: any) {
+      console.error('Error deleting transaction:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Hata',
+        description: 'İşlem silinirken bir hata oluştu',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Handle payment
@@ -535,8 +629,8 @@ export default function CashPage() {
               <TableRow className="border-b border-border/50">
                 <TableHead className="font-mono text-muted-foreground">MÜŞTERİ</TableHead>
                 <TableHead className="font-mono text-muted-foreground">DURUM</TableHead>
-                <TableHead className="font-mono text-muted-foreground text-right">1. ÖDEME</TableHead>
-                <TableHead className="font-mono text-muted-foreground text-right">2. ÖDEME</TableHead>
+                <TableHead className="font-mono text-muted-foreground">ÖDEMELER</TableHead>
+                <TableHead className="font-mono text-muted-foreground">İADELER</TableHead>
                 <TableHead className="font-mono text-muted-foreground text-right">TOPLAM</TableHead>
                 <TableHead className="font-mono text-muted-foreground">PARA DURUMU</TableHead>
                 <TableHead className="font-mono text-muted-foreground">İŞLEMLER</TableHead>
@@ -563,10 +657,17 @@ export default function CashPage() {
               ) : (
                 filteredAccounts.map((account) => {
                   const config = statusConfig[account.status];
-                  const hasFirstPayment = account.first_payment !== null;
-                  const hasSecondPayment = account.second_payment !== null;
-                  const hasFirstRefund = account.first_refund !== null;
-                  const hasSecondRefund = account.second_refund !== null;
+                  const canShowRefundButton = account.status === 'kapandi' || account.status === 'suspend';
+                  
+                  // Get stage label helper
+                  const getStageLabel = (stage: string) => {
+                    const found = PAYMENT_STAGES.find(s => s.value === stage);
+                    return found?.label || stage;
+                  };
+                  
+                  // Check if a payment stage has refund
+                  const hasRefundForStage = (stage: string) => 
+                    account.refunds.some(r => r.stage === stage);
                   
                   return (
                     <TableRow key={account.id} className="border-b border-border/30">
@@ -583,20 +684,64 @@ export default function CashPage() {
                           {config.label}
                         </span>
                       </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {hasFirstPayment ? (
-                          <span className={hasFirstRefund ? 'line-through text-muted-foreground' : 'text-green-400'}>
-                            ${account.first_payment}
-                          </span>
+                      <TableCell className="font-mono text-sm">
+                        {account.payments.length > 0 ? (
+                          <div className="space-y-1">
+                            {account.payments.map((payment) => (
+                              <div key={payment.id} className="flex items-center gap-2">
+                                <span className={hasRefundForStage(payment.stage) ? 'line-through text-muted-foreground' : 'text-green-400'}>
+                                  ${payment.amount}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  ({getStageLabel(payment.stage)})
+                                </span>
+                                {canEditTransactions && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-5 w-5 p-0 hover:bg-primary/10"
+                                    onClick={() => {
+                                      const tx = transactions.find(t => t.id === payment.id);
+                                      if (tx) openEditDialog(tx, account);
+                                    }}
+                                  >
+                                    <Edit size={10} />
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         ) : (
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {hasSecondPayment ? (
-                          <span className={hasSecondRefund ? 'line-through text-muted-foreground' : 'text-green-400'}>
-                            ${account.second_payment}
-                          </span>
+                      <TableCell className="font-mono text-sm">
+                        {account.refunds.length > 0 ? (
+                          <div className="space-y-1">
+                            {account.refunds.map((refund) => (
+                              <div key={refund.id} className="flex items-center gap-2">
+                                <span className="text-red-400">
+                                  ${refund.amount}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  ({getStageLabel(refund.stage)})
+                                </span>
+                                {canEditTransactions && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-5 w-5 p-0 hover:bg-red-500/10"
+                                    onClick={() => {
+                                      const tx = transactions.find(t => t.id === refund.id);
+                                      if (tx) openEditDialog(tx, account);
+                                    }}
+                                  >
+                                    <Edit size={10} />
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         ) : (
                           <span className="text-muted-foreground">-</span>
                         )}
@@ -628,53 +773,35 @@ export default function CashPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1 flex-wrap">
-                          {/* Payment buttons */}
-                          {canAddPayment && !hasFirstPayment && (
+                          {/* Add Payment button */}
+                          {canAddPayment && (
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => openPaymentDialog(account, 'first_payment')}
+                              onClick={() => openPaymentDialog(account)}
                               className="hover:bg-green-500/10 hover:text-green-400 hover:border-green-500/50 font-mono text-xs"
                             >
                               <Plus size={12} className="mr-1" />
-                              1. Ödeme
-                            </Button>
-                          )}
-                          {canAddPayment && hasFirstPayment && !hasSecondPayment && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => openPaymentDialog(account, 'second_payment')}
-                              className="hover:bg-green-500/10 hover:text-green-400 hover:border-green-500/50 font-mono text-xs"
-                            >
-                              <Plus size={12} className="mr-1" />
-                              2. Ödeme
+                              Ödeme
                             </Button>
                           )}
                           
-                          {/* Refund buttons */}
-                          {canProcessRefund && hasFirstPayment && !hasFirstRefund && (account.status === 'kapandi' || account.status === 'suspend') && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => openRefundDialog(account, 'first_payment', account.first_payment!)}
-                              className="hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/50 font-mono text-xs"
-                            >
-                              <Undo2 size={12} className="mr-1" />
-                              1. İade
-                            </Button>
-                          )}
-                          {canProcessRefund && hasSecondPayment && !hasSecondRefund && (account.status === 'kapandi' || account.status === 'suspend') && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => openRefundDialog(account, 'second_payment', account.second_payment!)}
-                              className="hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/50 font-mono text-xs"
-                            >
-                              <Undo2 size={12} className="mr-1" />
-                              2. İade
-                            </Button>
-                          )}
+                          {/* Refund buttons for each unpaid payment */}
+                          {canProcessRefund && canShowRefundButton && account.payments
+                            .filter(p => !hasRefundForStage(p.stage))
+                            .map((payment) => (
+                              <Button
+                                key={payment.id}
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openRefundDialog(account, payment.stage, payment.amount)}
+                                className="hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/50 font-mono text-xs"
+                              >
+                                <Undo2 size={12} className="mr-1" />
+                                {getStageLabel(payment.stage)} İade
+                              </Button>
+                            ))
+                          }
                         </div>
                       </TableCell>
                     </TableRow>
@@ -719,11 +846,18 @@ export default function CashPage() {
             
             <div className="space-y-2">
               <Label className="text-muted-foreground font-mono text-xs">ÖDEME TİPİ</Label>
-              <Input
-                value={paymentStage === 'first_payment' ? '1. Ödeme (Ön Ödeme)' : '2. Ödeme (Hesap Açıldıktan Sonra)'}
-                disabled
-                className="cyber-input font-mono opacity-50"
-              />
+              <Select value={paymentStage} onValueChange={setPaymentStage}>
+                <SelectTrigger className="cyber-input font-mono">
+                  <SelectValue placeholder="Ödeme tipi seçin" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_STAGES.map((stage) => (
+                    <SelectItem key={stage.value} value={stage.value} className="font-mono">
+                      {stage.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             
             <div className="space-y-2">
@@ -779,11 +913,18 @@ export default function CashPage() {
             
             <div className="space-y-2">
               <Label className="text-muted-foreground font-mono text-xs">İADE TİPİ</Label>
-              <Input
-                value={refundStage === 'first_payment' ? '1. Ödeme İadesi' : '2. Ödeme İadesi'}
-                disabled
-                className="cyber-input font-mono opacity-50"
-              />
+              <Select value={refundStage} onValueChange={setRefundStage}>
+                <SelectTrigger className="cyber-input font-mono">
+                  <SelectValue placeholder="İade tipi seçin" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_STAGES.map((stage) => (
+                    <SelectItem key={stage.value} value={stage.value} className="font-mono">
+                      {stage.label} İadesi
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             
             <div className="space-y-2">
@@ -813,6 +954,97 @@ export default function CashPage() {
             >
               {isSubmitting ? 'Kaydediliyor...' : 'İadeyi Kaydet'}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Transaction Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="cyber-card border-primary/30">
+          <DialogHeader>
+            <DialogTitle className="font-mono text-foreground flex items-center gap-2">
+              <Edit size={20} className="text-primary" />
+              İşlem Düzenle
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <Label className="text-muted-foreground font-mono text-xs">MÜŞTERİ</Label>
+              <Input
+                value={selectedAccount?.email || ''}
+                disabled
+                className="cyber-input font-mono opacity-50"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label className="text-muted-foreground font-mono text-xs">İŞLEM TİPİ</Label>
+              <Input
+                value={editingTransaction?.transaction_type === 'payment' ? 'Ödeme' : 'İade'}
+                disabled
+                className="cyber-input font-mono opacity-50"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label className="text-muted-foreground font-mono text-xs">ÖDEME AŞAMASI</Label>
+              <Select value={editStage} onValueChange={setEditStage}>
+                <SelectTrigger className="cyber-input font-mono">
+                  <SelectValue placeholder="Aşama seçin" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_STAGES.map((stage) => (
+                    <SelectItem key={stage.value} value={stage.value} className="font-mono">
+                      {stage.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="space-y-2">
+              <Label className="text-muted-foreground font-mono text-xs">TUTAR ($)</Label>
+              <Input
+                type="number"
+                value={editAmount}
+                onChange={(e) => setEditAmount(e.target.value)}
+                className="cyber-input font-mono"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label className="text-muted-foreground font-mono text-xs">AÇIKLAMA (İsteğe Bağlı)</Label>
+              <Input
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                className="cyber-input font-mono"
+                placeholder="Not ekleyin..."
+              />
+            </div>
+            
+            <div className="flex gap-2">
+              <Button
+                onClick={handleEditTransaction}
+                disabled={isSubmitting || !editAmount}
+                className="flex-1 cyber-glow font-mono"
+              >
+                {isSubmitting ? 'Kaydediliyor...' : 'Güncelle'}
+              </Button>
+              
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  if (editingTransaction) {
+                    handleDeleteTransaction(editingTransaction.id);
+                    setIsEditDialogOpen(false);
+                  }
+                }}
+                disabled={isSubmitting}
+                className="font-mono"
+              >
+                <Trash2 size={16} />
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

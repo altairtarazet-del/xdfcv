@@ -44,6 +44,7 @@ export interface RolePermission {
   can_add_payment: boolean;
   can_process_refund: boolean;
   can_edit_cash_settings: boolean;
+  can_edit_transactions: boolean;
   created_at: string;
   updated_at: string;
 }
