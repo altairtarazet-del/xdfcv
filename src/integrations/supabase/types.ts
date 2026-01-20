@@ -182,6 +182,7 @@ export type Database = {
           can_edit_transactions: boolean | null
           can_manage_cash: boolean | null
           can_process_refund: boolean | null
+          can_view_bgc_complete: boolean | null
           can_view_cash: boolean | null
           created_at: string
           custom_role_id: string
@@ -205,6 +206,7 @@ export type Database = {
           can_edit_transactions?: boolean | null
           can_manage_cash?: boolean | null
           can_process_refund?: boolean | null
+          can_view_bgc_complete?: boolean | null
           can_view_cash?: boolean | null
           created_at?: string
           custom_role_id: string
@@ -228,6 +230,7 @@ export type Database = {
           can_edit_transactions?: boolean | null
           can_manage_cash?: boolean | null
           can_process_refund?: boolean | null
+          can_view_bgc_complete?: boolean | null
           can_view_cash?: boolean | null
           created_at?: string
           custom_role_id?: string
