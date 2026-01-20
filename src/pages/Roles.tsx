@@ -143,6 +143,14 @@ const availablePermissions: PermissionItem[] = [
     icon: <Edit size={16} />,
     type: 'toggle',
   },
+  // BGC Complete permission
+  {
+    id: 'can_view_bgc_complete',
+    label: 'BGC Complete Görüntüleme',
+    description: 'Background check tamamlanan hesapları görebilir',
+    icon: <Shield size={16} />,
+    type: 'toggle',
+  },
   {
     id: 'time_filter_minutes',
     label: 'Zaman Filtresi',
@@ -293,6 +301,7 @@ export default function RolesPage() {
     can_process_refund: false,
     can_edit_cash_settings: false,
     can_edit_transactions: false,
+    can_view_bgc_complete: false,
     time_filter_minutes: '',
     allowed_mailboxes: '',
     allowed_senders: '',
