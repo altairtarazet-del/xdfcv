@@ -347,6 +347,111 @@ serve(async (req) => {
         break;
       }
 
+      case 'scanBgcComplete': {
+        // Ultra-fast BGC scan - all work done server-side with parallel requests
+        const bgcSubject = body.subjectFilter || '*background check is complete*';
+        console.log('Starting BGC scan with subject:', bgcSubject);
+        
+        const allBgcEmails: any[] = [];
+        
+        // Step 1: Fetch all accounts (parallel pagination)
+        let allAccounts: any[] = [];
+        const firstPage = await fetch(`${SMTP_API_URL}/accounts?page=1`, { headers });
+        if (!firstPage.ok) throw new Error('Failed to fetch accounts');
+        const firstData = await firstPage.json();
+        allAccounts = firstData.member || [];
+        
+        const totalPages = firstData.view?.pages || 1;
+        if (totalPages > 1) {
+          const pagePromises = [];
+          for (let p = 2; p <= Math.min(totalPages, 50); p++) {
+            pagePromises.push(
+              fetch(`${SMTP_API_URL}/accounts?page=${p}`, { headers })
+                .then(r => r.ok ? r.json() : null)
+            );
+          }
+          const pageResults = await Promise.all(pagePromises);
+          pageResults.forEach(data => {
+            if (data?.member) allAccounts = [...allAccounts, ...data.member];
+          });
+        }
+        
+        console.log(`Found ${allAccounts.length} accounts, fetching mailboxes...`);
+        
+        // Step 2: Fetch all mailboxes in parallel (50 concurrent)
+        const CONCURRENCY = 50;
+        const accountsWithInbox: { account: any; inboxId: string }[] = [];
+        
+        for (let i = 0; i < allAccounts.length; i += CONCURRENCY) {
+          const batch = allAccounts.slice(i, i + CONCURRENCY);
+          const promises = batch.map(account =>
+            fetch(`${SMTP_API_URL}/accounts/${account.id}/mailboxes`, { headers })
+              .then(r => r.ok ? r.json() : null)
+              .then(data => ({ account, data }))
+              .catch(() => ({ account, data: null }))
+          );
+          const results = await Promise.all(promises);
+          results.forEach(({ account, data }) => {
+            if (data?.member) {
+              const inbox = data.member.find((mb: any) => mb.path?.toUpperCase() === 'INBOX');
+              if (inbox) accountsWithInbox.push({ account, inboxId: inbox.id });
+            }
+          });
+        }
+        
+        console.log(`Found ${accountsWithInbox.length} accounts with INBOX, scanning messages...`);
+        
+        // Step 3: Fetch messages and filter by subject in parallel (50 concurrent)
+        for (let i = 0; i < accountsWithInbox.length; i += CONCURRENCY) {
+          const batch = accountsWithInbox.slice(i, i + CONCURRENCY);
+          const promises = batch.map(({ account, inboxId }) =>
+            fetch(`${SMTP_API_URL}/accounts/${account.id}/mailboxes/${inboxId}/messages`, { headers })
+              .then(r => r.ok ? r.json() : null)
+              .then(data => ({ account, inboxId, data }))
+              .catch(() => ({ account, inboxId, data: null }))
+          );
+          const results = await Promise.all(promises);
+          
+          results.forEach(({ account, inboxId, data }) => {
+            if (data?.member) {
+              const messages = data.member.filter((m: any) => {
+                const subject = (m.subject || '').toLowerCase();
+                const pattern = bgcSubject.toLowerCase();
+                if (pattern.startsWith('*') && pattern.endsWith('*') && pattern.length > 2) {
+                  return subject.includes(pattern.slice(1, -1));
+                } else if (pattern.startsWith('*')) {
+                  return subject.endsWith(pattern.slice(1));
+                } else if (pattern.endsWith('*')) {
+                  return subject.startsWith(pattern.slice(0, -1));
+                }
+                return subject === pattern;
+              });
+              
+              messages.forEach((msg: any) => {
+                allBgcEmails.push({
+                  id: msg.id,
+                  accountEmail: account.address || account.name,
+                  accountId: account.id,
+                  mailboxId: inboxId,
+                  from: msg.from?.address || msg.from?.name || 'Unknown',
+                  subject: msg.subject || 'Your background check is complete',
+                  date: msg.createdAt || msg.date,
+                  isRead: msg.seen || false,
+                  preview: msg.intro || ''
+                });
+              });
+            }
+          });
+        }
+        
+        // Sort by date descending
+        allBgcEmails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        
+        console.log(`BGC scan complete. Found ${allBgcEmails.length} emails.`);
+        result = { emails: allBgcEmails, totalAccounts: allAccounts.length };
+        break;
+      }
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }

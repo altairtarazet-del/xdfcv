@@ -27,12 +27,6 @@ interface BgcEmail {
   preview: string;
 }
 
-interface SmtpAccount {
-  id: string;
-  address: string;
-  name: string;
-}
-
 const BGC_SUBJECT = "*background check is complete*";
 
 const BgcComplete = () => {
@@ -46,106 +40,25 @@ const BgcComplete = () => {
   const [selectedEmail, setSelectedEmail] = useState<BgcEmail | null>(null);
   const [emailContent, setEmailContent] = useState<string>('');
   const [loadingContent, setLoadingContent] = useState(false);
+  const [totalAccounts, setTotalAccounts] = useState(0);
 
   // Check permission
   const canViewBgcComplete = isAdmin || profile?.permissions?.can_view_bgc_complete;
 
   const fetchBgcEmails = useCallback(async () => {
     try {
-      // Fetch all email accounts from SMTP.dev API with parallel pagination
-      const firstPageResult = await supabase.functions.invoke('smtp-api', {
-        body: { action: 'getAccounts', page: 1 },
+      // Single API call - all work done server-side
+      const { data, error } = await supabase.functions.invoke('smtp-api', {
+        body: { 
+          action: 'scanBgcComplete',
+          subjectFilter: BGC_SUBJECT
+        }
       });
       
-      if (firstPageResult.error) throw firstPageResult.error;
+      if (error) throw error;
       
-      let allAccounts: SmtpAccount[] = Array.isArray(firstPageResult.data?.accounts) 
-        ? firstPageResult.data.accounts 
-        : [];
-      
-      // If there are more pages, fetch them in parallel
-      const totalPages = firstPageResult.data?.view?.pages || 1;
-      if (totalPages > 1) {
-        const pagePromises = [];
-        for (let p = 2; p <= Math.min(totalPages, 50); p++) {
-          pagePromises.push(
-            supabase.functions.invoke('smtp-api', { body: { action: 'getAccounts', page: p } })
-          );
-        }
-        const pageResults = await Promise.all(pagePromises);
-        pageResults.forEach(result => {
-          if (!result.error && Array.isArray(result.data?.accounts)) {
-            allAccounts = [...allAccounts, ...result.data.accounts];
-          }
-        });
-      }
-
-      // Fetch mailboxes for ALL accounts in parallel (batch of 20)
-      const BATCH_SIZE = 20;
-      const accountsWithInbox: { account: SmtpAccount; inboxId: string }[] = [];
-      
-      for (let i = 0; i < allAccounts.length; i += BATCH_SIZE) {
-        const batch = allAccounts.slice(i, i + BATCH_SIZE);
-        const mailboxPromises = batch.map(account =>
-          supabase.functions.invoke('smtp-api', {
-            body: { action: 'getMailboxes', accountId: account.id }
-          }).then(result => ({ account, result }))
-        );
-        
-        const mailboxResults = await Promise.all(mailboxPromises);
-        
-        mailboxResults.forEach(({ account, result }) => {
-          if (!result.error && !result.data?.error) {
-            const mailboxes = result.data?.mailboxes || [];
-            const inbox = mailboxes.find((mb: any) => mb.path?.toUpperCase() === 'INBOX');
-            if (inbox) {
-              accountsWithInbox.push({ account, inboxId: inbox.id });
-            }
-          }
-        });
-      }
-
-      // Fetch BGC messages for ALL accounts in parallel (batch of 20)
-      const allBgcEmails: BgcEmail[] = [];
-      
-      for (let i = 0; i < accountsWithInbox.length; i += BATCH_SIZE) {
-        const batch = accountsWithInbox.slice(i, i + BATCH_SIZE);
-        const messagePromises = batch.map(({ account, inboxId }) =>
-          supabase.functions.invoke('smtp-api', {
-            body: { 
-              action: 'getMessages', 
-              accountId: account.id,
-              mailboxId: inboxId,
-              filters: { allowedSubjects: [BGC_SUBJECT] }
-            }
-          }).then(result => ({ account, inboxId, result }))
-        );
-        
-        const messageResults = await Promise.all(messagePromises);
-        
-        messageResults.forEach(({ account, inboxId, result }) => {
-          if (!result.error && !result.data?.error) {
-            const messages = result.data?.messages || [];
-            messages.forEach((msg: any) => {
-              allBgcEmails.push({
-                id: msg.id,
-                accountEmail: account.address || account.name,
-                accountId: account.id,
-                mailboxId: inboxId,
-                from: msg.from?.address || msg.from?.name || 'Bilinmiyor',
-                subject: msg.subject || 'Your background check is complete',
-                date: msg.createdAt || msg.date,
-                isRead: msg.seen || msg.isRead,
-                preview: msg.intro || ''
-              });
-            });
-          }
-        });
-      }
-
-      // Sort by date descending
-      allBgcEmails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      setBgcEmails(allBgcEmails);
+      setBgcEmails(data?.emails || []);
+      setTotalAccounts(data?.totalAccounts || 0);
     } catch (error) {
       console.error('Error fetching BGC emails:', error);
       toast({
