@@ -19,6 +19,7 @@ interface BgcEmail {
   id: string;
   accountEmail: string;
   accountId: string;
+  mailboxId: string;
   from: string;
   subject: string;
   date: string;
@@ -26,12 +27,13 @@ interface BgcEmail {
   preview: string;
 }
 
-interface EmailAccount {
+interface SmtpAccount {
   id: string;
-  email: string;
+  address: string;
+  name: string;
 }
 
-const BGC_SUBJECT = "Your background check is complete";
+const BGC_SUBJECT = "*background check is complete*";
 
 const BgcComplete = () => {
   const navigate = useNavigate();
@@ -50,83 +52,105 @@ const BgcComplete = () => {
 
   const fetchBgcEmails = useCallback(async () => {
     try {
-      // First get all email accounts
-      const { data: accounts, error: accountsError } = await supabase
-        .from('email_accounts')
-        .select('id, email');
-
-      if (accountsError) throw accountsError;
-
-      if (!accounts || accounts.length === 0) {
-        setBgcEmails([]);
-        return;
+      setLoading(true);
+      
+      // Fetch all email accounts from SMTP.dev API (same approach as Dashboard)
+      let allAccounts: SmtpAccount[] = [];
+      let page = 1;
+      let hasMore = true;
+      
+      while (hasMore) {
+        const { data, error } = await supabase.functions.invoke('smtp-api', {
+          body: { action: 'getAccounts', page },
+        });
+        
+        if (error) throw error;
+        
+        const accountList = Array.isArray(data?.accounts) ? data.accounts : [];
+        allAccounts = [...allAccounts, ...accountList];
+        hasMore = !!data?.view?.next;
+        page++;
+        if (page > 50) break;
       }
 
       const allBgcEmails: BgcEmail[] = [];
 
-      // Fetch emails for each account
-      for (const account of accounts as EmailAccount[]) {
+      // For each account, fetch emails with the BGC subject
+      for (const account of allAccounts) {
         try {
           // Get mailboxes for the account
           const { data: mailboxData, error: mailboxError } = await supabase.functions.invoke('smtp-api', {
             body: { action: 'getMailboxes', accountId: account.id }
           });
 
-          // Skip accounts that return errors (404 means account doesn't exist in SMTP API)
+          // Skip accounts that return errors
           if (mailboxError || mailboxData?.error) {
-            console.warn(`Skipping account ${account.email}: API error`);
+            console.warn(`Skipping account ${account.address}: API error`);
             continue;
           }
 
-          if (mailboxData?.data) {
-            // Find INBOX
-            const inbox = mailboxData.data.find((mb: any) => 
-              mb.path?.toUpperCase() === 'INBOX'
-            );
+          // Correct path: mailboxData.mailboxes (not mailboxData.data)
+          const mailboxes = mailboxData?.mailboxes || [];
+          const inbox = mailboxes.find((mb: any) => 
+            mb.path?.toUpperCase() === 'INBOX'
+          );
 
-            if (inbox) {
-              // Get messages from INBOX with subject filter
+          if (inbox) {
+            // Get ALL messages from INBOX with pagination, then filter by subject
+            let allMessages: any[] = [];
+            let msgPage = 1;
+            let hasMoreMessages = true;
+            
+            while (hasMoreMessages && msgPage <= 10) { // Limit to 10 pages per account
               const { data: messagesData, error: messagesError } = await supabase.functions.invoke('smtp-api', {
                 body: { 
                   action: 'getMessages', 
+                  accountId: account.id,
                   mailboxId: inbox.id,
-                  page: 0,
-                  allowedSubjects: [BGC_SUBJECT]
+                  page: msgPage,
+                  filters: {
+                    allowedSubjects: [BGC_SUBJECT]
+                  }
                 }
               });
 
               // Skip if messages fetch fails
               if (messagesError || messagesData?.error) {
-                console.warn(`Skipping messages for account ${account.email}: API error`);
-                continue;
+                console.warn(`Skipping messages for account ${account.address}: API error`);
+                break;
               }
 
-              if (messagesData?.data?.messages) {
-                const emails = messagesData.data.messages.map((msg: any) => ({
-                  id: msg.id,
-                  accountEmail: account.email,
-                  accountId: account.id,
-                  from: msg.from?.address || msg.from?.name || 'Bilinmiyor',
-                  subject: msg.subject || BGC_SUBJECT,
-                  date: msg.date,
-                  isRead: msg.seen,
-                  preview: msg.intro || ''
-                }));
-                allBgcEmails.push(...emails);
-              }
+              // Correct path: messagesData.messages
+              const messages = messagesData?.messages || [];
+              allMessages = [...allMessages, ...messages];
+              
+              // Check if there are more pages
+              hasMoreMessages = !!messagesData?.view?.next;
+              msgPage++;
+            }
+            
+            if (allMessages.length > 0) {
+              const emails = allMessages.map((msg: any) => ({
+                id: msg.id,
+                accountEmail: account.address || account.name,
+                accountId: account.id,
+                mailboxId: inbox.id,
+                from: msg.from?.address || msg.from?.name || 'Bilinmiyor',
+                subject: msg.subject || 'Your background check is complete',
+                date: msg.createdAt || msg.date,
+                isRead: msg.seen || msg.isRead,
+                preview: msg.intro || ''
+              }));
+              allBgcEmails.push(...emails);
             }
           }
         } catch (err) {
-          console.warn(`Error fetching emails for account ${account.email}:`, err);
-          // Continue to next account instead of breaking
+          console.warn(`Error fetching emails for account ${account.address}:`, err);
         }
       }
 
       // Sort by date descending
-      allBgcEmails.sort((a, b) => 
-        new Date(b.date).getTime() - new Date(a.date).getTime()
-      );
-
+      allBgcEmails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setBgcEmails(allBgcEmails);
     } catch (error) {
       console.error('Error fetching BGC emails:', error);
@@ -135,6 +159,8 @@ const BgcComplete = () => {
         description: "BGC mailleri yüklenirken bir hata oluştu",
         variant: "destructive"
       });
+    } finally {
+      setLoading(false);
     }
   }, [toast]);
 
@@ -154,16 +180,23 @@ const BgcComplete = () => {
     
     try {
       const { data } = await supabase.functions.invoke('smtp-api', {
-        body: { action: 'getMessage', messageId: email.id }
+        body: { 
+          action: 'getMessage', 
+          accountId: email.accountId,
+          mailboxId: email.mailboxId,
+          messageId: email.id 
+        }
       });
 
-      if (data?.data) {
-        const content = data.data.html || data.data.text || 'İçerik bulunamadı';
+      if (data) {
+        const content = data.html || data.text?.html || data.text?.plain || 'İçerik bulunamadı';
         setEmailContent(DOMPurify.sanitize(content, {
           ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'a', 'img', 'table', 'tr', 'td', 'th', 'ul', 'ol', 'li', 'span', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'code', 'hr', 'thead', 'tbody', 'caption'],
           ALLOWED_ATTR: ['href', 'src', 'alt', 'target', 'style', 'class', 'width', 'height', 'border', 'cellpadding', 'cellspacing', 'align', 'valign'],
           ALLOW_DATA_ATTR: false
         }));
+      } else {
+        setEmailContent('Mail içeriği yüklenirken hata oluştu');
       }
     } catch (error) {
       console.error('Error fetching email content:', error);
