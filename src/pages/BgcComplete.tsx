@@ -68,19 +68,25 @@ const BgcComplete = () => {
       for (const account of accounts as EmailAccount[]) {
         try {
           // Get mailboxes for the account
-          const { data: mailboxData } = await supabase.functions.invoke('smtp-api', {
+          const { data: mailboxData, error: mailboxError } = await supabase.functions.invoke('smtp-api', {
             body: { action: 'getMailboxes', accountId: account.id }
           });
+
+          // Skip accounts that return errors (404 means account doesn't exist in SMTP API)
+          if (mailboxError || mailboxData?.error) {
+            console.warn(`Skipping account ${account.email}: API error`);
+            continue;
+          }
 
           if (mailboxData?.data) {
             // Find INBOX
             const inbox = mailboxData.data.find((mb: any) => 
-              mb.path.toUpperCase() === 'INBOX'
+              mb.path?.toUpperCase() === 'INBOX'
             );
 
             if (inbox) {
               // Get messages from INBOX with subject filter
-              const { data: messagesData } = await supabase.functions.invoke('smtp-api', {
+              const { data: messagesData, error: messagesError } = await supabase.functions.invoke('smtp-api', {
                 body: { 
                   action: 'getMessages', 
                   mailboxId: inbox.id,
@@ -88,6 +94,12 @@ const BgcComplete = () => {
                   allowedSubjects: [BGC_SUBJECT]
                 }
               });
+
+              // Skip if messages fetch fails
+              if (messagesError || messagesData?.error) {
+                console.warn(`Skipping messages for account ${account.email}: API error`);
+                continue;
+              }
 
               if (messagesData?.data?.messages) {
                 const emails = messagesData.data.messages.map((msg: any) => ({
@@ -105,7 +117,8 @@ const BgcComplete = () => {
             }
           }
         } catch (err) {
-          console.error(`Error fetching emails for account ${account.email}:`, err);
+          console.warn(`Error fetching emails for account ${account.email}:`, err);
+          // Continue to next account instead of breaking
         }
       }
 
