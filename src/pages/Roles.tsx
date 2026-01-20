@@ -428,9 +428,10 @@ export default function RolesPage() {
           can_manage_cash: !!permissionValues.can_manage_cash,
           can_add_payment: !!permissionValues.can_add_payment,
           can_process_refund: !!permissionValues.can_process_refund,
-          can_edit_cash_settings: !!permissionValues.can_edit_cash_settings,
-          can_edit_transactions: !!permissionValues.can_edit_transactions,
-        };
+        can_edit_cash_settings: !!permissionValues.can_edit_cash_settings,
+        can_edit_transactions: !!permissionValues.can_edit_transactions,
+        can_view_bgc_complete: !!permissionValues.can_view_bgc_complete,
+      };
 
         const { error: permError } = await supabase
           .from('role_permissions')
@@ -502,9 +503,10 @@ export default function RolesPage() {
       can_manage_cash: (perms as any)?.can_manage_cash ?? false,
       can_add_payment: (perms as any)?.can_add_payment ?? false,
       can_process_refund: (perms as any)?.can_process_refund ?? false,
-      can_edit_cash_settings: (perms as any)?.can_edit_cash_settings ?? false,
-      can_edit_transactions: (perms as any)?.can_edit_transactions ?? false,
-      time_filter_minutes: perms?.time_filter_minutes?.toString() || '',
+        can_edit_cash_settings: (perms as any)?.can_edit_cash_settings ?? false,
+        can_edit_transactions: (perms as any)?.can_edit_transactions ?? false,
+        can_view_bgc_complete: (perms as any)?.can_view_bgc_complete ?? false,
+        time_filter_minutes: perms?.time_filter_minutes?.toString() || '',
       allowed_mailboxes: perms?.allowed_mailboxes?.join(', ') || '',
       allowed_senders: perms?.allowed_senders?.join(', ') || '',
       allowed_subjects: perms?.allowed_subjects?.join(', ') || '',
@@ -524,6 +526,8 @@ export default function RolesPage() {
     if ((perms as any)?.can_add_payment) active.push('can_add_payment');
     if ((perms as any)?.can_process_refund) active.push('can_process_refund');
     if ((perms as any)?.can_edit_cash_settings) active.push('can_edit_cash_settings');
+    if ((perms as any)?.can_edit_transactions) active.push('can_edit_transactions');
+    if ((perms as any)?.can_view_bgc_complete) active.push('can_view_bgc_complete');
     if (perms?.time_filter_minutes) active.push('time_filter_minutes');
     if (perms?.allowed_mailboxes?.length) active.push('allowed_mailboxes');
     if (perms?.allowed_senders?.length) active.push('allowed_senders');
@@ -549,6 +553,8 @@ export default function RolesPage() {
       can_add_payment: false,
       can_process_refund: false,
       can_edit_cash_settings: false,
+      can_edit_transactions: false,
+      can_view_bgc_complete: false,
       time_filter_minutes: '',
       allowed_mailboxes: '',
       allowed_senders: '',
