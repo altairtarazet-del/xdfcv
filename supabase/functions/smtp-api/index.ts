@@ -401,47 +401,85 @@ serve(async (req) => {
         
         console.log(`Found ${accountsWithInbox.length} accounts with INBOX, scanning messages...`);
         
-        // Step 3: Fetch messages and filter by subject in parallel (50 concurrent)
+        // Helper function to filter messages by subject
+        const filterAndAddMessages = (messages: any[], account: any, inboxId: string) => {
+          const pattern = bgcSubject.toLowerCase();
+          messages.forEach((m: any) => {
+            const subject = (m.subject || '').toLowerCase();
+            let matches = false;
+            if (pattern.startsWith('*') && pattern.endsWith('*') && pattern.length > 2) {
+              matches = subject.includes(pattern.slice(1, -1));
+            } else if (pattern.startsWith('*')) {
+              matches = subject.endsWith(pattern.slice(1));
+            } else if (pattern.endsWith('*')) {
+              matches = subject.startsWith(pattern.slice(0, -1));
+            } else {
+              matches = subject === pattern;
+            }
+            if (matches) {
+              allBgcEmails.push({
+                id: m.id,
+                accountEmail: account.address || account.name,
+                accountId: account.id,
+                mailboxId: inboxId,
+                from: m.from?.address || m.from?.name || 'Unknown',
+                subject: m.subject || 'Your background check is complete',
+                date: m.createdAt || m.date,
+                isRead: m.seen || false,
+                preview: m.intro || ''
+              });
+            }
+          });
+        };
+
+        // Step 3: Fetch messages with PAGINATION and filter by subject in parallel
+        const MAX_PAGES_PER_ACCOUNT = 10; // Scan up to 10 pages per account
+        
         for (let i = 0; i < accountsWithInbox.length; i += CONCURRENCY) {
           const batch = accountsWithInbox.slice(i, i + CONCURRENCY);
-          const promises = batch.map(({ account, inboxId }) =>
-            fetch(`${SMTP_API_URL}/accounts/${account.id}/mailboxes/${inboxId}/messages`, { headers })
+          
+          // First, fetch page 1 of each account to get total pages
+          const firstPagePromises = batch.map(({ account, inboxId }) =>
+            fetch(`${SMTP_API_URL}/accounts/${account.id}/mailboxes/${inboxId}/messages?page=1`, { headers })
               .then(r => r.ok ? r.json() : null)
               .then(data => ({ account, inboxId, data }))
               .catch(() => ({ account, inboxId, data: null }))
           );
-          const results = await Promise.all(promises);
+          const firstPageResults = await Promise.all(firstPagePromises);
           
-          results.forEach(({ account, inboxId, data }) => {
-            if (data?.member) {
-              const messages = data.member.filter((m: any) => {
-                const subject = (m.subject || '').toLowerCase();
-                const pattern = bgcSubject.toLowerCase();
-                if (pattern.startsWith('*') && pattern.endsWith('*') && pattern.length > 2) {
-                  return subject.includes(pattern.slice(1, -1));
-                } else if (pattern.startsWith('*')) {
-                  return subject.endsWith(pattern.slice(1));
-                } else if (pattern.endsWith('*')) {
-                  return subject.startsWith(pattern.slice(0, -1));
-                }
-                return subject === pattern;
-              });
-              
-              messages.forEach((msg: any) => {
-                allBgcEmails.push({
-                  id: msg.id,
-                  accountEmail: account.address || account.name,
-                  accountId: account.id,
-                  mailboxId: inboxId,
-                  from: msg.from?.address || msg.from?.name || 'Unknown',
-                  subject: msg.subject || 'Your background check is complete',
-                  date: msg.createdAt || msg.date,
-                  isRead: msg.seen || false,
-                  preview: msg.intro || ''
-                });
-              });
+          // Process first page results and collect additional page requests
+          const additionalPageRequests: Promise<{ account: any; inboxId: string; data: any }>[] = [];
+          
+          for (const { account, inboxId, data } of firstPageResults) {
+            if (!data?.member) continue;
+            
+            // Process first page messages
+            filterAndAddMessages(data.member, account, inboxId);
+            
+            // Check if there are more pages
+            const totalPages = data.view?.pages || 1;
+            if (totalPages > 1) {
+              // Queue requests for remaining pages (up to MAX_PAGES_PER_ACCOUNT)
+              for (let p = 2; p <= Math.min(totalPages, MAX_PAGES_PER_ACCOUNT); p++) {
+                additionalPageRequests.push(
+                  fetch(`${SMTP_API_URL}/accounts/${account.id}/mailboxes/${inboxId}/messages?page=${p}`, { headers })
+                    .then(r => r.ok ? r.json() : null)
+                    .then(pageData => ({ account, inboxId, data: pageData }))
+                    .catch(() => ({ account, inboxId, data: null }))
+                );
+              }
             }
-          });
+          }
+          
+          // Fetch additional pages in parallel (batch to avoid overwhelming API)
+          if (additionalPageRequests.length > 0) {
+            const additionalResults = await Promise.all(additionalPageRequests);
+            additionalResults.forEach(({ account, inboxId, data }) => {
+              if (data?.member) {
+                filterAndAddMessages(data.member, account, inboxId);
+              }
+            });
+          }
         }
         
         // Sort by date descending
