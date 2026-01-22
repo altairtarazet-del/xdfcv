@@ -14,6 +14,78 @@ export type Database = {
   }
   public: {
     Tables: {
+      bgc_complete_emails: {
+        Row: {
+          account_email: string
+          account_id: string
+          email_date: string
+          from_address: string | null
+          from_name: string | null
+          id: string
+          mailbox_id: string
+          mailbox_path: string
+          message_id: string
+          scanned_at: string | null
+          scanned_by: string | null
+          subject: string
+        }
+        Insert: {
+          account_email: string
+          account_id: string
+          email_date: string
+          from_address?: string | null
+          from_name?: string | null
+          id?: string
+          mailbox_id: string
+          mailbox_path: string
+          message_id: string
+          scanned_at?: string | null
+          scanned_by?: string | null
+          subject: string
+        }
+        Update: {
+          account_email?: string
+          account_id?: string
+          email_date?: string
+          from_address?: string | null
+          from_name?: string | null
+          id?: string
+          mailbox_id?: string
+          mailbox_path?: string
+          message_id?: string
+          scanned_at?: string | null
+          scanned_by?: string | null
+          subject?: string
+        }
+        Relationships: []
+      }
+      bgc_scan_status: {
+        Row: {
+          account_email: string
+          account_id: string
+          id: string
+          last_message_date: string | null
+          last_scanned_at: string
+          updated_at: string | null
+        }
+        Insert: {
+          account_email: string
+          account_id: string
+          id?: string
+          last_message_date?: string | null
+          last_scanned_at: string
+          updated_at?: string | null
+        }
+        Update: {
+          account_email?: string
+          account_id?: string
+          id?: string
+          last_message_date?: string | null
+          last_scanned_at?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       cash_settings: {
         Row: {
           first_payment_default: number
