@@ -28,6 +28,44 @@ interface BgcEmail {
 }
 
 const BGC_SUBJECT = "*background check is complete*";
+const CACHE_KEY = 'bgc_complete_cache';
+const CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5 dakika
+
+interface CachedData {
+  emails: BgcEmail[];
+  totalAccounts: number;
+  scannedAt: string;
+  cachedAt: number;
+}
+
+const loadFromCache = (): CachedData | null => {
+  try {
+    const cached = localStorage.getItem(CACHE_KEY);
+    if (!cached) return null;
+    
+    const data: CachedData = JSON.parse(cached);
+    const isExpired = Date.now() - data.cachedAt > CACHE_EXPIRY_MS;
+    
+    // Return cache even if expired (we'll refresh in background)
+    return data;
+  } catch {
+    return null;
+  }
+};
+
+const saveToCache = (emails: BgcEmail[], totalAccounts: number, scannedAt: string) => {
+  try {
+    const cacheData: CachedData = {
+      emails,
+      totalAccounts,
+      scannedAt,
+      cachedAt: Date.now()
+    };
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
+  } catch (e) {
+    console.warn('Failed to save BGC cache:', e);
+  }
+};
 
 const BgcComplete = () => {
   const navigate = useNavigate();
@@ -37,11 +75,13 @@ const BgcComplete = () => {
   const [bgcEmails, setBgcEmails] = useState<BgcEmail[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [backgroundRefreshing, setBackgroundRefreshing] = useState(false);
   const [selectedEmail, setSelectedEmail] = useState<BgcEmail | null>(null);
   const [emailContent, setEmailContent] = useState<string>('');
   const [loadingContent, setLoadingContent] = useState(false);
   const [totalAccounts, setTotalAccounts] = useState(0);
   const [lastScannedAt, setLastScannedAt] = useState<string | null>(null);
+  const [isFromCache, setIsFromCache] = useState(false);
 
   // Check permission
   const canViewBgcComplete = isAdmin || profile?.permissions?.can_view_bgc_complete;
@@ -60,9 +100,17 @@ const BgcComplete = () => {
       
       if (error) throw error;
       
-      setBgcEmails(data?.emails || []);
-      setTotalAccounts(data?.totalAccounts || 0);
-      setLastScannedAt(data?.scannedAt || new Date().toISOString());
+      const emails = data?.emails || [];
+      const accounts = data?.totalAccounts || 0;
+      const scannedAt = data?.scannedAt || new Date().toISOString();
+      
+      setBgcEmails(emails);
+      setTotalAccounts(accounts);
+      setLastScannedAt(scannedAt);
+      setIsFromCache(false);
+      
+      // Save to cache
+      saveToCache(emails, accounts, scannedAt);
     } catch (error) {
       console.error('Error fetching BGC emails:', error);
       toast({
@@ -77,6 +125,7 @@ const BgcComplete = () => {
 
   const handleRefresh = async () => {
     setRefreshing(true);
+    setIsFromCache(false);
     await fetchBgcEmails();
     setRefreshing(false);
     toast({
@@ -84,6 +133,29 @@ const BgcComplete = () => {
       description: "BGC listesi güncellendi"
     });
   };
+
+  // Initial load - from cache first, then background refresh
+  useEffect(() => {
+    if (!authLoading && canViewBgcComplete) {
+      // Try to load from cache first for instant display
+      const cached = loadFromCache();
+      if (cached) {
+        setBgcEmails(cached.emails);
+        setTotalAccounts(cached.totalAccounts);
+        setLastScannedAt(cached.scannedAt);
+        setIsFromCache(true);
+        setLoading(false);
+        
+        // Background refresh
+        setBackgroundRefreshing(true);
+        fetchBgcEmails().finally(() => setBackgroundRefreshing(false));
+      } else {
+        // No cache, show loading state
+        setLoading(true);
+        fetchBgcEmails().finally(() => setLoading(false));
+      }
+    }
+  }, [authLoading, canViewBgcComplete, fetchBgcEmails]);
 
   const handleViewEmail = async (email: BgcEmail) => {
     setSelectedEmail(email);
@@ -117,19 +189,13 @@ const BgcComplete = () => {
     }
   };
 
-  useEffect(() => {
-    if (!authLoading && canViewBgcComplete) {
-      setLoading(true);
-      fetchBgcEmails().finally(() => setLoading(false));
-    }
-  }, [authLoading, canViewBgcComplete, fetchBgcEmails]);
-
-  // Auto refresh every 60 seconds (reduced from 30s for performance)
+  // Auto refresh every 60 seconds (background)
   useEffect(() => {
     if (!canViewBgcComplete) return;
     
     const interval = setInterval(() => {
-      fetchBgcEmails();
+      setBackgroundRefreshing(true);
+      fetchBgcEmails().finally(() => setBackgroundRefreshing(false));
     }, 60000);
 
     return () => clearInterval(interval);
@@ -180,18 +246,30 @@ const BgcComplete = () => {
             <p className="text-muted-foreground mt-1">
               Background check tamamlanan hesaplar (son 7 gün)
             </p>
-            {lastScannedAt && (
-              <p className="text-xs text-muted-foreground mt-1">
-                Son tarama: {format(new Date(lastScannedAt), 'HH:mm:ss', { locale: tr })}
-              </p>
-            )}
+            <div className="flex items-center gap-2 mt-1">
+              {lastScannedAt && (
+                <p className="text-xs text-muted-foreground">
+                  Son tarama: {format(new Date(lastScannedAt), 'HH:mm:ss', { locale: tr })}
+                </p>
+              )}
+              {isFromCache && (
+                <Badge variant="outline" className="text-xs">
+                  Önbellekten
+                </Badge>
+              )}
+              {backgroundRefreshing && (
+                <Badge variant="secondary" className="text-xs animate-pulse">
+                  Güncelleniyor...
+                </Badge>
+              )}
+            </div>
           </div>
           <Button 
             onClick={handleRefresh} 
-            disabled={refreshing}
+            disabled={refreshing || backgroundRefreshing}
             variant="outline"
           >
-            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing || backgroundRefreshing ? 'animate-spin' : ''}`} />
             Yenile
           </Button>
         </div>
