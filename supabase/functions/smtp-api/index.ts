@@ -8,6 +8,223 @@ const corsHeaders = {
 
 const SMTP_API_URL = 'https://api.smtp.dev';
 
+// Batch size for parallel processing
+const ACCOUNT_BATCH_SIZE = 5;
+
+// Helper: Scan a single account for BGC Complete and Deactivation patterns
+async function scanSingleAccountBgc(
+  account: any,
+  headers: Record<string, string>,
+  statusMap: Map<string, any>,
+  existingBgcIds: Set<string>,
+  bgcAccountIds: Set<string>,
+  bgcAccountEmails: Set<string>,
+  shouldScanDeactivation: boolean,
+  existingDeactivatedIds: Set<string>,
+  alreadyDeactivatedEmails: Set<string>,
+  PATTERNS: { bgc_complete: string; deactivated: string },
+  SCAN_FOLDERS: string[]
+): Promise<{ bgcEmails: any[]; deactivatedEmails: any[]; messagesScanned: number; scannedMailboxes: number; skippedMessages: number }> {
+  const bgcEmails: any[] = [];
+  const deactivatedEmails: any[] = [];
+  let messagesScanned = 0;
+  let scannedMailboxes = 0;
+  let skippedMessages = 0;
+  
+  try {
+    const lastScan = statusMap.get(account.id);
+    const cutoffDate = lastScan?.last_scanned_at ? new Date(lastScan.last_scanned_at) : null;
+    
+    // Get mailboxes for this account
+    const mbRes = await fetch(`${SMTP_API_URL}/accounts/${account.id}/mailboxes`, { headers });
+    if (!mbRes.ok) {
+      console.error(`[BGC] Failed to fetch mailboxes for account ${account.id}`);
+      return { bgcEmails, deactivatedEmails, messagesScanned, scannedMailboxes, skippedMessages };
+    }
+    
+    const mbData = await mbRes.json();
+    const mailboxes = (mbData.member || []).filter((mb: any) => 
+      SCAN_FOLDERS.some(f => (mb.path || '').toUpperCase().includes(f.toUpperCase()))
+    );
+    
+    // Scan mailboxes in parallel
+    const mailboxResults = await Promise.all(
+      mailboxes.map(async (mailbox: any) => {
+        const mbBgcEmails: any[] = [];
+        const mbDeactivatedEmails: any[] = [];
+        let mbMessagesScanned = 0;
+        let mbSkippedMessages = 0;
+        let reachedOldMessagesForBgc = false;
+        
+        let msgPage = 1;
+        let hasMoreMsgs = true;
+        
+        while (hasMoreMsgs) {
+          const msgUrl = `${SMTP_API_URL}/accounts/${account.id}/mailboxes/${mailbox.id}/messages?page=${msgPage}`;
+          
+          const msgRes = await fetch(msgUrl, { headers });
+          if (!msgRes.ok) break;
+          
+          const msgData = await msgRes.json();
+          const messages = msgData.member || [];
+          mbMessagesScanned += messages.length;
+          
+          for (const msg of messages) {
+            const msgDate = new Date(msg.createdAt || msg.date || msg.receivedAt);
+            const subject = (msg.subject || '').toLowerCase();
+            const uniqueKey = `${account.id}_${mailbox.id}_${msg.id}`;
+            
+            const fromData = msg.from || {};
+            const baseEmailData = {
+              account_id: account.id,
+              account_email: account.address,
+              mailbox_id: mailbox.id,
+              mailbox_path: mailbox.path,
+              message_id: msg.id,
+              subject: msg.subject,
+              from_address: typeof fromData === 'string' ? fromData : fromData.address,
+              from_name: typeof fromData === 'string' ? null : fromData.name,
+              email_date: msg.createdAt || msg.date || msg.receivedAt
+            };
+            
+            // BGC Complete scan (incremental - respects cutoff date)
+            const isBgcComplete = subject.includes(PATTERNS.bgc_complete);
+            if (isBgcComplete) {
+              if (cutoffDate && msgDate <= cutoffDate) {
+                mbSkippedMessages++;
+                reachedOldMessagesForBgc = true;
+              } else if (!existingBgcIds.has(uniqueKey)) {
+                mbBgcEmails.push({ ...baseEmailData, email_type: 'bgc_complete' });
+              }
+            }
+            
+            // Deactivation scan (only for BGC accounts, no cutoff)
+            const isDeactivated = subject.includes(PATTERNS.deactivated);
+            if (isDeactivated && shouldScanDeactivation && !existingDeactivatedIds.has(uniqueKey)) {
+              mbDeactivatedEmails.push({ ...baseEmailData, email_type: 'deactivated' });
+            }
+          }
+          
+          // Pagination logic
+          if (msgData.view?.next) {
+            if (shouldScanDeactivation || !reachedOldMessagesForBgc) {
+              msgPage++;
+            } else {
+              hasMoreMsgs = false;
+            }
+          } else {
+            hasMoreMsgs = false;
+          }
+        }
+        
+        return { 
+          bgcEmails: mbBgcEmails, 
+          deactivatedEmails: mbDeactivatedEmails, 
+          messagesScanned: mbMessagesScanned,
+          skippedMessages: mbSkippedMessages
+        };
+      })
+    );
+    
+    // Aggregate mailbox results
+    for (const mbResult of mailboxResults) {
+      bgcEmails.push(...mbResult.bgcEmails);
+      deactivatedEmails.push(...mbResult.deactivatedEmails);
+      messagesScanned += mbResult.messagesScanned;
+      skippedMessages += mbResult.skippedMessages;
+    }
+    scannedMailboxes = mailboxes.length;
+    
+  } catch (e) {
+    console.error(`[BGC] Error processing account ${account.id}:`, e);
+  }
+  
+  return { bgcEmails, deactivatedEmails, messagesScanned, scannedMailboxes, skippedMessages };
+}
+
+// Helper: Scan a single account for First Package patterns
+async function scanSingleAccountFirstPackage(
+  accountId: string,
+  accountEmail: string,
+  headers: Record<string, string>,
+  existingFirstPackageIds: Set<string>,
+  FIRST_PACKAGE_PATTERNS: string[],
+  SCAN_FOLDERS: string[]
+): Promise<{ firstPackageEmails: any[]; messagesScanned: number }> {
+  const firstPackageEmails: any[] = [];
+  let messagesScanned = 0;
+  
+  try {
+    const mbRes = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes`, { headers });
+    if (!mbRes.ok) {
+      console.error(`[FIRST_PACKAGE] Failed to fetch mailboxes for account ${accountId}`);
+      return { firstPackageEmails, messagesScanned };
+    }
+    
+    const mbData = await mbRes.json();
+    const mailboxes = (mbData.member || []).filter((mb: any) => 
+      SCAN_FOLDERS.some(f => (mb.path || '').toUpperCase().includes(f.toUpperCase()))
+    );
+    
+    let foundFirstPackage = false;
+    
+    // Scan mailboxes sequentially for early exit
+    for (const mailbox of mailboxes) {
+      if (foundFirstPackage) break;
+      
+      let msgPage = 1;
+      let hasMoreMsgs = true;
+      
+      while (hasMoreMsgs && !foundFirstPackage) {
+        const msgUrl = `${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailbox.id}/messages?page=${msgPage}`;
+        
+        const msgRes = await fetch(msgUrl, { headers });
+        if (!msgRes.ok) break;
+        
+        const msgData = await msgRes.json();
+        const messages = msgData.member || [];
+        messagesScanned += messages.length;
+        
+        for (const msg of messages) {
+          const subject = (msg.subject || '').toLowerCase();
+          const uniqueKey = `${accountId}_${mailbox.id}_${msg.id}`;
+          
+          const isFirstPackage = FIRST_PACKAGE_PATTERNS.some(p => subject.includes(p));
+          
+          if (isFirstPackage && !existingFirstPackageIds.has(uniqueKey)) {
+            const fromData = msg.from || {};
+            firstPackageEmails.push({
+              account_id: accountId,
+              account_email: accountEmail,
+              mailbox_id: mailbox.id,
+              mailbox_path: mailbox.path,
+              message_id: msg.id,
+              subject: msg.subject,
+              from_address: typeof fromData === 'string' ? fromData : fromData.address,
+              from_name: typeof fromData === 'string' ? null : fromData.name,
+              email_date: msg.createdAt || msg.date || msg.receivedAt,
+              email_type: 'first_package'
+            });
+            foundFirstPackage = true;
+            console.log(`[FIRST_PACKAGE] Found: ${msg.subject} from ${accountEmail}`);
+            break;
+          }
+        }
+        
+        if (msgData.view?.next && !foundFirstPackage) {
+          msgPage++;
+        } else {
+          hasMoreMsgs = false;
+        }
+      }
+    }
+  } catch (e) {
+    console.error(`[FIRST_PACKAGE] Error processing account ${accountId}:`, e);
+  }
+  
+  return { firstPackageEmails, messagesScanned };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -358,22 +575,17 @@ serve(async (req) => {
         const PATTERNS = {
           bgc_complete: 'your background check is complete',
           deactivated: 'your dasher account has been deactivated',
-          first_package: [
-            'congratulations, your dasher welcome gift is on its way!',
-            'your first dash, done.',
-            'hey, you made it 🥂 here\'s 40% off'
-          ]
         };
         const SCAN_FOLDERS = ['INBOX', 'Trash', 'Junk', 'Spam'];
         
         const newBgcEmails: any[] = [];
         const newDeactivatedEmails: any[] = [];
-        const newFirstPackageEmails: any[] = [];
         let scannedMailboxes = 0;
         let messagesScanned = 0;
         let skippedMessages = 0;
         
-        console.log('[BGC] Starting scan...');
+        console.log('[BGC] Starting PARALLEL scan...');
+        const startTime = Date.now();
         
         // 1. Get existing scan statuses from DB (for BGC incremental scan)
         const { data: scanStatuses } = await supabase
@@ -421,21 +633,6 @@ serve(async (req) => {
         
         console.log(`[BGC] ${alreadyDeactivatedEmails.size} accounts already marked as deactivated`);
         
-        // 3.5. Get already first_package accounts (to skip them)
-        const { data: existingFirstPackage } = await supabase
-          .from('bgc_complete_emails')
-          .select('account_id, account_email, mailbox_id, message_id')
-          .eq('email_type', 'first_package');
-        
-        const alreadyFirstPackageEmails = new Set(
-          (existingFirstPackage || []).map((e: any) => e.account_email)
-        );
-        const existingFirstPackageIds = new Set(
-          (existingFirstPackage || []).map((e: any) => `${e.account_id}_${e.mailbox_id}_${e.message_id}`)
-        );
-        
-        console.log(`[BGC] ${alreadyFirstPackageEmails.size} accounts already have first package`);
-        
         // 4. Fetch all accounts with pagination
         let allAccounts: any[] = [];
         let currentPage = 1;
@@ -469,129 +666,76 @@ serve(async (req) => {
         
         console.log(`[BGC] Found ${allAccounts.length} accounts total`);
         
-        // 5. Scan each account
-        for (const account of allAccounts) {
-          try {
-            const lastScan = statusMap.get(account.id);
-            const cutoffDate = lastScan?.last_scanned_at ? new Date(lastScan.last_scanned_at) : null;
-            
-            // Determine if we need to scan for deactivation (only if account has BGC and not yet deactivated)
-            const shouldScanDeactivation = bgcAccountIds.has(account.id) && !alreadyDeactivatedEmails.has(account.address);
-            
-            if (cutoffDate) {
-              console.log(`[BGC] Account ${account.address}: BGC scan after ${cutoffDate.toISOString()}, deactivation scan: ${shouldScanDeactivation}`);
-            } else {
-              console.log(`[BGC] Account ${account.address}: first time BGC scan, deactivation scan: ${shouldScanDeactivation}`);
-            }
-            
-            // Get mailboxes for this account
-            const mbRes = await fetch(`${SMTP_API_URL}/accounts/${account.id}/mailboxes`, { headers });
-            if (!mbRes.ok) {
-              console.error(`[BGC] Failed to fetch mailboxes for account ${account.id}`);
-              continue;
-            }
-            
-            const mbData = await mbRes.json();
-            const mailboxes = (mbData.member || []).filter((mb: any) => 
-              SCAN_FOLDERS.some(f => (mb.path || '').toUpperCase().includes(f.toUpperCase()))
-            );
-            
-            // 6. For each mailbox, get messages with pagination
-            for (const mailbox of mailboxes) {
-              scannedMailboxes++;
-              let msgPage = 1;
-              let hasMoreMsgs = true;
-              let reachedOldMessagesForBgc = false;
-              
-              while (hasMoreMsgs) {
-                const msgUrl = `${SMTP_API_URL}/accounts/${account.id}/mailboxes/${mailbox.id}/messages?page=${msgPage}`;
-                
-                const msgRes = await fetch(msgUrl, { headers });
-                if (!msgRes.ok) {
-                  console.error(`[BGC] Failed to fetch messages for mailbox ${mailbox.id}`);
-                  break;
-                }
-                
-                const msgData = await msgRes.json();
-                const messages = msgData.member || [];
-                messagesScanned += messages.length;
-                
-                // 7. Process each message
-                for (const msg of messages) {
-                  const msgDate = new Date(msg.createdAt || msg.date || msg.receivedAt);
-                  const subject = (msg.subject || '').toLowerCase();
-                  const uniqueKey = `${account.id}_${mailbox.id}_${msg.id}`;
-                  
-                  const fromData = msg.from || {};
-                  const baseEmailData = {
-                    account_id: account.id,
-                    account_email: account.address,
-                    mailbox_id: mailbox.id,
-                    mailbox_path: mailbox.path,
-                    message_id: msg.id,
-                    subject: msg.subject,
-                    from_address: typeof fromData === 'string' ? fromData : fromData.address,
-                    from_name: typeof fromData === 'string' ? null : fromData.name,
-                    email_date: msg.createdAt || msg.date || msg.receivedAt
-                  };
-                  
-                  // BGC Complete scan (incremental - respects cutoff date)
-                  const isBgcComplete = subject.includes(PATTERNS.bgc_complete);
-                  if (isBgcComplete) {
-                    // Check cutoff for BGC (incremental scan)
-                    if (cutoffDate && msgDate <= cutoffDate) {
-                      skippedMessages++;
-                      reachedOldMessagesForBgc = true;
-                    } else if (!existingBgcIds.has(uniqueKey)) {
-                      newBgcEmails.push({ ...baseEmailData, email_type: 'bgc_complete' });
-                      existingBgcIds.add(uniqueKey);
-                      // Add to BGC account sets so deactivation scan can find it
-                      bgcAccountIds.add(account.id);
-                      bgcAccountEmails.add(account.address);
-                      console.log(`[BGC] NEW BGC Complete: ${msg.subject} from ${account.address}`);
-                    }
-                  }
-                  
-                  // Deactivation scan (only for BGC accounts, no cutoff - scans all messages)
-                  const isDeactivated = subject.includes(PATTERNS.deactivated);
-                  if (isDeactivated && shouldScanDeactivation && !existingDeactivatedIds.has(uniqueKey)) {
-                    newDeactivatedEmails.push({ ...baseEmailData, email_type: 'deactivated' });
-                    existingDeactivatedIds.add(uniqueKey);
-                    // Mark this account as deactivated so we don't scan again
-                    alreadyDeactivatedEmails.add(account.address);
-                    console.log(`[BGC] NEW Deactivated: ${msg.subject} from ${account.address}`);
-                  }
-                }
-                
-                // Check message pagination - for deactivation we scan all pages, for BGC we can stop at old messages
-                // If we only found old BGC messages and no deactivation scan needed, we can stop
-                if (msgData.view?.next) {
-                  // Continue if we need deactivation scan OR we haven't reached old BGC messages
-                  if (shouldScanDeactivation || !reachedOldMessagesForBgc) {
-                    msgPage++;
-                  } else {
-                    hasMoreMsgs = false;
-                  }
-                } else {
-                  hasMoreMsgs = false;
-                }
-              }
-            }
-            
-            // 8. Update scan status for this account (for BGC incremental tracking)
-            await supabase.from('bgc_scan_status').upsert({
-              account_id: account.id,
-              account_email: account.address,
-              last_scanned_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            }, { onConflict: 'account_id' });
-            
-          } catch (e) {
-            console.error(`[BGC] Error processing account ${account.id}:`, e);
-          }
+        // 5. Process accounts in parallel batches
+        const batches: any[][] = [];
+        for (let i = 0; i < allAccounts.length; i += ACCOUNT_BATCH_SIZE) {
+          batches.push(allAccounts.slice(i, i + ACCOUNT_BATCH_SIZE));
         }
         
-        // 9. Insert new emails to database (both BGC complete and deactivated)
+        console.log(`[BGC] Processing ${batches.length} batches of ${ACCOUNT_BATCH_SIZE} accounts each`);
+        
+        for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+          const batch = batches[batchIndex];
+          console.log(`[BGC] Processing batch ${batchIndex + 1}/${batches.length}`);
+          
+          // Process batch in parallel
+          const batchResults = await Promise.all(
+            batch.map(account => {
+              const shouldScanDeactivation = bgcAccountIds.has(account.id) && !alreadyDeactivatedEmails.has(account.address);
+              
+              return scanSingleAccountBgc(
+                account,
+                headers,
+                statusMap,
+                existingBgcIds,
+                bgcAccountIds,
+                bgcAccountEmails,
+                shouldScanDeactivation,
+                existingDeactivatedIds,
+                alreadyDeactivatedEmails,
+                PATTERNS,
+                SCAN_FOLDERS
+              );
+            })
+          );
+          
+          // Aggregate batch results
+          for (const accountResult of batchResults) {
+            newBgcEmails.push(...accountResult.bgcEmails);
+            newDeactivatedEmails.push(...accountResult.deactivatedEmails);
+            messagesScanned += accountResult.messagesScanned;
+            scannedMailboxes += accountResult.scannedMailboxes;
+            skippedMessages += accountResult.skippedMessages;
+            
+            // Add new BGC accounts to sets for deactivation tracking
+            for (const bgcEmail of accountResult.bgcEmails) {
+              existingBgcIds.add(`${bgcEmail.account_id}_${bgcEmail.mailbox_id}_${bgcEmail.message_id}`);
+              bgcAccountIds.add(bgcEmail.account_id);
+              bgcAccountEmails.add(bgcEmail.account_email);
+            }
+            
+            // Add new deactivated accounts to set
+            for (const deactEmail of accountResult.deactivatedEmails) {
+              existingDeactivatedIds.add(`${deactEmail.account_id}_${deactEmail.mailbox_id}_${deactEmail.message_id}`);
+              alreadyDeactivatedEmails.add(deactEmail.account_email);
+            }
+          }
+          
+          // Update scan status for batch accounts
+          const statusUpdates = batch.map(account => ({
+            account_id: account.id,
+            account_email: account.address,
+            last_scanned_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }));
+          
+          await supabase.from('bgc_scan_status').upsert(statusUpdates, { onConflict: 'account_id' });
+        }
+        
+        const elapsedMs = Date.now() - startTime;
+        console.log(`[BGC] Parallel scan completed in ${elapsedMs}ms (${(elapsedMs/1000).toFixed(1)}s)`);
+        
+        // 6. Insert new emails to database (both BGC complete and deactivated)
         const allNewEmails = [...newBgcEmails, ...newDeactivatedEmails];
         
         if (allNewEmails.length > 0) {
@@ -609,7 +753,7 @@ serve(async (req) => {
           }
         }
         
-        // 10. Get counts from database
+        // 7. Get counts from database
         const { count: totalBgcInDb } = await supabase
           .from('bgc_complete_emails')
           .select('*', { count: 'exact', head: true })
@@ -626,7 +770,10 @@ serve(async (req) => {
           newBgcFound: newBgcEmails.length,
           newDeactivatedFound: newDeactivatedEmails.length,
           totalBgcInDb: totalBgcInDb || 0,
-          totalDeactivatedInDb: totalDeactivatedInDb || 0
+          totalDeactivatedInDb: totalDeactivatedInDb || 0,
+          elapsedMs,
+          accountsScanned: allAccounts.length,
+          messagesScanned
         };
         break;
       }
@@ -647,7 +794,8 @@ serve(async (req) => {
         const newFirstPackageEmails: any[] = [];
         let messagesScanned = 0;
         
-        console.log('[FIRST_PACKAGE] Starting scan...');
+        console.log('[FIRST_PACKAGE] Starting PARALLEL scan...');
+        const startTime = Date.now();
         
         // 1. Get BGC complete accounts
         const { data: bgcAccounts } = await supabase
@@ -687,90 +835,56 @@ serve(async (req) => {
         console.log(`[FIRST_PACKAGE] ${deactivatedEmails.size} deactivated, ${alreadyFirstPackageEmails.size} already have first package`);
         
         // 4. Build list of Clear accounts (BGC complete but not deactivated, not already first package)
-        const clearAccountIds: string[] = [];
+        const clearAccounts: { id: string; email: string }[] = [];
         for (const [accountId, email] of bgcAccountMap.entries()) {
           if (!deactivatedEmails.has(email) && !alreadyFirstPackageEmails.has(email)) {
-            clearAccountIds.push(accountId);
+            clearAccounts.push({ id: accountId, email });
           }
         }
         
-        console.log(`[FIRST_PACKAGE] ${clearAccountIds.length} Clear accounts to scan`);
+        console.log(`[FIRST_PACKAGE] ${clearAccounts.length} Clear accounts to scan`);
         
-        // 5. Scan each Clear account for first package patterns
-        for (const accountId of clearAccountIds) {
-          try {
-            const accountEmail = bgcAccountMap.get(accountId)!;
+        // 5. Process accounts in parallel batches
+        const batches: { id: string; email: string }[][] = [];
+        for (let i = 0; i < clearAccounts.length; i += ACCOUNT_BATCH_SIZE) {
+          batches.push(clearAccounts.slice(i, i + ACCOUNT_BATCH_SIZE));
+        }
+        
+        console.log(`[FIRST_PACKAGE] Processing ${batches.length} batches of ${ACCOUNT_BATCH_SIZE} accounts each`);
+        
+        for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+          const batch = batches[batchIndex];
+          console.log(`[FIRST_PACKAGE] Processing batch ${batchIndex + 1}/${batches.length}`);
+          
+          // Process batch in parallel
+          const batchResults = await Promise.all(
+            batch.map(account => 
+              scanSingleAccountFirstPackage(
+                account.id,
+                account.email,
+                headers,
+                existingFirstPackageIds,
+                FIRST_PACKAGE_PATTERNS,
+                SCAN_FOLDERS
+              )
+            )
+          );
+          
+          // Aggregate batch results
+          for (const accountResult of batchResults) {
+            newFirstPackageEmails.push(...accountResult.firstPackageEmails);
+            messagesScanned += accountResult.messagesScanned;
             
-            // Get account details for mailboxes
-            const mbRes = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes`, { headers });
-            if (!mbRes.ok) {
-              console.error(`[FIRST_PACKAGE] Failed to fetch mailboxes for account ${accountId}`);
-              continue;
+            // Add to set to avoid duplicates within this scan
+            for (const fpEmail of accountResult.firstPackageEmails) {
+              existingFirstPackageIds.add(`${fpEmail.account_id}_${fpEmail.mailbox_id}_${fpEmail.message_id}`);
+              alreadyFirstPackageEmails.add(fpEmail.account_email);
             }
-            
-            const mbData = await mbRes.json();
-            const mailboxes = (mbData.member || []).filter((mb: any) => 
-              SCAN_FOLDERS.some(f => (mb.path || '').toUpperCase().includes(f.toUpperCase()))
-            );
-            
-            let foundFirstPackage = false;
-            
-            for (const mailbox of mailboxes) {
-              if (foundFirstPackage) break;
-              
-              let msgPage = 1;
-              let hasMoreMsgs = true;
-              
-              while (hasMoreMsgs && !foundFirstPackage) {
-                const msgUrl = `${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailbox.id}/messages?page=${msgPage}`;
-                
-                const msgRes = await fetch(msgUrl, { headers });
-                if (!msgRes.ok) break;
-                
-                const msgData = await msgRes.json();
-                const messages = msgData.member || [];
-                messagesScanned += messages.length;
-                
-                for (const msg of messages) {
-                  const subject = (msg.subject || '').toLowerCase();
-                  const uniqueKey = `${accountId}_${mailbox.id}_${msg.id}`;
-                  
-                  // Check if matches any first package pattern
-                  const isFirstPackage = FIRST_PACKAGE_PATTERNS.some(p => subject.includes(p));
-                  
-                  if (isFirstPackage && !existingFirstPackageIds.has(uniqueKey)) {
-                    const fromData = msg.from || {};
-                    newFirstPackageEmails.push({
-                      account_id: accountId,
-                      account_email: accountEmail,
-                      mailbox_id: mailbox.id,
-                      mailbox_path: mailbox.path,
-                      message_id: msg.id,
-                      subject: msg.subject,
-                      from_address: typeof fromData === 'string' ? fromData : fromData.address,
-                      from_name: typeof fromData === 'string' ? null : fromData.name,
-                      email_date: msg.createdAt || msg.date || msg.receivedAt,
-                      email_type: 'first_package'
-                    });
-                    existingFirstPackageIds.add(uniqueKey);
-                    alreadyFirstPackageEmails.add(accountEmail);
-                    foundFirstPackage = true;
-                    console.log(`[FIRST_PACKAGE] Found: ${msg.subject} from ${accountEmail}`);
-                    break;
-                  }
-                }
-                
-                if (msgData.view?.next && !foundFirstPackage) {
-                  msgPage++;
-                } else {
-                  hasMoreMsgs = false;
-                }
-              }
-            }
-          } catch (e) {
-            console.error(`[FIRST_PACKAGE] Error processing account ${accountId}:`, e);
           }
         }
+        
+        const elapsedMs = Date.now() - startTime;
+        console.log(`[FIRST_PACKAGE] Parallel scan completed in ${elapsedMs}ms (${(elapsedMs/1000).toFixed(1)}s)`);
         
         // 6. Insert new first package emails
         if (newFirstPackageEmails.length > 0) {
@@ -799,8 +913,9 @@ serve(async (req) => {
         result = {
           newFirstPackageFound: newFirstPackageEmails.length,
           totalFirstPackageInDb: totalFirstPackageInDb || 0,
-          scannedAccounts: clearAccountIds.length,
-          messagesScanned
+          scannedAccounts: clearAccounts.length,
+          messagesScanned,
+          elapsedMs
         };
         break;
       }
