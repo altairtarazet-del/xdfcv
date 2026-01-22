@@ -348,11 +348,18 @@ serve(async (req) => {
       }
 
       case 'scanBgcComplete': {
-        // Ultra-fast BGC scan - all work done server-side with parallel requests
+        // Ultra-fast BGC scan with date filtering and one-per-account logic
         const bgcSubject = body.subjectFilter || '*background check is complete*';
-        console.log('Starting BGC scan with subject:', bgcSubject);
+        const daysLimit = body.daysLimit || 7; // Default: son 7 gün
+        const onePerAccount = body.onePerAccount !== false; // Default: true
+        
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - daysLimit);
+        
+        console.log(`BGC scan starting: subject=${bgcSubject}, days=${daysLimit}, onePerAccount=${onePerAccount}, cutoff=${cutoffDate.toISOString()}`);
         
         const allBgcEmails: any[] = [];
+        const foundAccountIds = new Set<string>(); // Track accounts already found
         
         // Step 1: Fetch all accounts (parallel pagination)
         let allAccounts: any[] = [];
@@ -378,7 +385,7 @@ serve(async (req) => {
         
         console.log(`Found ${allAccounts.length} accounts, fetching mailboxes...`);
         
-        // Step 2: Fetch all mailboxes in parallel (50 concurrent)
+        // Step 2: Fetch all mailboxes in parallel (high concurrency)
         const CONCURRENCY = 50;
         const accountsWithInbox: { account: any; inboxId: string }[] = [];
         
@@ -401,10 +408,20 @@ serve(async (req) => {
         
         console.log(`Found ${accountsWithInbox.length} accounts with INBOX, scanning messages...`);
         
-        // Helper function to filter messages by subject
-        const filterAndAddMessages = (messages: any[], account: any, inboxId: string) => {
-          const pattern = bgcSubject.toLowerCase();
-          messages.forEach((m: any) => {
+        // Helper function to filter messages by subject and date
+        const pattern = bgcSubject.toLowerCase();
+        const filterAndAddMessages = (messages: any[], account: any, inboxId: string): boolean => {
+          let foundForThisAccount = false;
+          
+          for (const m of messages) {
+            // Skip if onePerAccount and already found for this account
+            if (onePerAccount && foundAccountIds.has(account.id)) break;
+            
+            // Date check - skip messages older than cutoff
+            const msgDate = new Date(m.createdAt || m.date);
+            if (msgDate < cutoffDate) continue;
+            
+            // Subject matching
             const subject = (m.subject || '').toLowerCase();
             let matches = false;
             if (pattern.startsWith('*') && pattern.endsWith('*') && pattern.length > 2) {
@@ -416,6 +433,7 @@ serve(async (req) => {
             } else {
               matches = subject === pattern;
             }
+            
             if (matches) {
               allBgcEmails.push({
                 id: m.id,
@@ -428,65 +446,43 @@ serve(async (req) => {
                 isRead: m.seen || false,
                 preview: m.intro || ''
               });
+              foundAccountIds.add(account.id);
+              foundForThisAccount = true;
+              
+              // If onePerAccount, stop after first match
+              if (onePerAccount) break;
             }
-          });
+          }
+          return foundForThisAccount;
         };
 
-        // Step 3: Fetch messages with PAGINATION and filter by subject in parallel
-        const MAX_PAGES_PER_ACCOUNT = 10; // Scan up to 10 pages per account
-        
+        // Step 3: Fetch ONLY first page of messages (with date filter, first page is enough for 7 days)
         for (let i = 0; i < accountsWithInbox.length; i += CONCURRENCY) {
           const batch = accountsWithInbox.slice(i, i + CONCURRENCY);
           
-          // First, fetch page 1 of each account to get total pages
-          const firstPagePromises = batch.map(({ account, inboxId }) =>
+          const promises = batch.map(({ account, inboxId }) =>
             fetch(`${SMTP_API_URL}/accounts/${account.id}/mailboxes/${inboxId}/messages?page=1`, { headers })
               .then(r => r.ok ? r.json() : null)
               .then(data => ({ account, inboxId, data }))
               .catch(() => ({ account, inboxId, data: null }))
           );
-          const firstPageResults = await Promise.all(firstPagePromises);
+          const results = await Promise.all(promises);
           
-          // Process first page results and collect additional page requests
-          const additionalPageRequests: Promise<{ account: any; inboxId: string; data: any }>[] = [];
-          
-          for (const { account, inboxId, data } of firstPageResults) {
+          for (const { account, inboxId, data } of results) {
             if (!data?.member) continue;
-            
-            // Process first page messages
             filterAndAddMessages(data.member, account, inboxId);
-            
-            // Check if there are more pages
-            const totalPages = data.view?.pages || 1;
-            if (totalPages > 1) {
-              // Queue requests for remaining pages (up to MAX_PAGES_PER_ACCOUNT)
-              for (let p = 2; p <= Math.min(totalPages, MAX_PAGES_PER_ACCOUNT); p++) {
-                additionalPageRequests.push(
-                  fetch(`${SMTP_API_URL}/accounts/${account.id}/mailboxes/${inboxId}/messages?page=${p}`, { headers })
-                    .then(r => r.ok ? r.json() : null)
-                    .then(pageData => ({ account, inboxId, data: pageData }))
-                    .catch(() => ({ account, inboxId, data: null }))
-                );
-              }
-            }
-          }
-          
-          // Fetch additional pages in parallel (batch to avoid overwhelming API)
-          if (additionalPageRequests.length > 0) {
-            const additionalResults = await Promise.all(additionalPageRequests);
-            additionalResults.forEach(({ account, inboxId, data }) => {
-              if (data?.member) {
-                filterAndAddMessages(data.member, account, inboxId);
-              }
-            });
           }
         }
         
         // Sort by date descending
         allBgcEmails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
         
-        console.log(`BGC scan complete. Found ${allBgcEmails.length} emails.`);
-        result = { emails: allBgcEmails, totalAccounts: allAccounts.length };
+        console.log(`BGC scan complete. Found ${allBgcEmails.length} emails from ${allAccounts.length} accounts.`);
+        result = { 
+          emails: allBgcEmails, 
+          totalAccounts: allAccounts.length,
+          scannedAt: new Date().toISOString()
+        };
         break;
       }
 
