@@ -12,6 +12,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, CheckCircle, Clock, Search, Database, XCircle, Check, X, Package } from 'lucide-react';
@@ -49,6 +50,7 @@ export default function BgcComplete() {
   const [firstPackageLoading, setFirstPackageLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [scanStats, setScanStats] = useState<ScanStats>({ 
     totalBgcInDb: 0,
     totalDeactivatedInDb: 0,
@@ -185,18 +187,25 @@ export default function BgcComplete() {
     }
   };
 
-  // Filter emails by time
+  // Filter emails by time and search query
   const filteredEmails = useMemo(() => {
     const now = new Date();
+    const query = searchQuery.toLowerCase().trim();
+    
     return bgcEmails.filter(email => {
+      // Time filter
       const emailDate = new Date(email.email_date);
+      let passesTimeFilter = true;
       if (activeTab === '24h') {
-        return now.getTime() - emailDate.getTime() < 24 * 60 * 60 * 1000;
+        passesTimeFilter = now.getTime() - emailDate.getTime() < 24 * 60 * 60 * 1000;
+      } else if (activeTab === '7d') {
+        passesTimeFilter = now.getTime() - emailDate.getTime() < 7 * 24 * 60 * 60 * 1000;
       }
-      if (activeTab === '7d') {
-        return now.getTime() - emailDate.getTime() < 7 * 24 * 60 * 60 * 1000;
-      }
-      return true;
+      
+      // Search filter
+      const passesSearchFilter = !query || email.account_email.toLowerCase().includes(query);
+      
+      return passesTimeFilter && passesSearchFilter;
     });
   }, [bgcEmails, activeTab]);
 
@@ -310,18 +319,9 @@ export default function BgcComplete() {
           <Card className="cyber-card">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-mono text-muted-foreground flex items-center gap-1">
-                <Database size={14} className="text-orange-400" />
+                <Package size={14} className="text-orange-400" />
                 İlk Paket
               </CardTitle>
-              <div className="flex items-center gap-1 mt-1">
-                <Badge variant="outline" className="bg-emerald-500/20 text-emerald-400 border-emerald-500/50 text-xs">
-                  Clear
-                </Badge>
-                <span className="text-muted-foreground text-xs">+</span>
-                <Badge variant="outline" className="bg-orange-500/20 text-orange-400 border-orange-500/50 text-xs">
-                  Paket Atıldı
-                </Badge>
-              </div>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-orange-400">{scanStats.totalFirstPackageInDb}</div>
@@ -349,20 +349,32 @@ export default function BgcComplete() {
           </div>
         )}
 
-        {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="cyber-card">
-            <TabsTrigger value="all" className="font-mono">
-              Tümü ({bgcEmails.length})
-            </TabsTrigger>
-            <TabsTrigger value="24h" className="font-mono">
-              Son 24 Saat
-            </TabsTrigger>
-            <TabsTrigger value="7d" className="font-mono">
-              Son 7 Gün
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+        {/* Search and Tabs */}
+        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="cyber-card">
+              <TabsTrigger value="all" className="font-mono">
+                Tümü ({bgcEmails.length})
+              </TabsTrigger>
+              <TabsTrigger value="24h" className="font-mono">
+                Son 24 Saat
+              </TabsTrigger>
+              <TabsTrigger value="7d" className="font-mono">
+                Son 7 Gün
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+          
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Hesap ara..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 font-mono bg-background/50 border-border/50"
+            />
+          </div>
+        </div>
 
         {/* Results Table */}
         <Card className="cyber-card">
