@@ -14,7 +14,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, CheckCircle, Mail, Clock, Search, Database, XCircle, Check, X } from 'lucide-react';
+import { Loader2, CheckCircle, Mail, Clock, Search, Database, XCircle, Check, X, Package } from 'lucide-react';
 import { format } from 'date-fns';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -36,6 +36,7 @@ interface BgcEmail {
 interface ScanStats {
   totalBgcInDb: number;
   totalDeactivatedInDb: number;
+  totalFirstPackageInDb: number;
 }
 
 export default function BgcComplete() {
@@ -43,12 +44,15 @@ export default function BgcComplete() {
   const { toast } = useToast();
   const [bgcEmails, setBgcEmails] = useState<BgcEmail[]>([]);
   const [deactivatedAccounts, setDeactivatedAccounts] = useState<Set<string>>(new Set());
+  const [firstPackageAccounts, setFirstPackageAccounts] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
+  const [firstPackageLoading, setFirstPackageLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
   const [scanStats, setScanStats] = useState<ScanStats>({ 
     totalBgcInDb: 0,
-    totalDeactivatedInDb: 0
+    totalDeactivatedInDb: 0,
+    totalFirstPackageInDb: 0
   });
   const [lastScan, setLastScan] = useState<Date | null>(null);
 
@@ -76,6 +80,16 @@ export default function BgcComplete() {
       if (deactivatedError) {
         console.error('Error fetching deactivated emails:', deactivatedError);
       }
+
+      // Fetch first_package emails to build the set
+      const { data: firstPackageData, error: firstPackageError } = await supabase
+        .from('bgc_complete_emails')
+        .select('account_email')
+        .eq('email_type', 'first_package');
+
+      if (firstPackageError) {
+        console.error('Error fetching first package emails:', firstPackageError);
+      }
       
       if (bgcData) {
         setBgcEmails(bgcData);
@@ -86,6 +100,12 @@ export default function BgcComplete() {
       if (deactivatedData) {
         setDeactivatedAccounts(new Set(deactivatedData.map(e => e.account_email)));
         setScanStats(prev => ({ ...prev, totalDeactivatedInDb: deactivatedData.length }));
+      }
+
+      // Build set of first package account emails
+      if (firstPackageData) {
+        setFirstPackageAccounts(new Set(firstPackageData.map(e => e.account_email)));
+        setScanStats(prev => ({ ...prev, totalFirstPackageInDb: firstPackageData.length }));
       }
     } catch (error: any) {
       console.error('Error fetching saved emails:', error);
@@ -111,10 +131,11 @@ export default function BgcComplete() {
       if (error) throw error;
 
       if (data) {
-        setScanStats({
+        setScanStats(prev => ({
+          ...prev,
           totalBgcInDb: data.totalBgcInDb || 0,
           totalDeactivatedInDb: data.totalDeactivatedInDb || 0
-        });
+        }));
         setLastScan(new Date());
         
         // Refresh emails from database
@@ -138,6 +159,43 @@ export default function BgcComplete() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleFirstPackageScan = async () => {
+    setFirstPackageLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('smtp-api', {
+        body: { action: 'scanFirstPackage' }
+      });
+
+      if (error) throw error;
+
+      if (data) {
+        setScanStats(prev => ({
+          ...prev,
+          totalFirstPackageInDb: data.totalFirstPackageInDb || 0
+        }));
+        
+        // Refresh emails from database
+        await fetchSavedEmails();
+        
+        toast({
+          title: 'İlk Paket Taraması Tamamlandı',
+          description: data.newFirstPackageFound > 0 
+            ? `${data.newFirstPackageFound} yeni ilk paket maili bulundu`
+            : 'Yeni mail bulunamadı',
+        });
+      }
+    } catch (error: any) {
+      console.error('First package scan error:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Hata',
+        description: error.message || 'Tarama sırasında bir hata oluştu',
+      });
+    } finally {
+      setFirstPackageLoading(false);
     }
   };
 
@@ -196,23 +254,43 @@ export default function BgcComplete() {
               Background check tamamlanma maillerini tarayın
             </p>
           </div>
-          <Button 
-            onClick={handleScan} 
-            disabled={loading}
-            className="cyber-button"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Taranıyor...
-              </>
-            ) : (
-              <>
-                <Search className="mr-2 h-4 w-4" />
-                Yeni Tara
-              </>
-            )}
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button 
+              onClick={handleScan} 
+              disabled={loading || firstPackageLoading}
+              className="cyber-button"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Taranıyor...
+                </>
+              ) : (
+                <>
+                  <Search className="mr-2 h-4 w-4" />
+                  Yeni Tara
+                </>
+              )}
+            </Button>
+            <Button 
+              onClick={handleFirstPackageScan} 
+              disabled={loading || firstPackageLoading}
+              variant="outline"
+              className="border-orange-500/50 text-orange-400 hover:bg-orange-500/10"
+            >
+              {firstPackageLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Taranıyor...
+                </>
+              ) : (
+                <>
+                  <Package className="mr-2 h-4 w-4" />
+                  İlk Paket
+                </>
+              )}
+            </Button>
+          </div>
         </div>
 
         {/* Stats Cards */}
@@ -285,6 +363,7 @@ export default function BgcComplete() {
                     <TableRow>
                       <TableHead className="font-mono">Hesap</TableHead>
                       <TableHead className="font-mono">BGC Complete</TableHead>
+                      <TableHead className="font-mono">İlk Paket</TableHead>
                       <TableHead className="font-mono">Tarih</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -305,6 +384,16 @@ export default function BgcComplete() {
                               <Check size={12} />
                               Clear
                             </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {firstPackageAccounts.has(email.account_email) ? (
+                            <Badge variant="outline" className="bg-orange-500/20 text-orange-400 border-orange-500/50 font-mono text-xs gap-1">
+                              <Check size={12} />
+                              Paket Atıldı
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground text-xs font-mono">-</span>
                           )}
                         </TableCell>
                         <TableCell className="font-mono text-sm text-muted-foreground">

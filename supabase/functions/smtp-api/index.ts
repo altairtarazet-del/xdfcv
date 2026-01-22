@@ -357,12 +357,18 @@ serve(async (req) => {
         // Email subject patterns to track
         const PATTERNS = {
           bgc_complete: 'your background check is complete',
-          deactivated: 'your dasher account has been deactivated'
+          deactivated: 'your dasher account has been deactivated',
+          first_package: [
+            'congratulations, your dasher welcome gift is on its way!',
+            'your first dash, done.',
+            'hey, you made it 🥂 here\'s 40% off'
+          ]
         };
         const SCAN_FOLDERS = ['INBOX', 'Trash', 'Junk', 'Spam'];
         
         const newBgcEmails: any[] = [];
         const newDeactivatedEmails: any[] = [];
+        const newFirstPackageEmails: any[] = [];
         let scannedMailboxes = 0;
         let messagesScanned = 0;
         let skippedMessages = 0;
@@ -414,6 +420,21 @@ serve(async (req) => {
         );
         
         console.log(`[BGC] ${alreadyDeactivatedEmails.size} accounts already marked as deactivated`);
+        
+        // 3.5. Get already first_package accounts (to skip them)
+        const { data: existingFirstPackage } = await supabase
+          .from('bgc_complete_emails')
+          .select('account_id, account_email, mailbox_id, message_id')
+          .eq('email_type', 'first_package');
+        
+        const alreadyFirstPackageEmails = new Set(
+          (existingFirstPackage || []).map((e: any) => e.account_email)
+        );
+        const existingFirstPackageIds = new Set(
+          (existingFirstPackage || []).map((e: any) => `${e.account_id}_${e.mailbox_id}_${e.message_id}`)
+        );
+        
+        console.log(`[BGC] ${alreadyFirstPackageEmails.size} accounts already have first package`);
         
         // 4. Fetch all accounts with pagination
         let allAccounts: any[] = [];
@@ -606,6 +627,180 @@ serve(async (req) => {
           newDeactivatedFound: newDeactivatedEmails.length,
           totalBgcInDb: totalBgcInDb || 0,
           totalDeactivatedInDb: totalDeactivatedInDb || 0
+        };
+        break;
+      }
+
+      case 'scanFirstPackage': {
+        // Scan only Clear accounts for first package patterns
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const supabase = createClient(supabaseUrl, supabaseKey);
+        
+        const FIRST_PACKAGE_PATTERNS = [
+          'congratulations, your dasher welcome gift is on its way!',
+          'your first dash, done.',
+          'hey, you made it 🥂 here\'s 40% off'
+        ];
+        const SCAN_FOLDERS = ['INBOX', 'Trash', 'Junk', 'Spam'];
+        
+        const newFirstPackageEmails: any[] = [];
+        let messagesScanned = 0;
+        
+        console.log('[FIRST_PACKAGE] Starting scan...');
+        
+        // 1. Get BGC complete accounts
+        const { data: bgcAccounts } = await supabase
+          .from('bgc_complete_emails')
+          .select('account_id, account_email')
+          .eq('email_type', 'bgc_complete');
+        
+        const bgcAccountMap = new Map(
+          (bgcAccounts || []).map((e: any) => [e.account_id, e.account_email])
+        );
+        
+        console.log(`[FIRST_PACKAGE] ${bgcAccountMap.size} BGC accounts`);
+        
+        // 2. Get deactivated accounts (these are NOT clear)
+        const { data: deactivatedAccounts } = await supabase
+          .from('bgc_complete_emails')
+          .select('account_email')
+          .eq('email_type', 'deactivated');
+        
+        const deactivatedEmails = new Set(
+          (deactivatedAccounts || []).map((e: any) => e.account_email)
+        );
+        
+        // 3. Get already first_package accounts
+        const { data: existingFirstPackage } = await supabase
+          .from('bgc_complete_emails')
+          .select('account_id, account_email, mailbox_id, message_id')
+          .eq('email_type', 'first_package');
+        
+        const alreadyFirstPackageEmails = new Set(
+          (existingFirstPackage || []).map((e: any) => e.account_email)
+        );
+        const existingFirstPackageIds = new Set(
+          (existingFirstPackage || []).map((e: any) => `${e.account_id}_${e.mailbox_id}_${e.message_id}`)
+        );
+        
+        console.log(`[FIRST_PACKAGE] ${deactivatedEmails.size} deactivated, ${alreadyFirstPackageEmails.size} already have first package`);
+        
+        // 4. Build list of Clear accounts (BGC complete but not deactivated, not already first package)
+        const clearAccountIds: string[] = [];
+        for (const [accountId, email] of bgcAccountMap.entries()) {
+          if (!deactivatedEmails.has(email) && !alreadyFirstPackageEmails.has(email)) {
+            clearAccountIds.push(accountId);
+          }
+        }
+        
+        console.log(`[FIRST_PACKAGE] ${clearAccountIds.length} Clear accounts to scan`);
+        
+        // 5. Scan each Clear account for first package patterns
+        for (const accountId of clearAccountIds) {
+          try {
+            const accountEmail = bgcAccountMap.get(accountId)!;
+            
+            // Get account details for mailboxes
+            const mbRes = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes`, { headers });
+            if (!mbRes.ok) {
+              console.error(`[FIRST_PACKAGE] Failed to fetch mailboxes for account ${accountId}`);
+              continue;
+            }
+            
+            const mbData = await mbRes.json();
+            const mailboxes = (mbData.member || []).filter((mb: any) => 
+              SCAN_FOLDERS.some(f => (mb.path || '').toUpperCase().includes(f.toUpperCase()))
+            );
+            
+            let foundFirstPackage = false;
+            
+            for (const mailbox of mailboxes) {
+              if (foundFirstPackage) break;
+              
+              let msgPage = 1;
+              let hasMoreMsgs = true;
+              
+              while (hasMoreMsgs && !foundFirstPackage) {
+                const msgUrl = `${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailbox.id}/messages?page=${msgPage}`;
+                
+                const msgRes = await fetch(msgUrl, { headers });
+                if (!msgRes.ok) break;
+                
+                const msgData = await msgRes.json();
+                const messages = msgData.member || [];
+                messagesScanned += messages.length;
+                
+                for (const msg of messages) {
+                  const subject = (msg.subject || '').toLowerCase();
+                  const uniqueKey = `${accountId}_${mailbox.id}_${msg.id}`;
+                  
+                  // Check if matches any first package pattern
+                  const isFirstPackage = FIRST_PACKAGE_PATTERNS.some(p => subject.includes(p));
+                  
+                  if (isFirstPackage && !existingFirstPackageIds.has(uniqueKey)) {
+                    const fromData = msg.from || {};
+                    newFirstPackageEmails.push({
+                      account_id: accountId,
+                      account_email: accountEmail,
+                      mailbox_id: mailbox.id,
+                      mailbox_path: mailbox.path,
+                      message_id: msg.id,
+                      subject: msg.subject,
+                      from_address: typeof fromData === 'string' ? fromData : fromData.address,
+                      from_name: typeof fromData === 'string' ? null : fromData.name,
+                      email_date: msg.createdAt || msg.date || msg.receivedAt,
+                      email_type: 'first_package'
+                    });
+                    existingFirstPackageIds.add(uniqueKey);
+                    alreadyFirstPackageEmails.add(accountEmail);
+                    foundFirstPackage = true;
+                    console.log(`[FIRST_PACKAGE] Found: ${msg.subject} from ${accountEmail}`);
+                    break;
+                  }
+                }
+                
+                if (msgData.view?.next && !foundFirstPackage) {
+                  msgPage++;
+                } else {
+                  hasMoreMsgs = false;
+                }
+              }
+            }
+          } catch (e) {
+            console.error(`[FIRST_PACKAGE] Error processing account ${accountId}:`, e);
+          }
+        }
+        
+        // 6. Insert new first package emails
+        if (newFirstPackageEmails.length > 0) {
+          const { error: insertError } = await supabase
+            .from('bgc_complete_emails')
+            .upsert(newFirstPackageEmails, { 
+              onConflict: 'account_id,mailbox_id,message_id',
+              ignoreDuplicates: true 
+            });
+          
+          if (insertError) {
+            console.error('[FIRST_PACKAGE] Error inserting emails:', insertError);
+          } else {
+            console.log(`[FIRST_PACKAGE] Inserted ${newFirstPackageEmails.length} new first package emails`);
+          }
+        }
+        
+        // 7. Get total count
+        const { count: totalFirstPackageInDb } = await supabase
+          .from('bgc_complete_emails')
+          .select('*', { count: 'exact', head: true })
+          .eq('email_type', 'first_package');
+        
+        console.log(`[FIRST_PACKAGE] Scan complete. New: ${newFirstPackageEmails.length}, Total: ${totalFirstPackageInDb}`);
+        
+        result = {
+          newFirstPackageFound: newFirstPackageEmails.length,
+          totalFirstPackageInDb: totalFirstPackageInDb || 0,
+          scannedAccounts: clearAccountIds.length,
+          messagesScanned
         };
         break;
       }
