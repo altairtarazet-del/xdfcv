@@ -294,7 +294,7 @@ export default function BgcComplete() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-2 gap-4 max-w-md">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card className="cyber-card">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-mono text-muted-foreground flex items-center gap-1">
@@ -304,6 +304,32 @@ export default function BgcComplete() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-primary">{scanStats.totalBgcInDb}</div>
+            </CardContent>
+          </Card>
+          
+          <Card className="cyber-card">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-mono text-muted-foreground flex items-center gap-1">
+                <CheckCircle size={14} className="text-emerald-400" />
+                Sadece Clear
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-emerald-400">
+                {scanStats.totalBgcInDb - scanStats.totalDeactivatedInDb}
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card className="cyber-card">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-mono text-muted-foreground flex items-center gap-1">
+                <Package size={14} className="text-orange-400" />
+                İlk Paket
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-orange-400">{scanStats.totalFirstPackageInDb}</div>
             </CardContent>
           </Card>
           
