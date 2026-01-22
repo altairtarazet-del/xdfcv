@@ -14,6 +14,7 @@ import EmailManagement from "./pages/EmailManagement";
 import Background from "./pages/Background";
 import Cash from "./pages/Cash";
 import Settings from "./pages/Settings";
+import BgcComplete from "./pages/BgcComplete";
 
 import NotFound from "./pages/NotFound";
 
@@ -36,7 +37,7 @@ const App = () => (
             <Route path="/dashboard/emails" element={<EmailManagement />} />
             <Route path="/dashboard/background" element={<Background />} />
             <Route path="/dashboard/cash" element={<Cash />} />
-            
+            <Route path="/dashboard/bgc-complete" element={<BgcComplete />} />
             <Route path="/dashboard/settings" element={<Settings />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
