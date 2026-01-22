@@ -368,7 +368,18 @@ serve(async (req) => {
         const firstData = await firstPage.json();
         allAccounts = firstData.member || [];
         
-        const totalPages = firstData.view?.pages || 1;
+        // Parse total pages from 'last' URL (format: "/accounts?page=X")
+        let totalPages = 1;
+        if (firstData.view?.last) {
+          const lastUrl = firstData.view.last;
+          const pageMatch = lastUrl.match(/page=(\d+)/);
+          if (pageMatch) {
+            totalPages = parseInt(pageMatch[1], 10);
+          }
+        }
+        
+        console.log(`[BGC] Page 1: ${allAccounts.length} accounts, total pages: ${totalPages}`);
+        
         if (totalPages > 1) {
           const pagePromises = [];
           for (let p = 2; p <= Math.min(totalPages, 50); p++) {
@@ -382,6 +393,8 @@ serve(async (req) => {
             if (data?.member) allAccounts = [...allAccounts, ...data.member];
           });
         }
+        
+        console.log(`[BGC] Total accounts after pagination: ${allAccounts.length}`);
         
         console.log(`Found ${allAccounts.length} accounts, fetching mailboxes...`);
         
