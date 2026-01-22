@@ -399,8 +399,14 @@ serve(async (req) => {
         console.log(`Found ${allAccounts.length} accounts, fetching mailboxes...`);
         
         // Step 2: Fetch all mailboxes in parallel (high concurrency)
+        // Now scanning INBOX, Trash, and Junk folders
         const CONCURRENCY = 50;
-        const accountsWithInbox: { account: any; inboxId: string }[] = [];
+        const SCAN_FOLDERS = ['INBOX', 'Trash', 'Junk', 'Spam']; // Target folders to scan
+        
+        const accountsWithMailboxes: { 
+          account: any; 
+          mailboxes: { id: string; path: string }[] 
+        }[] = [];
         
         for (let i = 0; i < allAccounts.length; i += CONCURRENCY) {
           const batch = allAccounts.slice(i, i + CONCURRENCY);
@@ -413,17 +419,30 @@ serve(async (req) => {
           const results = await Promise.all(promises);
           results.forEach(({ account, data }) => {
             if (data?.member) {
-              const inbox = data.member.find((mb: any) => mb.path?.toUpperCase() === 'INBOX');
-              if (inbox) accountsWithInbox.push({ account, inboxId: inbox.id });
+              // Filter to get INBOX, Trash, Junk folders
+              const targetMailboxes = data.member.filter((mb: any) => {
+                const path = (mb.path || '').toUpperCase();
+                return SCAN_FOLDERS.some(folder => path === folder.toUpperCase());
+              });
+              
+              if (targetMailboxes.length > 0) {
+                accountsWithMailboxes.push({
+                  account,
+                  mailboxes: targetMailboxes.map((mb: any) => ({
+                    id: mb.id,
+                    path: mb.path
+                  }))
+                });
+              }
             }
           });
         }
         
-        console.log(`Found ${accountsWithInbox.length} accounts with INBOX, scanning messages...`);
+        console.log(`[BGC] Found ${accountsWithMailboxes.length} accounts with target folders, scanning INBOX+Trash+Junk...`);
         
         // Helper function to filter messages by subject and date
         const pattern = bgcSubject.toLowerCase();
-        const filterAndAddMessages = (messages: any[], account: any, inboxId: string): boolean => {
+        const filterAndAddMessages = (messages: any[], account: any, mailboxId: string, mailboxPath: string): boolean => {
           let foundForThisAccount = false;
           
           for (const m of messages) {
@@ -452,7 +471,8 @@ serve(async (req) => {
                 id: m.id,
                 accountEmail: account.address || account.name,
                 accountId: account.id,
-                mailboxId: inboxId,
+                mailboxId: mailboxId,
+                mailboxPath: mailboxPath, // Track which folder it came from
                 from: m.from?.address || m.from?.name || 'Unknown',
                 subject: m.subject || 'Your background check is complete',
                 date: m.createdAt || m.date,
@@ -469,61 +489,76 @@ serve(async (req) => {
           return foundForThisAccount;
         };
 
-        // Step 3: Fetch messages with pagination support (up to maxPages per account)
-        const maxPages = body.maxPages || 5; // Default 5 pages per account
+        // Step 3: Fetch messages from ALL target folders with pagination support
+        const maxPages = body.maxPages || 5; // Default 5 pages per account/folder
         
-        console.log(`[BGC] Scanning messages with maxPages=${maxPages} per account...`);
+        console.log(`[BGC] Scanning messages with maxPages=${maxPages} per folder...`);
         
-        for (let i = 0; i < accountsWithInbox.length; i += CONCURRENCY) {
-          const batch = accountsWithInbox.slice(i, i + CONCURRENCY);
+        // Process accounts in batches
+        for (let i = 0; i < accountsWithMailboxes.length; i += CONCURRENCY) {
+          const batch = accountsWithMailboxes.slice(i, i + CONCURRENCY);
           
-          // First page for all accounts in batch
-          const firstPagePromises = batch.map(({ account, inboxId }) =>
-            fetch(`${SMTP_API_URL}/accounts/${account.id}/mailboxes/${inboxId}/messages?page=1`, { headers })
+          // First, scan first page of INBOX for all accounts in batch (most likely location)
+          const inboxPromises = batch.map(({ account, mailboxes }) => {
+            const inbox = mailboxes.find(mb => mb.path.toUpperCase() === 'INBOX');
+            if (!inbox) return Promise.resolve({ account, mailboxes, inboxResult: null });
+            
+            return fetch(`${SMTP_API_URL}/accounts/${account.id}/mailboxes/${inbox.id}/messages?page=1`, { headers })
               .then(r => r.ok ? r.json() : null)
-              .then(data => ({ account, inboxId, data }))
-              .catch(() => ({ account, inboxId, data: null }))
-          );
-          const firstPageResults = await Promise.all(firstPagePromises);
+              .then(data => ({ account, mailboxes, inboxResult: { mailbox: inbox, data } }))
+              .catch(() => ({ account, mailboxes, inboxResult: null }));
+          });
           
-          // Process first page and determine which accounts need more pages
-          const needMorePages: { account: any; inboxId: string; totalPages: number }[] = [];
+          const inboxResults = await Promise.all(inboxPromises);
           
-          for (const { account, inboxId, data } of firstPageResults) {
-            if (!data?.member) continue;
-            
-            const foundMatch = filterAndAddMessages(data.member, account, inboxId);
-            
-            // If onePerAccount and already found, skip pagination
-            if (onePerAccount && foundMatch) continue;
-            
-            // Check if there are more pages to scan
-            if (data.view?.last) {
-              const pageMatch = data.view.last.match(/page=(\d+)/);
-              if (pageMatch) {
-                const totalPagesForAccount = parseInt(pageMatch[1], 10);
-                if (totalPagesForAccount > 1) {
-                  needMorePages.push({ account, inboxId, totalPages: Math.min(totalPagesForAccount, maxPages) });
-                }
-              }
+          // Process INBOX results and track which accounts need additional scanning
+          const needMoreScanning: { 
+            account: any; 
+            mailboxes: { id: string; path: string }[];
+            inboxPages: number;
+          }[] = [];
+          
+          for (const { account, mailboxes, inboxResult } of inboxResults) {
+            if (inboxResult?.data?.member) {
+              const foundMatch = filterAndAddMessages(
+                inboxResult.data.member, 
+                account, 
+                inboxResult.mailbox.id, 
+                inboxResult.mailbox.path
+              );
+              
+              // If onePerAccount and found, skip this account entirely
+              if (onePerAccount && foundMatch) continue;
             }
+            
+            // Account needs more scanning (other folders or more INBOX pages)
+            let inboxTotalPages = 1;
+            if (inboxResult?.data?.view?.last) {
+              const pageMatch = inboxResult.data.view.last.match(/page=(\d+)/);
+              if (pageMatch) inboxTotalPages = parseInt(pageMatch[1], 10);
+            }
+            
+            needMoreScanning.push({ 
+              account, 
+              mailboxes, 
+              inboxPages: Math.min(inboxTotalPages, maxPages) 
+            });
           }
           
-          // Fetch additional pages for accounts that need them
-          if (needMorePages.length > 0) {
-            console.log(`[BGC] ${needMorePages.length} accounts need additional pages...`);
+          // For accounts that need more scanning, scan remaining INBOX pages + other folders
+          for (const { account, mailboxes, inboxPages } of needMoreScanning) {
+            // Skip if already found for this account
+            if (onePerAccount && foundAccountIds.has(account.id)) continue;
             
-            for (const { account, inboxId, totalPages } of needMorePages) {
-              // Skip if onePerAccount and already found
-              if (onePerAccount && foundAccountIds.has(account.id)) continue;
-              
-              for (let page = 2; page <= totalPages; page++) {
-                // Skip if onePerAccount and found in previous page
+            // Scan remaining INBOX pages (2 to inboxPages)
+            const inbox = mailboxes.find(mb => mb.path.toUpperCase() === 'INBOX');
+            if (inbox && inboxPages > 1) {
+              for (let page = 2; page <= inboxPages; page++) {
                 if (onePerAccount && foundAccountIds.has(account.id)) break;
                 
                 try {
                   const pageRes = await fetch(
-                    `${SMTP_API_URL}/accounts/${account.id}/mailboxes/${inboxId}/messages?page=${page}`, 
+                    `${SMTP_API_URL}/accounts/${account.id}/mailboxes/${inbox.id}/messages?page=${page}`, 
                     { headers }
                   );
                   if (!pageRes.ok) break;
@@ -531,16 +566,52 @@ serve(async (req) => {
                   const pageData = await pageRes.json();
                   if (!pageData?.member || pageData.member.length === 0) break;
                   
-                  // Check if oldest message in this page is older than cutoff
+                  filterAndAddMessages(pageData.member, account, inbox.id, inbox.path);
+                  
+                  // Check if oldest message is before cutoff
                   const oldestInPage = pageData.member[pageData.member.length - 1];
                   const oldestDate = new Date(oldestInPage.createdAt || oldestInPage.date);
-                  
-                  filterAndAddMessages(pageData.member, account, inboxId);
-                  
-                  // If oldest message is before cutoff, no need to check more pages
                   if (oldestDate < cutoffDate) break;
                 } catch (e) {
-                  console.error(`[BGC] Error fetching page ${page} for ${account.address}:`, e);
+                  console.error(`[BGC] Error fetching INBOX page ${page} for ${account.address}:`, e);
+                  break;
+                }
+              }
+            }
+            
+            // Scan other folders (Trash, Junk, Spam)
+            const otherMailboxes = mailboxes.filter(mb => mb.path.toUpperCase() !== 'INBOX');
+            
+            for (const mailbox of otherMailboxes) {
+              if (onePerAccount && foundAccountIds.has(account.id)) break;
+              
+              // Scan pages in this folder
+              for (let page = 1; page <= maxPages; page++) {
+                if (onePerAccount && foundAccountIds.has(account.id)) break;
+                
+                try {
+                  const pageRes = await fetch(
+                    `${SMTP_API_URL}/accounts/${account.id}/mailboxes/${mailbox.id}/messages?page=${page}`, 
+                    { headers }
+                  );
+                  if (!pageRes.ok) break;
+                  
+                  const pageData = await pageRes.json();
+                  if (!pageData?.member || pageData.member.length === 0) break;
+                  
+                  filterAndAddMessages(pageData.member, account, mailbox.id, mailbox.path);
+                  
+                  // Check if oldest message is before cutoff
+                  const oldestInPage = pageData.member[pageData.member.length - 1];
+                  const oldestDate = new Date(oldestInPage.createdAt || oldestInPage.date);
+                  if (oldestDate < cutoffDate) break;
+                  
+                  // Check if more pages exist
+                  if (!pageData.view?.last) break;
+                  const lastPageMatch = pageData.view.last.match(/page=(\d+)/);
+                  if (!lastPageMatch || page >= parseInt(lastPageMatch[1], 10)) break;
+                } catch (e) {
+                  console.error(`[BGC] Error fetching ${mailbox.path} page ${page} for ${account.address}:`, e);
                   break;
                 }
               }
@@ -551,10 +622,11 @@ serve(async (req) => {
         // Sort by date descending
         allBgcEmails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
         
-        console.log(`BGC scan complete. Found ${allBgcEmails.length} emails from ${allAccounts.length} accounts.`);
+        console.log(`[BGC] Scan complete. Found ${allBgcEmails.length} BGC emails from ${allAccounts.length} accounts (scanned INBOX+Trash+Junk).`);
         result = { 
           emails: allBgcEmails, 
           totalAccounts: allAccounts.length,
+          scannedFolders: SCAN_FOLDERS,
           scannedAt: new Date().toISOString()
         };
         break;

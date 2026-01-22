@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { RefreshCw, CheckCircle, Mail, Calendar, User } from 'lucide-react';
+import { RefreshCw, CheckCircle, Mail, Calendar, User, Trash2, AlertTriangle, Inbox } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
@@ -20,6 +20,7 @@ interface BgcEmail {
   accountEmail: string;
   accountId: string;
   mailboxId: string;
+  mailboxPath?: string; // INBOX, Trash, Junk etc.
   from: string;
   subject: string;
   date: string;
@@ -322,10 +323,23 @@ const BgcComplete = () => {
                     >
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <Badge variant={email.isRead ? "secondary" : "default"}>
                               {email.isRead ? "Okundu" : "Yeni"}
                             </Badge>
+                            {/* Folder badge */}
+                            {email.mailboxPath && email.mailboxPath.toUpperCase() === 'TRASH' && (
+                              <Badge variant="destructive" className="text-xs flex items-center gap-1">
+                                <Trash2 className="h-3 w-3" />
+                                Çöp Kutusu
+                              </Badge>
+                            )}
+                            {email.mailboxPath && (email.mailboxPath.toUpperCase() === 'JUNK' || email.mailboxPath.toUpperCase() === 'SPAM') && (
+                              <Badge variant="outline" className="text-xs flex items-center gap-1 border-orange-500 text-orange-500">
+                                <AlertTriangle className="h-3 w-3" />
+                                Spam
+                              </Badge>
+                            )}
                             <span className="font-medium truncate">
                               {email.accountEmail}
                             </span>
