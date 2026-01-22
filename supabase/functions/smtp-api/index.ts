@@ -9,7 +9,7 @@ const corsHeaders = {
 const SMTP_API_URL = 'https://api.smtp.dev';
 
 // Batch size for parallel processing
-const ACCOUNT_BATCH_SIZE = 5;
+const ACCOUNT_BATCH_SIZE = 10;
 
 // Helper: Scan a single account for BGC Complete and Deactivation patterns
 async function scanSingleAccountBgc(
