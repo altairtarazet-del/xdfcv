@@ -41,17 +41,20 @@ const BgcComplete = () => {
   const [emailContent, setEmailContent] = useState<string>('');
   const [loadingContent, setLoadingContent] = useState(false);
   const [totalAccounts, setTotalAccounts] = useState(0);
+  const [lastScannedAt, setLastScannedAt] = useState<string | null>(null);
 
   // Check permission
   const canViewBgcComplete = isAdmin || profile?.permissions?.can_view_bgc_complete;
 
   const fetchBgcEmails = useCallback(async () => {
     try {
-      // Single API call - all work done server-side
+      // Single API call - optimized server-side with date filtering
       const { data, error } = await supabase.functions.invoke('smtp-api', {
         body: { 
           action: 'scanBgcComplete',
-          subjectFilter: BGC_SUBJECT
+          subjectFilter: BGC_SUBJECT,
+          daysLimit: 7,        // Son 7 gün
+          onePerAccount: true  // Hesap başına 1 kayıt
         }
       });
       
@@ -59,6 +62,7 @@ const BgcComplete = () => {
       
       setBgcEmails(data?.emails || []);
       setTotalAccounts(data?.totalAccounts || 0);
+      setLastScannedAt(data?.scannedAt || new Date().toISOString());
     } catch (error) {
       console.error('Error fetching BGC emails:', error);
       toast({
@@ -120,13 +124,13 @@ const BgcComplete = () => {
     }
   }, [authLoading, canViewBgcComplete, fetchBgcEmails]);
 
-  // Auto refresh every 30 seconds
+  // Auto refresh every 60 seconds (reduced from 30s for performance)
   useEffect(() => {
     if (!canViewBgcComplete) return;
     
     const interval = setInterval(() => {
       fetchBgcEmails();
-    }, 30000);
+    }, 60000);
 
     return () => clearInterval(interval);
   }, [canViewBgcComplete, fetchBgcEmails]);
@@ -174,8 +178,13 @@ const BgcComplete = () => {
               BGC Complete
             </h1>
             <p className="text-muted-foreground mt-1">
-              Background check tamamlanan hesaplar
+              Background check tamamlanan hesaplar (son 7 gün)
             </p>
+            {lastScannedAt && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Son tarama: {format(new Date(lastScannedAt), 'HH:mm:ss', { locale: tr })}
+              </p>
+            )}
           </div>
           <Button 
             onClick={handleRefresh} 
