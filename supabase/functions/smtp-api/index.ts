@@ -347,6 +347,136 @@ serve(async (req) => {
         break;
       }
 
+      case 'scanBgcComplete': {
+        // BGC Complete subject pattern
+        const BGC_PATTERN = 'your background check is complete';
+        const SCAN_FOLDERS = ['INBOX', 'Trash', 'Junk', 'Spam'];
+        
+        const seenIds = new Set<string>();
+        const bgcEmails: any[] = [];
+        let scannedMailboxes = 0;
+        let messagesScanned = 0;
+        
+        console.log('[BGC] Starting scan...');
+        
+        // 1. Fetch all accounts with pagination
+        let allAccounts: any[] = [];
+        let currentPage = 1;
+        let hasMorePages = true;
+        
+        while (hasMorePages) {
+          const accountsUrl = `${SMTP_API_URL}/accounts?page=${currentPage}`;
+          console.log('[BGC] Fetching accounts page:', currentPage);
+          
+          const res = await fetch(accountsUrl, { headers });
+          if (!res.ok) {
+            const text = await res.text();
+            console.error('[BGC] Failed to fetch accounts:', text);
+            throw new Error(`Failed to fetch accounts: ${res.status}`);
+          }
+          
+          const data = await res.json();
+          const accounts = data.member || [];
+          allAccounts = [...allAccounts, ...accounts];
+          
+          // Check pagination
+          if (data.view?.last) {
+            const pageMatch = data.view.last.match(/page=(\d+)/);
+            const totalPages = pageMatch ? parseInt(pageMatch[1]) : currentPage;
+            hasMorePages = currentPage < totalPages;
+            currentPage++;
+          } else {
+            hasMorePages = false;
+          }
+        }
+        
+        console.log(`[BGC] Found ${allAccounts.length} accounts to scan`);
+        
+        // 2. For each account, get mailboxes and scan messages
+        for (const account of allAccounts) {
+          try {
+            // Get mailboxes for this account
+            const mbRes = await fetch(`${SMTP_API_URL}/accounts/${account.id}/mailboxes`, { headers });
+            if (!mbRes.ok) {
+              console.error(`[BGC] Failed to fetch mailboxes for account ${account.id}`);
+              continue;
+            }
+            
+            const mbData = await mbRes.json();
+            const mailboxes = (mbData.member || []).filter((mb: any) => 
+              SCAN_FOLDERS.some(f => (mb.path || '').toUpperCase().includes(f.toUpperCase()))
+            );
+            
+            console.log(`[BGC] Account ${account.address}: ${mailboxes.length} mailboxes to scan`);
+            
+            // 3. For each mailbox, get messages with pagination
+            for (const mailbox of mailboxes) {
+              scannedMailboxes++;
+              let msgPage = 1;
+              let hasMoreMsgs = true;
+              
+              while (hasMoreMsgs) {
+                const msgUrl = `${SMTP_API_URL}/accounts/${account.id}/mailboxes/${mailbox.id}/messages?page=${msgPage}`;
+                
+                const msgRes = await fetch(msgUrl, { headers });
+                if (!msgRes.ok) {
+                  console.error(`[BGC] Failed to fetch messages for mailbox ${mailbox.id}`);
+                  break;
+                }
+                
+                const msgData = await msgRes.json();
+                const messages = msgData.member || [];
+                messagesScanned += messages.length;
+                
+                // 4. Filter for BGC subjects
+                for (const msg of messages) {
+                  const subject = (msg.subject || '').toLowerCase();
+                  const isBgc = subject.includes(BGC_PATTERN);
+                  
+                  if (isBgc) {
+                    const uniqueKey = `${account.id}_${mailbox.id}_${msg.id}`;
+                    
+                    if (!seenIds.has(uniqueKey)) {
+                      seenIds.add(uniqueKey);
+                      bgcEmails.push({
+                        accountId: account.id,
+                        accountEmail: account.address,
+                        mailboxId: mailbox.id,
+                        mailboxPath: mailbox.path,
+                        messageId: msg.id,
+                        subject: msg.subject,
+                        from: msg.from,
+                        date: msg.createdAt || msg.date || msg.receivedAt
+                      });
+                      console.log(`[BGC] Found BGC email: ${msg.subject} from ${account.address}`);
+                    }
+                  }
+                }
+                
+                // Check message pagination
+                if (msgData.view?.next) {
+                  msgPage++;
+                } else {
+                  hasMoreMsgs = false;
+                }
+              }
+            }
+          } catch (e) {
+            console.error(`[BGC] Error processing account ${account.id}:`, e);
+          }
+        }
+        
+        console.log(`[BGC] Scan complete. Found ${bgcEmails.length} BGC emails`);
+        
+        result = {
+          emails: bgcEmails,
+          scannedAccounts: allAccounts.length,
+          scannedMailboxes,
+          messagesScanned,
+          totalFound: bgcEmails.length
+        };
+        break;
+      }
 
       default:
         throw new Error(`Unknown action: ${action}`);
