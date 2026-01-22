@@ -14,7 +14,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, CheckCircle, Mail, Clock, Search, Database, XCircle, Check, X, Package } from 'lucide-react';
+import { Loader2, CheckCircle, Clock, Search, Database, XCircle, Check, X, Package } from 'lucide-react';
 import { format } from 'date-fns';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -141,14 +141,6 @@ export default function BgcComplete() {
         // Refresh emails from database
         await fetchSavedEmails();
         
-        const totalNew = (data.newBgcFound || 0) + (data.newDeactivatedFound || 0);
-        
-        toast({
-          title: 'Tarama Tamamlandı',
-          description: totalNew > 0 
-            ? `${data.newBgcFound} yeni BGC, ${data.newDeactivatedFound} yeni deaktivasyon maili bulundu`
-            : 'Yeni mail bulunamadı',
-        });
       }
     } catch (error: any) {
       console.error('Scan error:', error);
@@ -180,12 +172,6 @@ export default function BgcComplete() {
         // Refresh emails from database
         await fetchSavedEmails();
         
-        toast({
-          title: 'İlk Paket Taraması Tamamlandı',
-          description: data.newFirstPackageFound > 0 
-            ? `${data.newFirstPackageFound} yeni ilk paket maili bulundu`
-            : 'Yeni mail bulunamadı',
-        });
       }
     } catch (error: any) {
       console.error('First package scan error:', error);
@@ -251,7 +237,7 @@ export default function BgcComplete() {
               BGC Complete
             </h1>
             <p className="text-muted-foreground text-sm font-mono mt-1">
-              Background check tamamlanma maillerini tarayın
+              Background check tamamlanma durumlarını tarayın
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
@@ -316,7 +302,7 @@ export default function BgcComplete() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-emerald-400">
-                {scanStats.totalBgcInDb - scanStats.totalDeactivatedInDb}
+                {scanStats.totalBgcInDb - scanStats.totalDeactivatedInDb - scanStats.totalFirstPackageInDb}
               </div>
             </CardContent>
           </Card>
@@ -324,9 +310,18 @@ export default function BgcComplete() {
           <Card className="cyber-card">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-mono text-muted-foreground flex items-center gap-1">
-                <Package size={14} className="text-orange-400" />
+                <Database size={14} className="text-orange-400" />
                 İlk Paket
               </CardTitle>
+              <div className="flex items-center gap-1 mt-1">
+                <Badge variant="outline" className="bg-emerald-500/20 text-emerald-400 border-emerald-500/50 text-xs">
+                  Clear
+                </Badge>
+                <span className="text-muted-foreground text-xs">+</span>
+                <Badge variant="outline" className="bg-orange-500/20 text-orange-400 border-orange-500/50 text-xs">
+                  Paket Atıldı
+                </Badge>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-orange-400">{scanStats.totalFirstPackageInDb}</div>
@@ -374,11 +369,11 @@ export default function BgcComplete() {
           <CardContent className="p-0">
             {filteredEmails.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                <Mail size={48} className="mb-4 opacity-50" />
+                <Database size={48} className="mb-4 opacity-50" />
                 <p className="font-mono text-sm">
                   {bgcEmails.length === 0 
-                    ? 'Henüz kayıtlı BGC maili yok. "Yeni Tara" butonuna tıklayın.'
-                    : 'Bu zaman aralığında BGC maili bulunamadı.'
+                    ? 'Henüz kayıtlı BGC verisi yok. "Yeni Tara" butonuna tıklayın.'
+                    : 'Bu zaman aralığında BGC verisi bulunamadı.'
                   }
                 </p>
               </div>
