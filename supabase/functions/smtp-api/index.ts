@@ -469,21 +469,82 @@ serve(async (req) => {
           return foundForThisAccount;
         };
 
-        // Step 3: Fetch ONLY first page of messages (with date filter, first page is enough for 7 days)
+        // Step 3: Fetch messages with pagination support (up to maxPages per account)
+        const maxPages = body.maxPages || 5; // Default 5 pages per account
+        
+        console.log(`[BGC] Scanning messages with maxPages=${maxPages} per account...`);
+        
         for (let i = 0; i < accountsWithInbox.length; i += CONCURRENCY) {
           const batch = accountsWithInbox.slice(i, i + CONCURRENCY);
           
-          const promises = batch.map(({ account, inboxId }) =>
+          // First page for all accounts in batch
+          const firstPagePromises = batch.map(({ account, inboxId }) =>
             fetch(`${SMTP_API_URL}/accounts/${account.id}/mailboxes/${inboxId}/messages?page=1`, { headers })
               .then(r => r.ok ? r.json() : null)
               .then(data => ({ account, inboxId, data }))
               .catch(() => ({ account, inboxId, data: null }))
           );
-          const results = await Promise.all(promises);
+          const firstPageResults = await Promise.all(firstPagePromises);
           
-          for (const { account, inboxId, data } of results) {
+          // Process first page and determine which accounts need more pages
+          const needMorePages: { account: any; inboxId: string; totalPages: number }[] = [];
+          
+          for (const { account, inboxId, data } of firstPageResults) {
             if (!data?.member) continue;
-            filterAndAddMessages(data.member, account, inboxId);
+            
+            const foundMatch = filterAndAddMessages(data.member, account, inboxId);
+            
+            // If onePerAccount and already found, skip pagination
+            if (onePerAccount && foundMatch) continue;
+            
+            // Check if there are more pages to scan
+            if (data.view?.last) {
+              const pageMatch = data.view.last.match(/page=(\d+)/);
+              if (pageMatch) {
+                const totalPagesForAccount = parseInt(pageMatch[1], 10);
+                if (totalPagesForAccount > 1) {
+                  needMorePages.push({ account, inboxId, totalPages: Math.min(totalPagesForAccount, maxPages) });
+                }
+              }
+            }
+          }
+          
+          // Fetch additional pages for accounts that need them
+          if (needMorePages.length > 0) {
+            console.log(`[BGC] ${needMorePages.length} accounts need additional pages...`);
+            
+            for (const { account, inboxId, totalPages } of needMorePages) {
+              // Skip if onePerAccount and already found
+              if (onePerAccount && foundAccountIds.has(account.id)) continue;
+              
+              for (let page = 2; page <= totalPages; page++) {
+                // Skip if onePerAccount and found in previous page
+                if (onePerAccount && foundAccountIds.has(account.id)) break;
+                
+                try {
+                  const pageRes = await fetch(
+                    `${SMTP_API_URL}/accounts/${account.id}/mailboxes/${inboxId}/messages?page=${page}`, 
+                    { headers }
+                  );
+                  if (!pageRes.ok) break;
+                  
+                  const pageData = await pageRes.json();
+                  if (!pageData?.member || pageData.member.length === 0) break;
+                  
+                  // Check if oldest message in this page is older than cutoff
+                  const oldestInPage = pageData.member[pageData.member.length - 1];
+                  const oldestDate = new Date(oldestInPage.createdAt || oldestInPage.date);
+                  
+                  filterAndAddMessages(pageData.member, account, inboxId);
+                  
+                  // If oldest message is before cutoff, no need to check more pages
+                  if (oldestDate < cutoffDate) break;
+                } catch (e) {
+                  console.error(`[BGC] Error fetching page ${page} for ${account.address}:`, e);
+                  break;
+                }
+              }
+            }
           }
         }
         
