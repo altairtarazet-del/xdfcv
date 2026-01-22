@@ -367,9 +367,9 @@ serve(async (req) => {
         let messagesScanned = 0;
         let skippedMessages = 0;
         
-        console.log('[BGC] Starting incremental scan...');
+        console.log('[BGC] Starting scan...');
         
-        // 1. Get existing scan statuses from DB
+        // 1. Get existing scan statuses from DB (for BGC incremental scan)
         const { data: scanStatuses } = await supabase
           .from('bgc_scan_status')
           .select('*');
@@ -380,18 +380,42 @@ serve(async (req) => {
         
         console.log(`[BGC] Found ${statusMap.size} previously scanned accounts`);
         
-        // 2. Get existing BGC email IDs to avoid duplicates
-        const { data: existingEmails } = await supabase
+        // 2. Get existing BGC email IDs and accounts to avoid duplicates
+        const { data: existingBgcEmails } = await supabase
           .from('bgc_complete_emails')
-          .select('account_id, mailbox_id, message_id');
+          .select('account_id, account_email, mailbox_id, message_id')
+          .eq('email_type', 'bgc_complete');
         
-        const existingIds = new Set(
-          (existingEmails || []).map((e: any) => `${e.account_id}_${e.mailbox_id}_${e.message_id}`)
+        const existingBgcIds = new Set(
+          (existingBgcEmails || []).map((e: any) => `${e.account_id}_${e.mailbox_id}_${e.message_id}`)
         );
         
-        console.log(`[BGC] ${existingIds.size} emails already in database`);
+        // Set of accounts that have BGC complete (for deactivation scan)
+        const bgcAccountIds = new Set(
+          (existingBgcEmails || []).map((e: any) => e.account_id)
+        );
+        const bgcAccountEmails = new Set(
+          (existingBgcEmails || []).map((e: any) => e.account_email)
+        );
         
-        // 3. Fetch all accounts with pagination
+        console.log(`[BGC] ${existingBgcIds.size} BGC emails in database, ${bgcAccountIds.size} unique accounts`);
+        
+        // 3. Get already deactivated accounts (to skip them)
+        const { data: existingDeactivated } = await supabase
+          .from('bgc_complete_emails')
+          .select('account_id, account_email, mailbox_id, message_id')
+          .eq('email_type', 'deactivated');
+        
+        const alreadyDeactivatedEmails = new Set(
+          (existingDeactivated || []).map((e: any) => e.account_email)
+        );
+        const existingDeactivatedIds = new Set(
+          (existingDeactivated || []).map((e: any) => `${e.account_id}_${e.mailbox_id}_${e.message_id}`)
+        );
+        
+        console.log(`[BGC] ${alreadyDeactivatedEmails.size} accounts already marked as deactivated`);
+        
+        // 4. Fetch all accounts with pagination
         let allAccounts: any[] = [];
         let currentPage = 1;
         let hasMorePages = true;
@@ -422,18 +446,21 @@ serve(async (req) => {
           }
         }
         
-        console.log(`[BGC] Found ${allAccounts.length} accounts to scan`);
+        console.log(`[BGC] Found ${allAccounts.length} accounts total`);
         
-        // 4. For each account, get mailboxes and scan messages
+        // 5. Scan each account
         for (const account of allAccounts) {
           try {
             const lastScan = statusMap.get(account.id);
             const cutoffDate = lastScan?.last_scanned_at ? new Date(lastScan.last_scanned_at) : null;
             
+            // Determine if we need to scan for deactivation (only if account has BGC and not yet deactivated)
+            const shouldScanDeactivation = bgcAccountIds.has(account.id) && !alreadyDeactivatedEmails.has(account.address);
+            
             if (cutoffDate) {
-              console.log(`[BGC] Account ${account.address}: scanning messages after ${cutoffDate.toISOString()}`);
+              console.log(`[BGC] Account ${account.address}: BGC scan after ${cutoffDate.toISOString()}, deactivation scan: ${shouldScanDeactivation}`);
             } else {
-              console.log(`[BGC] Account ${account.address}: first time scan (no cutoff)`);
+              console.log(`[BGC] Account ${account.address}: first time BGC scan, deactivation scan: ${shouldScanDeactivation}`);
             }
             
             // Get mailboxes for this account
@@ -448,14 +475,14 @@ serve(async (req) => {
               SCAN_FOLDERS.some(f => (mb.path || '').toUpperCase().includes(f.toUpperCase()))
             );
             
-            // 5. For each mailbox, get messages with pagination
+            // 6. For each mailbox, get messages with pagination
             for (const mailbox of mailboxes) {
               scannedMailboxes++;
               let msgPage = 1;
               let hasMoreMsgs = true;
-              let reachedOldMessages = false;
+              let reachedOldMessagesForBgc = false;
               
-              while (hasMoreMsgs && !reachedOldMessages) {
+              while (hasMoreMsgs) {
                 const msgUrl = `${SMTP_API_URL}/accounts/${account.id}/mailboxes/${mailbox.id}/messages?page=${msgPage}`;
                 
                 const msgRes = await fetch(msgUrl, { headers });
@@ -468,27 +495,11 @@ serve(async (req) => {
                 const messages = msgData.member || [];
                 messagesScanned += messages.length;
                 
-                // 6. Filter for BGC subjects (only new messages)
+                // 7. Process each message
                 for (const msg of messages) {
                   const msgDate = new Date(msg.createdAt || msg.date || msg.receivedAt);
-                  
-                  // Skip if message is older than last scan
-                  if (cutoffDate && msgDate <= cutoffDate) {
-                    skippedMessages++;
-                    reachedOldMessages = true;
-                    continue;
-                  }
-                  
                   const subject = (msg.subject || '').toLowerCase();
-                  const isBgcComplete = subject.includes(PATTERNS.bgc_complete);
-                  const isDeactivated = subject.includes(PATTERNS.deactivated);
-                  
                   const uniqueKey = `${account.id}_${mailbox.id}_${msg.id}`;
-                  
-                  // Skip if already in database
-                  if (existingIds.has(uniqueKey)) {
-                    continue;
-                  }
                   
                   const fromData = msg.from || {};
                   const baseEmailData = {
@@ -503,29 +514,50 @@ serve(async (req) => {
                     email_date: msg.createdAt || msg.date || msg.receivedAt
                   };
                   
+                  // BGC Complete scan (incremental - respects cutoff date)
+                  const isBgcComplete = subject.includes(PATTERNS.bgc_complete);
                   if (isBgcComplete) {
-                    newBgcEmails.push({ ...baseEmailData, email_type: 'bgc_complete' });
-                    existingIds.add(uniqueKey);
-                    console.log(`[BGC] NEW BGC Complete: ${msg.subject} from ${account.address}`);
+                    // Check cutoff for BGC (incremental scan)
+                    if (cutoffDate && msgDate <= cutoffDate) {
+                      skippedMessages++;
+                      reachedOldMessagesForBgc = true;
+                    } else if (!existingBgcIds.has(uniqueKey)) {
+                      newBgcEmails.push({ ...baseEmailData, email_type: 'bgc_complete' });
+                      existingBgcIds.add(uniqueKey);
+                      // Add to BGC account sets so deactivation scan can find it
+                      bgcAccountIds.add(account.id);
+                      bgcAccountEmails.add(account.address);
+                      console.log(`[BGC] NEW BGC Complete: ${msg.subject} from ${account.address}`);
+                    }
                   }
                   
-                  if (isDeactivated) {
+                  // Deactivation scan (only for BGC accounts, no cutoff - scans all messages)
+                  const isDeactivated = subject.includes(PATTERNS.deactivated);
+                  if (isDeactivated && shouldScanDeactivation && !existingDeactivatedIds.has(uniqueKey)) {
                     newDeactivatedEmails.push({ ...baseEmailData, email_type: 'deactivated' });
-                    existingIds.add(uniqueKey);
+                    existingDeactivatedIds.add(uniqueKey);
+                    // Mark this account as deactivated so we don't scan again
+                    alreadyDeactivatedEmails.add(account.address);
                     console.log(`[BGC] NEW Deactivated: ${msg.subject} from ${account.address}`);
                   }
                 }
                 
-                // Check message pagination
-                if (msgData.view?.next && !reachedOldMessages) {
-                  msgPage++;
+                // Check message pagination - for deactivation we scan all pages, for BGC we can stop at old messages
+                // If we only found old BGC messages and no deactivation scan needed, we can stop
+                if (msgData.view?.next) {
+                  // Continue if we need deactivation scan OR we haven't reached old BGC messages
+                  if (shouldScanDeactivation || !reachedOldMessagesForBgc) {
+                    msgPage++;
+                  } else {
+                    hasMoreMsgs = false;
+                  }
                 } else {
                   hasMoreMsgs = false;
                 }
               }
             }
             
-            // 7. Update scan status for this account
+            // 8. Update scan status for this account (for BGC incremental tracking)
             await supabase.from('bgc_scan_status').upsert({
               account_id: account.id,
               account_email: account.address,
@@ -538,7 +570,7 @@ serve(async (req) => {
           }
         }
         
-        // 8. Insert new emails to database (both BGC complete and deactivated)
+        // 9. Insert new emails to database (both BGC complete and deactivated)
         const allNewEmails = [...newBgcEmails, ...newDeactivatedEmails];
         
         if (allNewEmails.length > 0) {
@@ -556,7 +588,7 @@ serve(async (req) => {
           }
         }
         
-        // 9. Get counts from database
+        // 10. Get counts from database
         const { count: totalBgcInDb } = await supabase
           .from('bgc_complete_emails')
           .select('*', { count: 'exact', head: true })
@@ -567,17 +599,13 @@ serve(async (req) => {
           .select('*', { count: 'exact', head: true })
           .eq('email_type', 'deactivated');
         
-        console.log(`[BGC] Scan complete. New BGC: ${newBgcEmails.length}, New Deactivated: ${newDeactivatedEmails.length}, Total BGC: ${totalBgcInDb}, Total Deactivated: ${totalDeactivatedInDb}, Skipped: ${skippedMessages}`);
+        console.log(`[BGC] Scan complete. New BGC: ${newBgcEmails.length}, New Deactivated: ${newDeactivatedEmails.length}, Total BGC: ${totalBgcInDb}, Total Deactivated: ${totalDeactivatedInDb}`);
         
         result = {
           newBgcFound: newBgcEmails.length,
           newDeactivatedFound: newDeactivatedEmails.length,
           totalBgcInDb: totalBgcInDb || 0,
-          totalDeactivatedInDb: totalDeactivatedInDb || 0,
-          scannedAccounts: allAccounts.length,
-          scannedMailboxes,
-          messagesScanned,
-          skippedMessages
+          totalDeactivatedInDb: totalDeactivatedInDb || 0
         };
         break;
       }
