@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -348,18 +349,45 @@ serve(async (req) => {
       }
 
       case 'scanBgcComplete': {
+        // Initialize Supabase client with service role for DB operations
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const supabase = createClient(supabaseUrl, supabaseKey);
+        
         // BGC Complete subject pattern
         const BGC_PATTERN = 'your background check is complete';
         const SCAN_FOLDERS = ['INBOX', 'Trash', 'Junk', 'Spam'];
         
-        const seenIds = new Set<string>();
-        const bgcEmails: any[] = [];
+        const newBgcEmails: any[] = [];
         let scannedMailboxes = 0;
         let messagesScanned = 0;
+        let skippedMessages = 0;
         
-        console.log('[BGC] Starting scan...');
+        console.log('[BGC] Starting incremental scan...');
         
-        // 1. Fetch all accounts with pagination
+        // 1. Get existing scan statuses from DB
+        const { data: scanStatuses } = await supabase
+          .from('bgc_scan_status')
+          .select('*');
+        
+        const statusMap = new Map(
+          (scanStatuses || []).map((s: any) => [s.account_id, s])
+        );
+        
+        console.log(`[BGC] Found ${statusMap.size} previously scanned accounts`);
+        
+        // 2. Get existing BGC email IDs to avoid duplicates
+        const { data: existingEmails } = await supabase
+          .from('bgc_complete_emails')
+          .select('account_id, mailbox_id, message_id');
+        
+        const existingIds = new Set(
+          (existingEmails || []).map((e: any) => `${e.account_id}_${e.mailbox_id}_${e.message_id}`)
+        );
+        
+        console.log(`[BGC] ${existingIds.size} emails already in database`);
+        
+        // 3. Fetch all accounts with pagination
         let allAccounts: any[] = [];
         let currentPage = 1;
         let hasMorePages = true;
@@ -392,9 +420,18 @@ serve(async (req) => {
         
         console.log(`[BGC] Found ${allAccounts.length} accounts to scan`);
         
-        // 2. For each account, get mailboxes and scan messages
+        // 4. For each account, get mailboxes and scan messages
         for (const account of allAccounts) {
           try {
+            const lastScan = statusMap.get(account.id);
+            const cutoffDate = lastScan?.last_scanned_at ? new Date(lastScan.last_scanned_at) : null;
+            
+            if (cutoffDate) {
+              console.log(`[BGC] Account ${account.address}: scanning messages after ${cutoffDate.toISOString()}`);
+            } else {
+              console.log(`[BGC] Account ${account.address}: first time scan (no cutoff)`);
+            }
+            
             // Get mailboxes for this account
             const mbRes = await fetch(`${SMTP_API_URL}/accounts/${account.id}/mailboxes`, { headers });
             if (!mbRes.ok) {
@@ -407,15 +444,14 @@ serve(async (req) => {
               SCAN_FOLDERS.some(f => (mb.path || '').toUpperCase().includes(f.toUpperCase()))
             );
             
-            console.log(`[BGC] Account ${account.address}: ${mailboxes.length} mailboxes to scan`);
-            
-            // 3. For each mailbox, get messages with pagination
+            // 5. For each mailbox, get messages with pagination
             for (const mailbox of mailboxes) {
               scannedMailboxes++;
               let msgPage = 1;
               let hasMoreMsgs = true;
+              let reachedOldMessages = false;
               
-              while (hasMoreMsgs) {
+              while (hasMoreMsgs && !reachedOldMessages) {
                 const msgUrl = `${SMTP_API_URL}/accounts/${account.id}/mailboxes/${mailbox.id}/messages?page=${msgPage}`;
                 
                 const msgRes = await fetch(msgUrl, { headers });
@@ -428,52 +464,95 @@ serve(async (req) => {
                 const messages = msgData.member || [];
                 messagesScanned += messages.length;
                 
-                // 4. Filter for BGC subjects
+                // 6. Filter for BGC subjects (only new messages)
                 for (const msg of messages) {
+                  const msgDate = new Date(msg.createdAt || msg.date || msg.receivedAt);
+                  
+                  // Skip if message is older than last scan
+                  if (cutoffDate && msgDate <= cutoffDate) {
+                    skippedMessages++;
+                    reachedOldMessages = true;
+                    continue;
+                  }
+                  
                   const subject = (msg.subject || '').toLowerCase();
                   const isBgc = subject.includes(BGC_PATTERN);
                   
                   if (isBgc) {
                     const uniqueKey = `${account.id}_${mailbox.id}_${msg.id}`;
                     
-                    if (!seenIds.has(uniqueKey)) {
-                      seenIds.add(uniqueKey);
-                      bgcEmails.push({
-                        accountId: account.id,
-                        accountEmail: account.address,
-                        mailboxId: mailbox.id,
-                        mailboxPath: mailbox.path,
-                        messageId: msg.id,
+                    // Skip if already in database
+                    if (!existingIds.has(uniqueKey)) {
+                      const fromData = msg.from || {};
+                      newBgcEmails.push({
+                        account_id: account.id,
+                        account_email: account.address,
+                        mailbox_id: mailbox.id,
+                        mailbox_path: mailbox.path,
+                        message_id: msg.id,
                         subject: msg.subject,
-                        from: msg.from,
-                        date: msg.createdAt || msg.date || msg.receivedAt
+                        from_address: typeof fromData === 'string' ? fromData : fromData.address,
+                        from_name: typeof fromData === 'string' ? null : fromData.name,
+                        email_date: msg.createdAt || msg.date || msg.receivedAt
                       });
-                      console.log(`[BGC] Found BGC email: ${msg.subject} from ${account.address}`);
+                      existingIds.add(uniqueKey); // Prevent duplicates in same scan
+                      console.log(`[BGC] NEW: ${msg.subject} from ${account.address}`);
                     }
                   }
                 }
                 
                 // Check message pagination
-                if (msgData.view?.next) {
+                if (msgData.view?.next && !reachedOldMessages) {
                   msgPage++;
                 } else {
                   hasMoreMsgs = false;
                 }
               }
             }
+            
+            // 7. Update scan status for this account
+            await supabase.from('bgc_scan_status').upsert({
+              account_id: account.id,
+              account_email: account.address,
+              last_scanned_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'account_id' });
+            
           } catch (e) {
             console.error(`[BGC] Error processing account ${account.id}:`, e);
           }
         }
         
-        console.log(`[BGC] Scan complete. Found ${bgcEmails.length} BGC emails`);
+        // 8. Insert new BGC emails to database
+        if (newBgcEmails.length > 0) {
+          const { error: insertError } = await supabase
+            .from('bgc_complete_emails')
+            .upsert(newBgcEmails, { 
+              onConflict: 'account_id,mailbox_id,message_id',
+              ignoreDuplicates: true 
+            });
+          
+          if (insertError) {
+            console.error('[BGC] Error inserting emails:', insertError);
+          } else {
+            console.log(`[BGC] Inserted ${newBgcEmails.length} new emails to database`);
+          }
+        }
+        
+        // 9. Get total count from database
+        const { count: totalInDb } = await supabase
+          .from('bgc_complete_emails')
+          .select('*', { count: 'exact', head: true });
+        
+        console.log(`[BGC] Scan complete. New: ${newBgcEmails.length}, Total in DB: ${totalInDb}, Skipped: ${skippedMessages}`);
         
         result = {
-          emails: bgcEmails,
+          newFound: newBgcEmails.length,
+          totalInDb: totalInDb || 0,
           scannedAccounts: allAccounts.length,
           scannedMailboxes,
           messagesScanned,
-          totalFound: bgcEmails.length
+          skippedMessages
         };
         break;
       }

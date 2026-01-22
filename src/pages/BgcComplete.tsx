@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -14,26 +14,31 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { RefreshCw, Loader2, CheckCircle, Mail, Clock, Search } from 'lucide-react';
+import { Loader2, CheckCircle, Mail, Clock, Search, Database } from 'lucide-react';
 import { format } from 'date-fns';
 import { useAuth } from '@/hooks/useAuth';
 
 interface BgcEmail {
-  accountId: string;
-  accountEmail: string;
-  mailboxId: string;
-  mailboxPath: string;
-  messageId: string;
+  id: string;
+  account_id: string;
+  account_email: string;
+  mailbox_id: string;
+  mailbox_path: string;
+  message_id: string;
   subject: string;
-  from: { address: string; name?: string } | string;
-  date: string;
+  from_address: string | null;
+  from_name: string | null;
+  email_date: string;
+  scanned_at: string;
 }
 
 interface ScanStats {
   accounts: number;
   mailboxes: number;
   messagesScanned: number;
-  found: number;
+  newFound: number;
+  totalInDb: number;
+  skipped: number;
 }
 
 export default function BgcComplete() {
@@ -41,17 +46,48 @@ export default function BgcComplete() {
   const { toast } = useToast();
   const [emails, setEmails] = useState<BgcEmail[]>([]);
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
   const [scanStats, setScanStats] = useState<ScanStats>({ 
     accounts: 0, 
     mailboxes: 0, 
     messagesScanned: 0, 
-    found: 0 
+    newFound: 0,
+    totalInDb: 0,
+    skipped: 0
   });
   const [lastScan, setLastScan] = useState<Date | null>(null);
 
   // Check permission
   const canViewBgcComplete = isAdmin || (profile?.permissions as any)?.can_view_bgc_complete;
+
+  // Fetch saved emails from database
+  const fetchSavedEmails = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('bgc_complete_emails')
+        .select('*')
+        .order('email_date', { ascending: false });
+
+      if (error) throw error;
+      
+      if (data) {
+        setEmails(data);
+        setScanStats(prev => ({ ...prev, totalInDb: data.length }));
+      }
+    } catch (error: any) {
+      console.error('Error fetching saved emails:', error);
+    }
+  }, []);
+
+  // Load saved emails on mount
+  useEffect(() => {
+    if (canViewBgcComplete) {
+      fetchSavedEmails().finally(() => setInitialLoading(false));
+    } else {
+      setInitialLoading(false);
+    }
+  }, [canViewBgcComplete, fetchSavedEmails]);
 
   const handleScan = async () => {
     setLoading(true);
@@ -63,18 +99,24 @@ export default function BgcComplete() {
       if (error) throw error;
 
       if (data) {
-        setEmails(data.emails || []);
         setScanStats({
           accounts: data.scannedAccounts || 0,
           mailboxes: data.scannedMailboxes || 0,
           messagesScanned: data.messagesScanned || 0,
-          found: data.totalFound || 0
+          newFound: data.newFound || 0,
+          totalInDb: data.totalInDb || 0,
+          skipped: data.skippedMessages || 0
         });
         setLastScan(new Date());
         
+        // Refresh emails from database
+        await fetchSavedEmails();
+        
         toast({
           title: 'Tarama Tamamlandı',
-          description: `${data.scannedAccounts} hesap tarandı, ${data.totalFound} BGC maili bulundu`,
+          description: data.newFound > 0 
+            ? `${data.newFound} yeni BGC maili bulundu ve kaydedildi`
+            : 'Yeni BGC maili bulunamadı',
         });
       }
     } catch (error: any) {
@@ -93,7 +135,7 @@ export default function BgcComplete() {
   const filteredEmails = useMemo(() => {
     const now = new Date();
     return emails.filter(email => {
-      const emailDate = new Date(email.date);
+      const emailDate = new Date(email.email_date);
       if (activeTab === '24h') {
         return now.getTime() - emailDate.getTime() < 24 * 60 * 60 * 1000;
       }
@@ -103,16 +145,6 @@ export default function BgcComplete() {
       return true;
     });
   }, [emails, activeTab]);
-
-  const getFromAddress = (from: BgcEmail['from']) => {
-    if (typeof from === 'string') return from;
-    return from?.address || 'Bilinmiyor';
-  };
-
-  const getFromName = (from: BgcEmail['from']) => {
-    if (typeof from === 'string') return null;
-    return from?.name;
-  };
 
   if (!canViewBgcComplete) {
     return (
@@ -125,6 +157,16 @@ export default function BgcComplete() {
               </p>
             </CardContent>
           </Card>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (initialLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-[60vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       </DashboardLayout>
     );
@@ -157,7 +199,7 @@ export default function BgcComplete() {
             ) : (
               <>
                 <Search className="mr-2 h-4 w-4" />
-                Tara
+                Yeni Tara
               </>
             )}
           </Button>
@@ -165,6 +207,29 @@ export default function BgcComplete() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card className="cyber-card">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-mono text-muted-foreground flex items-center gap-1">
+                <Database size={14} />
+                Kayıtlı BGC
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-primary">{scanStats.totalInDb}</div>
+            </CardContent>
+          </Card>
+          
+          <Card className="cyber-card">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-mono text-muted-foreground">
+                Son Taramada Yeni
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-primary">{scanStats.newFound}</div>
+            </CardContent>
+          </Card>
+          
           <Card className="cyber-card">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-mono text-muted-foreground">
@@ -179,33 +244,11 @@ export default function BgcComplete() {
           <Card className="cyber-card">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-mono text-muted-foreground">
-                Taranan Mailbox
+                Atlanan (Eski)
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-primary">{scanStats.mailboxes}</div>
-            </CardContent>
-          </Card>
-          
-          <Card className="cyber-card">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-mono text-muted-foreground">
-                Taranan Mesaj
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-primary">{scanStats.messagesScanned}</div>
-            </CardContent>
-          </Card>
-          
-          <Card className="cyber-card">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-mono text-muted-foreground">
-                Bulunan BGC
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-500">{scanStats.found}</div>
+              <div className="text-2xl font-bold text-muted-foreground">{scanStats.skipped}</div>
             </CardContent>
           </Card>
         </div>
@@ -241,7 +284,7 @@ export default function BgcComplete() {
                 <Mail size={48} className="mb-4 opacity-50" />
                 <p className="font-mono text-sm">
                   {emails.length === 0 
-                    ? 'Henüz tarama yapılmadı. "Tara" butonuna tıklayın.'
+                    ? 'Henüz kayıtlı BGC maili yok. "Yeni Tara" butonuna tıklayın.'
                     : 'Bu zaman aralığında BGC maili bulunamadı.'
                   }
                 </p>
@@ -260,33 +303,33 @@ export default function BgcComplete() {
                   </TableHeader>
                   <TableBody>
                     {filteredEmails.map((email) => (
-                      <TableRow key={`${email.accountId}_${email.mailboxId}_${email.messageId}`}>
+                      <TableRow key={email.id}>
                         <TableCell className="font-mono text-sm">
-                          {email.accountEmail}
+                          {email.account_email}
                         </TableCell>
                         <TableCell className="font-mono text-sm max-w-xs truncate">
                           {email.subject}
                         </TableCell>
                         <TableCell className="font-mono text-sm">
                           <div>
-                            {getFromAddress(email.from)}
-                            {getFromName(email.from) && (
+                            {email.from_address || 'Bilinmiyor'}
+                            {email.from_name && (
                               <span className="text-muted-foreground text-xs block">
-                                {getFromName(email.from)}
+                                {email.from_name}
                               </span>
                             )}
                           </div>
                         </TableCell>
                         <TableCell>
                           <Badge 
-                            variant={email.mailboxPath.toLowerCase() === 'trash' ? 'destructive' : 'outline'}
+                            variant={email.mailbox_path.toLowerCase() === 'trash' ? 'destructive' : 'outline'}
                             className="font-mono text-xs"
                           >
-                            {email.mailboxPath}
+                            {email.mailbox_path}
                           </Badge>
                         </TableCell>
                         <TableCell className="font-mono text-sm text-muted-foreground">
-                          {format(new Date(email.date), 'dd/MM/yyyy HH:mm')}
+                          {format(new Date(email.email_date), 'dd/MM/yyyy HH:mm')}
                         </TableCell>
                       </TableRow>
                     ))}
