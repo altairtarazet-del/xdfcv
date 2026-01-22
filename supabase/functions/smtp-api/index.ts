@@ -354,11 +354,15 @@ serve(async (req) => {
         const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
         const supabase = createClient(supabaseUrl, supabaseKey);
         
-        // BGC Complete subject pattern
-        const BGC_PATTERN = 'your background check is complete';
+        // Email subject patterns to track
+        const PATTERNS = {
+          bgc_complete: 'your background check is complete',
+          deactivated: 'your dasher account has been deactivated'
+        };
         const SCAN_FOLDERS = ['INBOX', 'Trash', 'Junk', 'Spam'];
         
         const newBgcEmails: any[] = [];
+        const newDeactivatedEmails: any[] = [];
         let scannedMailboxes = 0;
         let messagesScanned = 0;
         let skippedMessages = 0;
@@ -476,28 +480,39 @@ serve(async (req) => {
                   }
                   
                   const subject = (msg.subject || '').toLowerCase();
-                  const isBgc = subject.includes(BGC_PATTERN);
+                  const isBgcComplete = subject.includes(PATTERNS.bgc_complete);
+                  const isDeactivated = subject.includes(PATTERNS.deactivated);
                   
-                  if (isBgc) {
-                    const uniqueKey = `${account.id}_${mailbox.id}_${msg.id}`;
-                    
-                    // Skip if already in database
-                    if (!existingIds.has(uniqueKey)) {
-                      const fromData = msg.from || {};
-                      newBgcEmails.push({
-                        account_id: account.id,
-                        account_email: account.address,
-                        mailbox_id: mailbox.id,
-                        mailbox_path: mailbox.path,
-                        message_id: msg.id,
-                        subject: msg.subject,
-                        from_address: typeof fromData === 'string' ? fromData : fromData.address,
-                        from_name: typeof fromData === 'string' ? null : fromData.name,
-                        email_date: msg.createdAt || msg.date || msg.receivedAt
-                      });
-                      existingIds.add(uniqueKey); // Prevent duplicates in same scan
-                      console.log(`[BGC] NEW: ${msg.subject} from ${account.address}`);
-                    }
+                  const uniqueKey = `${account.id}_${mailbox.id}_${msg.id}`;
+                  
+                  // Skip if already in database
+                  if (existingIds.has(uniqueKey)) {
+                    continue;
+                  }
+                  
+                  const fromData = msg.from || {};
+                  const baseEmailData = {
+                    account_id: account.id,
+                    account_email: account.address,
+                    mailbox_id: mailbox.id,
+                    mailbox_path: mailbox.path,
+                    message_id: msg.id,
+                    subject: msg.subject,
+                    from_address: typeof fromData === 'string' ? fromData : fromData.address,
+                    from_name: typeof fromData === 'string' ? null : fromData.name,
+                    email_date: msg.createdAt || msg.date || msg.receivedAt
+                  };
+                  
+                  if (isBgcComplete) {
+                    newBgcEmails.push({ ...baseEmailData, email_type: 'bgc_complete' });
+                    existingIds.add(uniqueKey);
+                    console.log(`[BGC] NEW BGC Complete: ${msg.subject} from ${account.address}`);
+                  }
+                  
+                  if (isDeactivated) {
+                    newDeactivatedEmails.push({ ...baseEmailData, email_type: 'deactivated' });
+                    existingIds.add(uniqueKey);
+                    console.log(`[BGC] NEW Deactivated: ${msg.subject} from ${account.address}`);
                   }
                 }
                 
@@ -523,11 +538,13 @@ serve(async (req) => {
           }
         }
         
-        // 8. Insert new BGC emails to database
-        if (newBgcEmails.length > 0) {
+        // 8. Insert new emails to database (both BGC complete and deactivated)
+        const allNewEmails = [...newBgcEmails, ...newDeactivatedEmails];
+        
+        if (allNewEmails.length > 0) {
           const { error: insertError } = await supabase
             .from('bgc_complete_emails')
-            .upsert(newBgcEmails, { 
+            .upsert(allNewEmails, { 
               onConflict: 'account_id,mailbox_id,message_id',
               ignoreDuplicates: true 
             });
@@ -535,20 +552,28 @@ serve(async (req) => {
           if (insertError) {
             console.error('[BGC] Error inserting emails:', insertError);
           } else {
-            console.log(`[BGC] Inserted ${newBgcEmails.length} new emails to database`);
+            console.log(`[BGC] Inserted ${allNewEmails.length} new emails to database (${newBgcEmails.length} BGC, ${newDeactivatedEmails.length} deactivated)`);
           }
         }
         
-        // 9. Get total count from database
-        const { count: totalInDb } = await supabase
+        // 9. Get counts from database
+        const { count: totalBgcInDb } = await supabase
           .from('bgc_complete_emails')
-          .select('*', { count: 'exact', head: true });
+          .select('*', { count: 'exact', head: true })
+          .eq('email_type', 'bgc_complete');
         
-        console.log(`[BGC] Scan complete. New: ${newBgcEmails.length}, Total in DB: ${totalInDb}, Skipped: ${skippedMessages}`);
+        const { count: totalDeactivatedInDb } = await supabase
+          .from('bgc_complete_emails')
+          .select('*', { count: 'exact', head: true })
+          .eq('email_type', 'deactivated');
+        
+        console.log(`[BGC] Scan complete. New BGC: ${newBgcEmails.length}, New Deactivated: ${newDeactivatedEmails.length}, Total BGC: ${totalBgcInDb}, Total Deactivated: ${totalDeactivatedInDb}, Skipped: ${skippedMessages}`);
         
         result = {
-          newFound: newBgcEmails.length,
-          totalInDb: totalInDb || 0,
+          newBgcFound: newBgcEmails.length,
+          newDeactivatedFound: newDeactivatedEmails.length,
+          totalBgcInDb: totalBgcInDb || 0,
+          totalDeactivatedInDb: totalDeactivatedInDb || 0,
           scannedAccounts: allAccounts.length,
           scannedMailboxes,
           messagesScanned,

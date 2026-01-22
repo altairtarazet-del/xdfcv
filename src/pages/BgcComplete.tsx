@@ -14,7 +14,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, CheckCircle, Mail, Clock, Search, Database } from 'lucide-react';
+import { Loader2, CheckCircle, Mail, Clock, Search, Database, XCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -30,21 +30,25 @@ interface BgcEmail {
   from_name: string | null;
   email_date: string;
   scanned_at: string;
+  email_type: string;
 }
 
 interface ScanStats {
   accounts: number;
   mailboxes: number;
   messagesScanned: number;
-  newFound: number;
-  totalInDb: number;
+  newBgcFound: number;
+  newDeactivatedFound: number;
+  totalBgcInDb: number;
+  totalDeactivatedInDb: number;
   skipped: number;
 }
 
 export default function BgcComplete() {
   const { isAdmin, profile } = useAuth();
   const { toast } = useToast();
-  const [emails, setEmails] = useState<BgcEmail[]>([]);
+  const [bgcEmails, setBgcEmails] = useState<BgcEmail[]>([]);
+  const [deactivatedAccounts, setDeactivatedAccounts] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
@@ -52,8 +56,10 @@ export default function BgcComplete() {
     accounts: 0, 
     mailboxes: 0, 
     messagesScanned: 0, 
-    newFound: 0,
-    totalInDb: 0,
+    newBgcFound: 0,
+    newDeactivatedFound: 0,
+    totalBgcInDb: 0,
+    totalDeactivatedInDb: 0,
     skipped: 0
   });
   const [lastScan, setLastScan] = useState<Date | null>(null);
@@ -64,16 +70,34 @@ export default function BgcComplete() {
   // Fetch saved emails from database
   const fetchSavedEmails = useCallback(async () => {
     try {
-      const { data, error } = await supabase
+      // Fetch BGC complete emails
+      const { data: bgcData, error: bgcError } = await supabase
         .from('bgc_complete_emails')
         .select('*')
+        .eq('email_type', 'bgc_complete')
         .order('email_date', { ascending: false });
 
-      if (error) throw error;
+      if (bgcError) throw bgcError;
       
-      if (data) {
-        setEmails(data);
-        setScanStats(prev => ({ ...prev, totalInDb: data.length }));
+      // Fetch deactivated emails to build the set
+      const { data: deactivatedData, error: deactivatedError } = await supabase
+        .from('bgc_complete_emails')
+        .select('account_email')
+        .eq('email_type', 'deactivated');
+
+      if (deactivatedError) {
+        console.error('Error fetching deactivated emails:', deactivatedError);
+      }
+      
+      if (bgcData) {
+        setBgcEmails(bgcData);
+        setScanStats(prev => ({ ...prev, totalBgcInDb: bgcData.length }));
+      }
+
+      // Build set of deactivated account emails
+      if (deactivatedData) {
+        setDeactivatedAccounts(new Set(deactivatedData.map(e => e.account_email)));
+        setScanStats(prev => ({ ...prev, totalDeactivatedInDb: deactivatedData.length }));
       }
     } catch (error: any) {
       console.error('Error fetching saved emails:', error);
@@ -103,8 +127,10 @@ export default function BgcComplete() {
           accounts: data.scannedAccounts || 0,
           mailboxes: data.scannedMailboxes || 0,
           messagesScanned: data.messagesScanned || 0,
-          newFound: data.newFound || 0,
-          totalInDb: data.totalInDb || 0,
+          newBgcFound: data.newBgcFound || 0,
+          newDeactivatedFound: data.newDeactivatedFound || 0,
+          totalBgcInDb: data.totalBgcInDb || 0,
+          totalDeactivatedInDb: data.totalDeactivatedInDb || 0,
           skipped: data.skippedMessages || 0
         });
         setLastScan(new Date());
@@ -112,11 +138,13 @@ export default function BgcComplete() {
         // Refresh emails from database
         await fetchSavedEmails();
         
+        const totalNew = (data.newBgcFound || 0) + (data.newDeactivatedFound || 0);
+        
         toast({
           title: 'Tarama Tamamlandı',
-          description: data.newFound > 0 
-            ? `${data.newFound} yeni BGC maili bulundu ve kaydedildi`
-            : 'Yeni BGC maili bulunamadı',
+          description: totalNew > 0 
+            ? `${data.newBgcFound} yeni BGC, ${data.newDeactivatedFound} yeni deaktivasyon maili bulundu`
+            : 'Yeni mail bulunamadı',
         });
       }
     } catch (error: any) {
@@ -134,7 +162,7 @@ export default function BgcComplete() {
   // Filter emails by time
   const filteredEmails = useMemo(() => {
     const now = new Date();
-    return emails.filter(email => {
+    return bgcEmails.filter(email => {
       const emailDate = new Date(email.email_date);
       if (activeTab === '24h') {
         return now.getTime() - emailDate.getTime() < 24 * 60 * 60 * 1000;
@@ -144,7 +172,7 @@ export default function BgcComplete() {
       }
       return true;
     });
-  }, [emails, activeTab]);
+  }, [bgcEmails, activeTab]);
 
   if (!canViewBgcComplete) {
     return (
@@ -206,7 +234,7 @@ export default function BgcComplete() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <Card className="cyber-card">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-mono text-muted-foreground flex items-center gap-1">
@@ -215,7 +243,19 @@ export default function BgcComplete() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-primary">{scanStats.totalInDb}</div>
+              <div className="text-2xl font-bold text-primary">{scanStats.totalBgcInDb}</div>
+            </CardContent>
+          </Card>
+          
+          <Card className="cyber-card">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-mono text-muted-foreground flex items-center gap-1">
+                <XCircle size={14} className="text-destructive" />
+                Deaktive
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-destructive">{scanStats.totalDeactivatedInDb}</div>
             </CardContent>
           </Card>
           
@@ -226,7 +266,9 @@ export default function BgcComplete() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-primary">{scanStats.newFound}</div>
+              <div className="text-2xl font-bold text-primary">
+                {scanStats.newBgcFound + scanStats.newDeactivatedFound}
+              </div>
             </CardContent>
           </Card>
           
@@ -265,7 +307,7 @@ export default function BgcComplete() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="cyber-card">
             <TabsTrigger value="all" className="font-mono">
-              Tümü ({emails.length})
+              Tümü ({bgcEmails.length})
             </TabsTrigger>
             <TabsTrigger value="24h" className="font-mono">
               Son 24 Saat
@@ -283,7 +325,7 @@ export default function BgcComplete() {
               <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                 <Mail size={48} className="mb-4 opacity-50" />
                 <p className="font-mono text-sm">
-                  {emails.length === 0 
+                  {bgcEmails.length === 0 
                     ? 'Henüz kayıtlı BGC maili yok. "Yeni Tara" butonuna tıklayın.'
                     : 'Bu zaman aralığında BGC maili bulunamadı.'
                   }
@@ -305,7 +347,14 @@ export default function BgcComplete() {
                     {filteredEmails.map((email) => (
                       <TableRow key={email.id}>
                         <TableCell className="font-mono text-sm">
-                          {email.account_email}
+                          <div className="flex items-center gap-2">
+                            {email.account_email}
+                            {deactivatedAccounts.has(email.account_email) && (
+                              <Badge variant="destructive" className="font-mono text-xs">
+                                KAPANDI
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="font-mono text-sm max-w-xs truncate">
                           {email.subject}
