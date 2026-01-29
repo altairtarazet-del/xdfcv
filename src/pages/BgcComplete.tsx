@@ -420,7 +420,9 @@ export default function BgcComplete() {
                           )}
                         </TableCell>
                         <TableCell>
-                          {firstPackageAccounts.has(email.account_email) ? (
+                          {deactivatedAccounts.has(email.account_email) ? (
+                            <span className="text-muted-foreground text-xs font-mono">-</span>
+                          ) : firstPackageAccounts.has(email.account_email) ? (
                             <Badge variant="outline" className="bg-orange-500/20 text-orange-400 border-orange-500/50 font-mono text-xs gap-1">
                               <Check size={12} />
                               Paket Atıldı
