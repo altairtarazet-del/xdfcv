@@ -22,7 +22,7 @@ async function scanSingleAccountBgc(
   shouldScanDeactivation: boolean,
   existingDeactivatedIds: Set<string>,
   alreadyDeactivatedEmails: Set<string>,
-  PATTERNS: { bgc_complete: string; deactivated: string },
+  PATTERNS: { bgc_complete: string[]; deactivated: string },
   SCAN_FOLDERS: string[]
 ): Promise<{ bgcEmails: any[]; deactivatedEmails: any[]; messagesScanned: number; scannedMailboxes: number; skippedMessages: number }> {
   const bgcEmails: any[] = [];
@@ -88,7 +88,7 @@ async function scanSingleAccountBgc(
             };
             
             // BGC Complete scan (incremental - respects cutoff date)
-            const isBgcComplete = subject.includes(PATTERNS.bgc_complete);
+            const isBgcComplete = PATTERNS.bgc_complete.some(p => subject.includes(p));
             if (isBgcComplete) {
               if (cutoffDate && msgDate <= cutoffDate) {
                 mbSkippedMessages++;
@@ -573,7 +573,7 @@ serve(async (req) => {
         
         // Email subject patterns to track
         const PATTERNS = {
-          bgc_complete: 'your background check is complete',
+          bgc_complete: ['your background check is complete', 'your is complete'],
           deactivated: 'your dasher account has been deactivated',
         };
         const SCAN_FOLDERS = ['INBOX', 'Trash', 'Junk', 'Spam'];
