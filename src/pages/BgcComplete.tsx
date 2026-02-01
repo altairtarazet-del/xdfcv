@@ -46,6 +46,8 @@ export default function BgcComplete() {
   const [bgcEmails, setBgcEmails] = useState<BgcEmail[]>([]);
   const [deactivatedAccounts, setDeactivatedAccounts] = useState<Set<string>>(new Set());
   const [firstPackageAccounts, setFirstPackageAccounts] = useState<Set<string>>(new Set());
+  const [recentDeactivated, setRecentDeactivated] = useState<string[]>([]);
+  const [recentFirstPackage, setRecentFirstPackage] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [firstPackageLoading, setFirstPackageLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -73,21 +75,23 @@ export default function BgcComplete() {
 
       if (bgcError) throw bgcError;
       
-      // Fetch deactivated emails to build the set
+      // Fetch deactivated emails to build the set (ordered by date for recent list)
       const { data: deactivatedData, error: deactivatedError } = await supabase
         .from('bgc_complete_emails')
-        .select('account_email')
-        .eq('email_type', 'deactivated');
+        .select('account_email, email_date')
+        .eq('email_type', 'deactivated')
+        .order('email_date', { ascending: false });
 
       if (deactivatedError) {
         console.error('Error fetching deactivated emails:', deactivatedError);
       }
 
-      // Fetch first_package emails to build the set
+      // Fetch first_package emails to build the set (ordered by date for recent list)
       const { data: firstPackageData, error: firstPackageError } = await supabase
         .from('bgc_complete_emails')
-        .select('account_email')
-        .eq('email_type', 'first_package');
+        .select('account_email, email_date')
+        .eq('email_type', 'first_package')
+        .order('email_date', { ascending: false });
 
       if (firstPackageError) {
         console.error('Error fetching first package emails:', firstPackageError);
@@ -98,15 +102,17 @@ export default function BgcComplete() {
         setScanStats(prev => ({ ...prev, totalBgcInDb: bgcData.length }));
       }
 
-      // Build set of deactivated account emails
+      // Build set of deactivated account emails and recent list
       if (deactivatedData) {
         setDeactivatedAccounts(new Set(deactivatedData.map(e => e.account_email)));
+        setRecentDeactivated(deactivatedData.slice(0, 5).map(e => e.account_email));
         setScanStats(prev => ({ ...prev, totalDeactivatedInDb: deactivatedData.length }));
       }
 
-      // Build set of first package account emails
+      // Build set of first package account emails and recent list
       if (firstPackageData) {
         setFirstPackageAccounts(new Set(firstPackageData.map(e => e.account_email)));
+        setRecentFirstPackage(firstPackageData.slice(0, 5).map(e => e.account_email));
         setScanStats(prev => ({ ...prev, totalFirstPackageInDb: firstPackageData.length }));
       }
     } catch (error: any) {
@@ -311,7 +317,7 @@ export default function BgcComplete() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-emerald-400">
-                {scanStats.totalBgcInDb - scanStats.totalDeactivatedInDb - scanStats.totalFirstPackageInDb}
+                {scanStats.totalBgcInDb - scanStats.totalDeactivatedInDb}
               </div>
             </CardContent>
           </Card>
@@ -325,6 +331,15 @@ export default function BgcComplete() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-orange-400">{scanStats.totalFirstPackageInDb}</div>
+              {recentFirstPackage.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {recentFirstPackage.slice(0, 5).map((email, idx) => (
+                    <div key={idx} className="text-xs font-mono text-muted-foreground truncate">
+                      {email.split('@')[0]}
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
           
@@ -337,6 +352,15 @@ export default function BgcComplete() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-destructive">{scanStats.totalDeactivatedInDb}</div>
+              {recentDeactivated.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {recentDeactivated.slice(0, 5).map((email, idx) => (
+                    <div key={idx} className="text-xs font-mono text-muted-foreground truncate">
+                      {email.split('@')[0]}
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
