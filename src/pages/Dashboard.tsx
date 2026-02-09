@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import DOMPurify from 'dompurify';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { useAuth } from '@/hooks/useAuth';
@@ -71,43 +71,45 @@ export default function Dashboard() {
   const [isLoadingMailboxes, setIsLoadingMailboxes] = useState(false);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isLoadingFullMessage, setIsLoadingFullMessage] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [mailboxSearchQuery, setMailboxSearchQuery] = useState('');
+  const [messageSearchQuery, setMessageSearchQuery] = useState('');
   const [accountSearchOpen, setAccountSearchOpen] = useState(false);
+  const selectedAccountRef = useRef(selectedAccount);
   const [downloadingAttachment, setDownloadingAttachment] = useState<string | null>(null);
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [totalMessages, setTotalMessages] = useState(0);
   const [paginationView, setPaginationView] = useState<PaginationView | null>(null);
 
+  // Keep ref in sync
+  useEffect(() => { selectedAccountRef.current = selectedAccount; }, [selectedAccount]);
+
   const fetchAccounts = useCallback(async () => {
     try {
-      // Fetch all pages of accounts
       let allAccounts: Account[] = [];
       let page = 1;
       let hasMore = true;
-      
+
       while (hasMore) {
         const { data, error } = await supabase.functions.invoke('smtp-api', {
           body: { action: 'getAccounts', page },
         });
 
         if (error) throw error;
-        
+
         const accountList = Array.isArray(data?.accounts) ? data.accounts : [];
         allAccounts = [...allAccounts, ...accountList];
-        
-        // Check if there are more pages
+
         hasMore = !!data?.view?.next;
         page++;
-        
-        // Safety limit to prevent infinite loops
+
         if (page > 50) break;
       }
-      
+
       setAccounts(allAccounts);
-      
-      // Auto-select first account and set its mailboxes
-      if (allAccounts.length > 0 && !selectedAccount) {
+
+      // Auto-select first account only if nothing is selected yet
+      if (allAccounts.length > 0 && !selectedAccountRef.current) {
         const firstAccount = allAccounts[0];
         setSelectedAccount(firstAccount);
         if (firstAccount.mailboxes) {
@@ -124,7 +126,7 @@ export default function Dashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [toast, selectedAccount]);
+  }, [toast]);
 
   const fetchMailboxes = useCallback(async (accountId: string) => {
     // First check if mailboxes are already loaded from the account
@@ -346,22 +348,22 @@ export default function Dashboard() {
         return false;
       }
     }
-    if (searchQuery) {
+    if (mailboxSearchQuery) {
       return (
-        mailbox.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        mailbox.email?.toLowerCase().includes(searchQuery.toLowerCase())
+        mailbox.name?.toLowerCase().includes(mailboxSearchQuery.toLowerCase()) ||
+        mailbox.email?.toLowerCase().includes(mailboxSearchQuery.toLowerCase())
       );
     }
     return true;
   });
 
   const filteredMessages = messages.filter((message) => {
-    if (searchQuery) {
+    if (messageSearchQuery) {
       const subject = message.subject || '';
       const fromAddr = typeof message.from === 'string' ? message.from : message.from?.address || '';
       return (
-        subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        fromAddr.toLowerCase().includes(searchQuery.toLowerCase())
+        subject.toLowerCase().includes(messageSearchQuery.toLowerCase()) ||
+        fromAddr.toLowerCase().includes(messageSearchQuery.toLowerCase())
       );
     }
     return true;
@@ -381,12 +383,12 @@ export default function Dashboard() {
     return `${days} gün önce`;
   };
 
-  const getFromDisplay = (from: any) => {
+  const getFromDisplay = (from: SMTPDevMessage['from']) => {
     if (typeof from === 'string') return from;
     return from?.name || from?.address || 'Bilinmeyen';
   };
 
-  const getFromAddress = (from: any) => {
+  const getFromAddress = (from: SMTPDevMessage['from']) => {
     if (typeof from === 'string') return from;
     return from?.address || '';
   };
@@ -490,9 +492,9 @@ export default function Dashboard() {
               <div className="relative mb-4">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
                 <Input
-                  placeholder="Ara..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Posta kutusu ara..."
+                  value={mailboxSearchQuery}
+                  onChange={(e) => setMailboxSearchQuery(e.target.value)}
                   className="cyber-input pl-9 font-mono text-sm"
                 />
               </div>
@@ -572,6 +574,19 @@ export default function Dashboard() {
                   </Button>
                 )}
               </div>
+
+              {/* Message Search */}
+              {selectedMailbox && (
+                <div className="relative mb-4">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
+                  <Input
+                    placeholder="Mesaj ara (konu, gönderici)..."
+                    value={messageSearchQuery}
+                    onChange={(e) => setMessageSearchQuery(e.target.value)}
+                    className="cyber-input pl-9 font-mono text-sm"
+                  />
+                </div>
+              )}
 
               {/* Permission Info */}
               {profile?.permissions && (
@@ -755,7 +770,7 @@ export default function Dashboard() {
                       dangerouslySetInnerHTML={{ 
                         __html: DOMPurify.sanitize(fullMessageData.html, {
                           ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'a', 'img', 'table', 'tr', 'td', 'th', 'ul', 'ol', 'li', 'span', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'code', 'hr', 'thead', 'tbody', 'caption'],
-                          ALLOWED_ATTR: ['href', 'src', 'alt', 'target', 'style', 'class', 'width', 'height', 'border', 'cellpadding', 'cellspacing', 'align', 'valign'],
+                          ALLOWED_ATTR: ['href', 'src', 'alt', 'target', 'class', 'width', 'height', 'border', 'cellpadding', 'cellspacing', 'align', 'valign'],
                           ALLOW_DATA_ATTR: false
                         })
                       }}
@@ -770,7 +785,7 @@ export default function Dashboard() {
                       dangerouslySetInnerHTML={{ 
                         __html: DOMPurify.sanitize(selectedMessage.html, {
                           ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'a', 'img', 'table', 'tr', 'td', 'th', 'ul', 'ol', 'li', 'span', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'code', 'hr', 'thead', 'tbody', 'caption'],
-                          ALLOWED_ATTR: ['href', 'src', 'alt', 'target', 'style', 'class', 'width', 'height', 'border', 'cellpadding', 'cellspacing', 'align', 'valign'],
+                          ALLOWED_ATTR: ['href', 'src', 'alt', 'target', 'class', 'width', 'height', 'border', 'cellpadding', 'cellspacing', 'align', 'valign'],
                           ALLOW_DATA_ATTR: false
                         })
                       }}

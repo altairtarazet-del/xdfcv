@@ -207,7 +207,7 @@ export default function Auth() {
 
         {/* Footer */}
         <p className="text-center text-muted-foreground text-xs mt-6 font-mono">
-          © 2024 DasherMail • Tüm hakları saklıdır
+          © 2025 DasherMail • Tüm hakları saklıdır
         </p>
       </div>
     </div>

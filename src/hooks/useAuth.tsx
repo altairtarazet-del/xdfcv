@@ -76,11 +76,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    const rememberMe = localStorage.getItem('rememberMe') === 'true';
-    
+    let initialSessionHandled = false;
+
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
+        const rememberMe = localStorage.getItem('rememberMe') === 'true';
+
         // If user signed out or session expired and rememberMe is false, clear session
         if (event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !session && !rememberMe)) {
           setSession(null);
@@ -89,10 +91,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setIsLoading(false);
           return;
         }
-        
+
+        // Skip if this is the INITIAL_SESSION event and we already handled it
+        if (event === 'INITIAL_SESSION') {
+          if (initialSessionHandled) return;
+          initialSessionHandled = true;
+        }
+
         setSession(session);
         setUser(session?.user ?? null);
-        
+
         if (session?.user) {
           // Use setTimeout to avoid auth deadlock
           setTimeout(() => {
@@ -105,8 +113,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     );
 
-    // THEN check for existing session
+    // THEN check for existing session (only if listener hasn't fired yet)
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (initialSessionHandled) return;
+      initialSessionHandled = true;
+
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {

@@ -52,7 +52,6 @@ const convertTurkishToEnglish = (str: string): string => {
 };
 
 const EMAIL_DOMAIN = 'dasherhelp.com';
-const DEFAULT_PASSWORD = 'Charles.2121';
 
 interface Account {
   id: string;
@@ -247,17 +246,31 @@ export default function EmailManagementPage() {
       return;
     }
 
+    // Validate that the date is actually valid (e.g., no Feb 30)
+    const testDate = new Date(parseInt(dobYear), parseInt(dobMonth) - 1, parseInt(dobDay));
+    if (
+      testDate.getFullYear() !== parseInt(dobYear) ||
+      testDate.getMonth() !== parseInt(dobMonth) - 1 ||
+      testDate.getDate() !== parseInt(dobDay)
+    ) {
+      toast({
+        variant: 'destructive',
+        title: 'Hata',
+        description: 'Geçersiz tarih. Lütfen doğru bir tarih seçin.',
+      });
+      return;
+    }
+
     const fullEmail = `${generatedUsername}@${EMAIL_DOMAIN}`;
     const dateOfBirth = `${dobYear}-${dobMonth.padStart(2, '0')}-${dobDay.padStart(2, '0')}`;
     
     setIsSubmitting(true);
     try {
-      // First, create the email account via SMTP API
+      // First, create the email account via SMTP API (password is set server-side)
       const { data, error } = await supabase.functions.invoke('smtp-api', {
         body: {
           action: 'createAccount',
           email: fullEmail,
-          password: DEFAULT_PASSWORD,
         },
       });
 

@@ -1,8 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const ALLOWED_ORIGIN = Deno.env.get('ALLOWED_ORIGIN') || '*';
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
@@ -282,10 +283,10 @@ serve(async (req) => {
       }
 
       case 'createAccount': {
-        // Use already parsed body values
+        const defaultPassword = Deno.env.get('DEFAULT_ACCOUNT_PASSWORD') || 'ChangeMe!123';
         const createBody: any = {};
         if (email) createBody.address = email;
-        if (password) createBody.password = password;
+        createBody.password = password || defaultPassword;
 
         console.log('Creating account with:', JSON.stringify(createBody));
         const response = await fetch(`${SMTP_API_URL}/accounts`, {
@@ -419,10 +420,17 @@ serve(async (req) => {
           }
         }
 
+        const hasActiveFilters = filters && (
+          filters.timeFilterMinutes ||
+          filters.allowedSenders?.length ||
+          filters.allowedReceivers?.length ||
+          filters.allowedSubjects?.length
+        );
+
         result = {
           messages,
-          totalItems: data.totalItems || messages.length,
-          view: data.view || null,
+          totalItems: hasActiveFilters ? messages.length : (data.totalItems || messages.length),
+          view: hasActiveFilters ? null : (data.view || null),
         };
         break;
       }
@@ -460,9 +468,16 @@ serve(async (req) => {
           throw new Error(`API Error: ${response.status}`);
         }
         
-        // Get the attachment data as arrayBuffer then convert to base64
+        // Get the attachment data as arrayBuffer then convert to base64 (chunk-safe)
         const arrayBuffer = await response.arrayBuffer();
-        const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+        const bytes = new Uint8Array(arrayBuffer);
+        let base64 = '';
+        const chunkSize = 8192;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          const chunk = bytes.subarray(i, i + chunkSize);
+          base64 += String.fromCharCode(...chunk);
+        }
+        base64 = btoa(base64);
         const contentType = response.headers.get('content-type') || 'application/octet-stream';
         
         result = { 
@@ -496,30 +511,45 @@ serve(async (req) => {
         if (!mailboxId) throw new Error('mailboxId required');
 
         console.log('Deleting all messages from mailbox:', mailboxId);
-        
-        // First get all messages
-        const listResponse = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailboxId}/messages`, { headers });
-        if (!listResponse.ok) {
-          throw new Error(`Failed to list messages: ${listResponse.status}`);
-        }
-        const listData = await listResponse.json();
-        const messages = listData.member || listData.data || [];
-        
-        // Delete each message
+
         let deletedCount = 0;
-        for (const msg of messages) {
-          try {
-            const delResponse = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailboxId}/messages/${msg.id}`, {
-              method: 'DELETE',
-              headers,
-            });
-            if (delResponse.ok) deletedCount++;
-          } catch (e) {
-            console.error('Failed to delete message:', msg.id, e);
+        let totalMessages = 0;
+        let hasMore = true;
+
+        while (hasMore) {
+          const listResponse = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailboxId}/messages`, { headers });
+          if (!listResponse.ok) {
+            throw new Error(`Failed to list messages: ${listResponse.status}`);
+          }
+          const listData = await listResponse.json();
+          const messages = listData.member || listData.data || [];
+
+          if (messages.length === 0) {
+            hasMore = false;
+            break;
+          }
+
+          totalMessages += messages.length;
+
+          for (const msg of messages) {
+            try {
+              const delResponse = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailboxId}/messages/${msg.id}`, {
+                method: 'DELETE',
+                headers,
+              });
+              if (delResponse.ok) deletedCount++;
+            } catch (e) {
+              console.error('Failed to delete message:', msg.id, e);
+            }
+          }
+
+          // If we deleted fewer than received, there might be an issue — stop to avoid infinite loop
+          if (deletedCount < totalMessages) {
+            hasMore = false;
           }
         }
-        
-        result = { success: true, deletedCount, totalMessages: messages.length };
+
+        result = { success: true, deletedCount, totalMessages };
         break;
       }
 
@@ -528,39 +558,45 @@ serve(async (req) => {
         if (!accountId) throw new Error('accountId required');
 
         console.log('Deleting all messages from all mailboxes for account:', accountId);
-        
-        // First get all mailboxes
+
         const mbResponse = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes`, { headers });
         if (!mbResponse.ok) {
           throw new Error(`Failed to list mailboxes: ${mbResponse.status}`);
         }
         const mbData = await mbResponse.json();
-        const mailboxes = mbData.member || mbData.data || [];
-        
+        const allMailboxes = mbData.member || mbData.data || [];
+
         let totalDeleted = 0;
-        
-        for (const mailbox of mailboxes) {
-          // Get messages in this mailbox
-          const listResponse = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailbox.id}/messages`, { headers });
-          if (!listResponse.ok) continue;
-          
-          const listData = await listResponse.json();
-          const messages = listData.member || listData.data || [];
-          
-          // Delete each message
-          for (const msg of messages) {
-            try {
-              const delResponse = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailbox.id}/messages/${msg.id}`, {
-                method: 'DELETE',
-                headers,
-              });
-              if (delResponse.ok) totalDeleted++;
-            } catch (e) {
-              console.error('Failed to delete message:', msg.id, e);
+
+        for (const mailbox of allMailboxes) {
+          let hasMore = true;
+          while (hasMore) {
+            const listResponse = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailbox.id}/messages`, { headers });
+            if (!listResponse.ok) { hasMore = false; break; }
+
+            const listData = await listResponse.json();
+            const msgs = listData.member || listData.data || [];
+
+            if (msgs.length === 0) { hasMore = false; break; }
+
+            let batchDeleted = 0;
+            for (const msg of msgs) {
+              try {
+                const delResponse = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailbox.id}/messages/${msg.id}`, {
+                  method: 'DELETE',
+                  headers,
+                });
+                if (delResponse.ok) { totalDeleted++; batchDeleted++; }
+              } catch (e) {
+                console.error('Failed to delete message:', msg.id, e);
+              }
             }
+
+            // Stop if nothing was deleted to avoid infinite loop
+            if (batchDeleted === 0) hasMore = false;
           }
         }
-        
+
         result = { success: true, deletedCount: totalDeleted };
         break;
       }
