@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useEffect, useState, useCallback } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { CyberLogo } from '@/components/CyberLogo';
@@ -17,8 +17,13 @@ import {
   PanelLeft,
   LayoutDashboard,
   CheckCircle,
+  Brain,
+  Search,
 } from 'lucide-react';
 import { NotificationBell } from '@/components/NotificationBell';
+import { GlobalSearch } from '@/components/GlobalSearch';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -29,10 +34,16 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     const saved = localStorage.getItem('sidebarCollapsed');
     return saved === 'true';
+  });
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    onSearch: useCallback(() => setSearchOpen(true), []),
   });
 
   useEffect(() => {
@@ -51,7 +62,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         <div className="text-center space-y-4">
           <CyberLogo />
           <p className="text-muted-foreground text-sm animate-pulse">
-            Yükleniyor...
+            Yukleniyor...
           </p>
         </div>
       </div>
@@ -64,14 +75,15 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const canViewBgcComplete = isAdmin || (profile?.permissions as any)?.can_view_bgc_complete;
 
   const navItems = [
-    { to: '/dashboard/overview', icon: LayoutDashboard, label: 'Genel Bakış', show: true },
-    { to: '/dashboard', icon: Mail, label: 'Postalar', show: true },
-    { to: '/dashboard/users', icon: Users, label: 'Kullanıcılar', show: isAdmin },
-    { to: '/dashboard/roles', icon: Shield, label: 'Roller', show: isAdmin },
-    { to: '/dashboard/emails', icon: Server, label: 'Email Yönetimi', show: canManageEmails },
-    { to: '/dashboard/background', icon: FileSearch, label: 'Background', show: canManageEmails },
-    { to: '/dashboard/bgc-complete', icon: CheckCircle, label: 'BGC Complete', show: canViewBgcComplete },
-    { to: '/dashboard/settings', icon: Settings, label: 'Ayarlar', show: true },
+    { to: '/dashboard/overview', icon: LayoutDashboard, label: 'Genel Bakis', show: true, key: '1' },
+    { to: '/dashboard', icon: Mail, label: 'Postalar', show: true, key: '2' },
+    { to: '/dashboard/users', icon: Users, label: 'Kullanicilar', show: isAdmin, key: '' },
+    { to: '/dashboard/roles', icon: Shield, label: 'Roller', show: isAdmin, key: '' },
+    { to: '/dashboard/emails', icon: Server, label: 'Email Yonetimi', show: canManageEmails, key: '' },
+    { to: '/dashboard/background', icon: FileSearch, label: 'Background', show: canManageEmails, key: '3' },
+    { to: '/dashboard/bgc-complete', icon: CheckCircle, label: 'BGC Complete', show: canViewBgcComplete, key: '4' },
+    { to: '/dashboard/intelligence', icon: Brain, label: 'Istihbarat', show: canViewBgcComplete, key: '5' },
+    { to: '/dashboard/settings', icon: Settings, label: 'Ayarlar', show: true, key: '7' },
   ];
 
   const handleSignOut = async () => {
@@ -140,8 +152,18 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               </div>
             </div>
 
+            {/* Search button */}
+            <button
+              onClick={() => setSearchOpen(true)}
+              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all mb-2 w-full"
+            >
+              <Search size={17} />
+              <span className="flex-1 text-left">Ara...</span>
+              <kbd className="text-[10px] px-1.5 py-0.5 bg-muted rounded border border-border font-mono">Ctrl+K</kbd>
+            </button>
+
             {/* Nav */}
-            <nav className="flex-1 space-y-0.5">
+            <nav className="flex-1 space-y-0.5 overflow-y-auto">
               {navItems
                 .filter((item) => item.show)
                 .map((item) => {
@@ -158,7 +180,12 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                       }`}
                     >
                       <item.icon size={17} />
-                      {item.label}
+                      <span className="flex-1">{item.label}</span>
+                      {item.key && (
+                        <kbd className="text-[9px] px-1 py-0.5 bg-muted/50 rounded border border-border/50 font-mono text-muted-foreground hidden lg:inline">
+                          {item.key}
+                        </kbd>
+                      )}
                     </Link>
                   );
                 })}
@@ -172,7 +199,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 className="w-full justify-start gap-2.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 text-sm h-9"
               >
                 <LogOut size={17} />
-                Çıkış Yap
+                Cikis Yap
               </Button>
             </div>
           </>
@@ -192,13 +219,27 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         sidebarCollapsed ? 'lg:ml-0' : ''
       }`}>
         {/* Top bar */}
-        <div className="flex justify-end items-center px-4 lg:px-8 pt-4 gap-3">
+        <div className="flex justify-end items-center px-4 lg:px-8 pt-4 gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSearchOpen(true)}
+            className="hidden sm:flex items-center gap-2 text-muted-foreground hover:text-foreground h-9 px-3"
+          >
+            <Search size={14} />
+            <span className="text-xs">Ara</span>
+            <kbd className="text-[10px] px-1.5 py-0.5 bg-muted rounded border border-border font-mono ml-2">Ctrl+K</kbd>
+          </Button>
+          <ThemeToggle />
           {canViewBgcComplete && <NotificationBell />}
         </div>
         <div className="p-4 lg:p-8 pt-2">
           {children}
         </div>
       </main>
+
+      {/* Global Search */}
+      <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
     </div>
   );
 }

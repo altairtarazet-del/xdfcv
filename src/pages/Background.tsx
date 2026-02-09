@@ -27,9 +27,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { RefreshCw, Shield, FileSearch, Search, Mail, Calendar, X, User, Copy, Edit, Filter } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { RefreshCw, Shield, FileSearch, Search, Mail, Calendar, X, User, Copy, Edit, Filter, AlertTriangle, Link } from 'lucide-react';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
+import { useNavigate } from 'react-router-dom';
 
 type AccountStatus = 'acildi' | 'background' | 'aktif' | 'kapandi' | 'suspend';
 
@@ -74,9 +76,15 @@ export default function BackgroundPage() {
   const [editStatus, setEditStatus] = useState<AccountStatus>('acildi');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const navigate = useNavigate();
+
+  // BGC status sync
+  const [bgcStatusMap, setBgcStatusMap] = useState<Map<string, string>>(new Map());
+
   // Check permissions
   const canManageEmails = isAdmin || profile?.permissions?.can_create_email || profile?.permissions?.can_change_password;
   const canEditBackground = isAdmin || profile?.permissions?.can_edit_background;
+  const canViewBgcComplete = isAdmin || (profile?.permissions as any)?.can_view_bgc_complete;
 
   const fetchAccounts = useCallback(async () => {
     setIsLoading(true);
@@ -99,6 +107,41 @@ export default function BackgroundPage() {
       setIsLoading(false);
     }
   }, [toast]);
+
+  // Fetch BGC statuses for all accounts
+  const fetchBgcStatuses = useCallback(async () => {
+    try {
+      const { data: emails } = await supabase
+        .from('bgc_complete_emails')
+        .select('account_email, email_type')
+        .order('email_date', { ascending: false });
+
+      if (!emails) return;
+
+      const statusMap = new Map<string, string>();
+      for (const email of emails) {
+        if (statusMap.has(email.account_email)) continue;
+        if (email.email_type === 'deactivated') statusMap.set(email.account_email, 'kapandi');
+        else if (email.email_type === 'first_package') statusMap.set(email.account_email, 'aktif');
+        else if (email.email_type === 'bgc_complete') statusMap.set(email.account_email, 'aktif');
+        else if (email.email_type === 'bgc_submitted') statusMap.set(email.account_email, 'background');
+      }
+      setBgcStatusMap(statusMap);
+    } catch (error) {
+      console.error('Error fetching BGC statuses:', error);
+    }
+  }, []);
+
+  // Check for status mismatch
+  const getStatusMismatch = (account: EmailAccount): string | null => {
+    const bgcStatus = bgcStatusMap.get(account.email);
+    if (!bgcStatus) return null;
+    // Check for mismatches
+    if (bgcStatus === 'kapandi' && account.status !== 'kapandi') return `BGC: Kapandi`;
+    if (bgcStatus === 'aktif' && account.status !== 'aktif') return `BGC: Aktif`;
+    if (bgcStatus === 'background' && account.status === 'acildi') return `BGC: Surecte`;
+    return null;
+  };
 
   // Auto-sync SMTP accounts on page load (add missing, remove deleted)
   const syncMissingAccounts = useCallback(async () => {
@@ -237,7 +280,8 @@ export default function BackgroundPage() {
 
   useEffect(() => {
     fetchAccounts();
-  }, [fetchAccounts]);
+    if (canViewBgcComplete) fetchBgcStatuses();
+  }, [fetchAccounts, canViewBgcComplete, fetchBgcStatuses]);
 
   // Run auto-sync after initial load
   useEffect(() => {
@@ -710,18 +754,40 @@ export default function BackgroundPage() {
                         </button>
                       </TableCell>
                       <TableCell className="text-sm">
-                        {(() => {
-                          const status = account.status || 'acildi';
-                          const config = statusConfig[status];
-                          return (
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${config.bgColor} ${config.color}`}>
-                              {config.label}
-                            </span>
-                          );
-                        })()}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {(() => {
+                            const status = account.status || 'acildi';
+                            const config = statusConfig[status];
+                            return (
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${config.bgColor} ${config.color}`}>
+                                {config.label}
+                              </span>
+                            );
+                          })()}
+                          {(() => {
+                            const mismatch = getStatusMismatch(account);
+                            if (!mismatch) return null;
+                            return (
+                              <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/50 text-[10px] gap-1">
+                                <AlertTriangle size={10} />{mismatch}
+                              </Badge>
+                            );
+                          })()}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
+                          {canViewBgcComplete && bgcStatusMap.has(account.email) && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => navigate(`/dashboard/account/${encodeURIComponent(account.email)}`)}
+                              className="text-xs h-7 px-2"
+                              title="Hesap Detayi"
+                            >
+                              <Link size={12} />
+                            </Button>
+                          )}
                           {canEditBackground && (
                             <Button
                               variant="outline"
@@ -730,7 +796,7 @@ export default function BackgroundPage() {
                               className="hover:bg-primary/10 hover:text-primary hover:border-primary text-xs"
                             >
                               <Edit size={14} className="mr-1" />
-                              Düzenle
+                              Duzenle
                             </Button>
                           )}
                         </div>

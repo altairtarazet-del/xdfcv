@@ -15,7 +15,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { AccountTimeline } from '@/components/AccountTimeline';
 import {
   Loader2,
   CheckCircle,
@@ -30,10 +38,14 @@ import {
   ShieldAlert,
   Trash2,
   Info,
+  Eye,
+  Brain,
+  Calculator,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { useAuth } from '@/hooks/useAuth';
+import { useNavigate } from 'react-router-dom';
 
 // Her hesabın TEK bir durumu var
 type AccountStatus = 'bgc_bekliyor' | 'bgc_process' | 'bilgi_bekliyor' | 'clear' | 'consider' | 'aktif' | 'kapandi';
@@ -168,6 +180,7 @@ function getDateLabel(status: AccountStatus): string {
 export default function BgcComplete() {
   const { isAdmin, profile } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -182,7 +195,40 @@ export default function BgcComplete() {
   const [selectedForDeletion, setSelectedForDeletion] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
 
+  // AccountTimeline state
+  const [timelineEmail, setTimelineEmail] = useState('');
+  const [timelineOpen, setTimelineOpen] = useState(false);
+
+  // Risk scores state
+  const [riskScores, setRiskScores] = useState<Map<string, number>>(new Map());
+  const [calculatingRisk, setCalculatingRisk] = useState(false);
+  const [analyzingDeep, setAnalyzingDeep] = useState(false);
+
+  // Bulk selection state
+  const [selectedAccounts, setSelectedAccounts] = useState<Set<string>>(new Set());
+
+  // Advanced filter state
+  const [dateFilter, setDateFilter] = useState<string>('all'); // all, 7d, 30d, 90d
+  const [riskFilter, setRiskFilter] = useState<string>('all'); // all, high, medium, low, none
+
   const canViewBgcComplete = isAdmin || profile?.permissions?.can_view_bgc_complete;
+
+  const fetchRiskScores = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from('bgc_risk_scores')
+        .select('account_email, risk_score');
+      if (data) {
+        const map = new Map<string, number>();
+        for (const row of data) {
+          map.set(row.account_email, row.risk_score);
+        }
+        setRiskScores(map);
+      }
+    } catch (error) {
+      console.error('Error fetching risk scores:', error);
+    }
+  }, []);
 
   const fetchData = useCallback(async () => {
     try {
@@ -245,11 +291,11 @@ export default function BgcComplete() {
 
   useEffect(() => {
     if (canViewBgcComplete) {
-      fetchData().finally(() => setInitialLoading(false));
+      Promise.all([fetchData(), fetchRiskScores()]).finally(() => setInitialLoading(false));
     } else {
       setInitialLoading(false);
     }
-  }, [canViewBgcComplete, fetchData]);
+  }, [canViewBgcComplete, fetchData, fetchRiskScores]);
 
   const handleScan = async () => {
     setLoading(true);
@@ -361,8 +407,102 @@ export default function BgcComplete() {
     });
   };
 
+  // Bulk selection helpers
+  const toggleAccountSelection = (email: string) => {
+    setSelectedAccounts(prev => {
+      const next = new Set(prev);
+      if (next.has(email)) next.delete(email);
+      else next.add(email);
+      return next;
+    });
+  };
+
+  const selectAllInTab = () => {
+    const tabEmails = grouped[activeTab].map(a => a.account_email);
+    setSelectedAccounts(new Set(tabEmails));
+  };
+
+  const deselectAll = () => {
+    setSelectedAccounts(new Set());
+  };
+
+  // F0.3: Calculate Risk Scores
+  const handleCalculateRisk = async () => {
+    setCalculatingRisk(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('smtp-api', {
+        body: { action: 'calculateRiskScores' },
+      });
+      if (error) throw error;
+      await fetchRiskScores();
+      toast({
+        title: 'Risk Skorlari Hesaplandi',
+        description: `${data?.calculated || 0} hesap icin risk skoru guncellendi.`,
+      });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Hata', description: error.message || 'Risk hesaplama hatasi' });
+    } finally {
+      setCalculatingRisk(false);
+    }
+  };
+
+  // F0.3: Deep Analyze selected accounts
+  const handleDeepAnalyze = async () => {
+    if (selectedAccounts.size === 0) {
+      toast({ title: 'Uyari', description: 'Lutfen analiz edilecek hesaplari secin.' });
+      return;
+    }
+    setAnalyzingDeep(true);
+    try {
+      const emails = Array.from(selectedAccounts);
+      const { data, error } = await supabase.functions.invoke('smtp-api', {
+        body: { action: 'deepAnalyze', accountEmails: emails },
+      });
+      if (error) throw error;
+      await Promise.all([fetchData(), fetchRiskScores()]);
+      toast({
+        title: 'Derin Analiz Tamamlandi',
+        description: `${data?.analyzed || emails.length} hesap analiz edildi.`,
+      });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Hata', description: error.message || 'Derin analiz hatasi' });
+    } finally {
+      setAnalyzingDeep(false);
+    }
+  };
+
+  // F2.1: Bulk delete selected
+  const handleBulkDelete = async () => {
+    if (selectedAccounts.size === 0) return;
+    try {
+      const emails = Array.from(selectedAccounts);
+      const { data, error } = await supabase.functions.invoke('smtp-api', {
+        body: { action: 'deleteFromBgc', accountEmails: emails },
+      });
+      if (error) throw error;
+      await fetchData();
+      setSelectedAccounts(new Set());
+      toast({
+        title: 'Hesaplar Silindi',
+        description: `${data?.deleted || emails.length} hesap silindi.`,
+      });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Hata', description: error.message || 'Silme hatasi' });
+    }
+  };
+
+  // Risk score badge helper
+  const getRiskBadge = (email: string) => {
+    const score = riskScores.get(email);
+    if (score === undefined) return null;
+    if (score >= 70) return <Badge className="bg-red-500/20 text-red-400 border-red-500/50 text-[10px] font-mono">{score}</Badge>;
+    if (score >= 40) return <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/50 text-[10px] font-mono">{score}</Badge>;
+    return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/50 text-[10px] font-mono">{score}</Badge>;
+  };
+
   const grouped = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
+    const now = new Date();
     const result: Record<AccountStatus, AccountRow[]> = {
       bgc_bekliyor: [],
       bgc_process: [],
@@ -375,6 +515,26 @@ export default function BgcComplete() {
 
     for (const a of accounts) {
       if (q && !a.account_email.toLowerCase().includes(q)) continue;
+
+      // Date filter
+      if (dateFilter !== 'all') {
+        const displayDate = getDisplayDate(a);
+        if (displayDate) {
+          const days = dateFilter === '7d' ? 7 : dateFilter === '30d' ? 30 : 90;
+          const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+          if (new Date(displayDate) < cutoff) continue;
+        }
+      }
+
+      // Risk filter
+      if (riskFilter !== 'all') {
+        const score = riskScores.get(a.account_email);
+        if (riskFilter === 'high' && (score === undefined || score < 70)) continue;
+        if (riskFilter === 'medium' && (score === undefined || score < 40 || score >= 70)) continue;
+        if (riskFilter === 'low' && (score === undefined || score >= 40)) continue;
+        if (riskFilter === 'none' && score !== undefined) continue;
+      }
+
       result[a.status].push(a);
     }
 
@@ -416,7 +576,7 @@ export default function BgcComplete() {
     });
 
     return result;
-  }, [accounts, searchQuery]);
+  }, [accounts, searchQuery, dateFilter, riskFilter, riskScores]);
 
   const stats = useMemo(() => {
     const counts: Record<AccountStatus, number> = { bgc_bekliyor: 0, bgc_process: 0, bilgi_bekliyor: 0, clear: 0, consider: 0, aktif: 0, kapandi: 0 };
@@ -482,12 +642,19 @@ export default function BgcComplete() {
               BGC Takip
             </h1>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Button onClick={handleScan} disabled={loading}>
               {loading ? (
                 <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Taraniyor...</>
               ) : (
                 <><RefreshCw className="mr-2 h-4 w-4" />Tara</>
+              )}
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleCalculateRisk} disabled={calculatingRisk}>
+              {calculatingRisk ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Hesaplaniyor...</>
+              ) : (
+                <><Calculator className="mr-2 h-4 w-4" />Risk Skorlari</>
               )}
             </Button>
             <Button variant="outline" size="sm" onClick={exportToCSV} disabled={grouped[activeTab].length === 0}>
@@ -515,7 +682,7 @@ export default function BgcComplete() {
           })}
         </div>
 
-        {/* Search + Last Scan */}
+        {/* Search + Filters + Last Scan */}
         <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
           <div className="flex items-center gap-2">
             {lastScan && (
@@ -525,20 +692,45 @@ export default function BgcComplete() {
               </span>
             )}
           </div>
-          <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Hesap ara..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 font-mono bg-background/50 border-border/50"
-            />
+          <div className="flex items-center gap-2 flex-wrap">
+            <Select value={dateFilter} onValueChange={setDateFilter}>
+              <SelectTrigger className="w-28 h-9 text-xs">
+                <SelectValue placeholder="Tarih" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tum Tarih</SelectItem>
+                <SelectItem value="7d">Son 7 gun</SelectItem>
+                <SelectItem value="30d">Son 30 gun</SelectItem>
+                <SelectItem value="90d">Son 90 gun</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={riskFilter} onValueChange={setRiskFilter}>
+              <SelectTrigger className="w-28 h-9 text-xs">
+                <SelectValue placeholder="Risk" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tum Risk</SelectItem>
+                <SelectItem value="high">Yuksek</SelectItem>
+                <SelectItem value="medium">Orta</SelectItem>
+                <SelectItem value="low">Dusuk</SelectItem>
+                <SelectItem value="none">Skorsuz</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="relative w-full sm:w-56">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Hesap ara..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-9 font-mono bg-background/50 border-border/50"
+              />
+            </div>
           </div>
         </div>
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AccountStatus)}>
-          <TabsList className="w-full grid grid-cols-7 h-auto">
+          <TabsList className="w-full flex sm:grid sm:grid-cols-7 h-auto overflow-x-auto">
             {TAB_ORDER.map((key) => {
               const cfg = STATUS_CONFIG[key];
               const Icon = cfg.icon;
@@ -692,6 +884,27 @@ export default function BgcComplete() {
                   </Card>
                 )}
 
+                {/* Bulk Operations Toolbar */}
+                {selectedAccounts.size > 0 && (
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20">
+                    <span className="text-xs text-muted-foreground font-mono">{selectedAccounts.size} secili</span>
+                    <Button variant="outline" size="sm" onClick={handleDeepAnalyze} disabled={analyzingDeep}>
+                      {analyzingDeep ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Brain className="mr-1 h-3 w-3" />}
+                      Derin Analiz
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleCalculateRisk} disabled={calculatingRisk}>
+                      <Calculator className="mr-1 h-3 w-3" />Risk Hesapla
+                    </Button>
+                    <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
+                      <Trash2 className="mr-1 h-3 w-3" />Sil
+                    </Button>
+                    <div className="ml-auto flex gap-1">
+                      <Button variant="ghost" size="sm" onClick={selectAllInTab} className="text-xs h-7">Tumunu Sec</Button>
+                      <Button variant="ghost" size="sm" onClick={deselectAll} className="text-xs h-7">Temizle</Button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Account Table */}
                 <Card className="cyber-card">
                   <CardContent className="p-0">
@@ -709,18 +922,57 @@ export default function BgcComplete() {
                         <Table>
                           <TableHeader>
                             <TableRow>
+                              <TableHead className="w-10">
+                                <Checkbox
+                                  checked={tabAccounts.length > 0 && tabAccounts.every(a => selectedAccounts.has(a.account_email))}
+                                  onCheckedChange={(checked) => {
+                                    if (checked) selectAllInTab();
+                                    else deselectAll();
+                                  }}
+                                />
+                              </TableHead>
                               <TableHead>Hesap</TableHead>
+                              <TableHead>Risk</TableHead>
                               <TableHead>{getDateLabel(key)}</TableHead>
+                              <TableHead className="w-20">Islem</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {tabAccounts.map(account => {
                               const displayDate = getDisplayDate(account);
                               return (
-                                <TableRow key={account.account_email}>
-                                  <TableCell className="font-mono text-sm">{account.account_email}</TableCell>
+                                <TableRow key={account.account_email} className="group">
+                                  <TableCell>
+                                    <Checkbox
+                                      checked={selectedAccounts.has(account.account_email)}
+                                      onCheckedChange={() => toggleAccountSelection(account.account_email)}
+                                    />
+                                  </TableCell>
+                                  <TableCell className="font-mono text-sm">
+                                    <button
+                                      onClick={() => navigate(`/dashboard/account/${encodeURIComponent(account.account_email)}`)}
+                                      className="hover:text-primary transition-colors text-left"
+                                    >
+                                      {account.account_email}
+                                    </button>
+                                  </TableCell>
+                                  <TableCell>{getRiskBadge(account.account_email)}</TableCell>
                                   <TableCell className="font-mono text-xs text-muted-foreground">
                                     {displayDate ? format(new Date(displayDate), 'dd/MM/yyyy') : '-'}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 px-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                                      onClick={() => {
+                                        setTimelineEmail(account.account_email);
+                                        setTimelineOpen(true);
+                                      }}
+                                    >
+                                      <Eye className="h-3.5 w-3.5 mr-1" />
+                                      Detay
+                                    </Button>
                                   </TableCell>
                                 </TableRow>
                               );
@@ -736,6 +988,12 @@ export default function BgcComplete() {
           })}
         </Tabs>
 
+        {/* Account Timeline Sheet */}
+        <AccountTimeline
+          accountEmail={timelineEmail}
+          open={timelineOpen}
+          onOpenChange={setTimelineOpen}
+        />
       </div>
     </DashboardLayout>
   );
