@@ -11,8 +11,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import {
   Loader2,
@@ -54,6 +54,7 @@ const STATUS_CONFIG: Record<AccountStatus, {
   bgColor: string;
   borderColor: string;
   icon: typeof CheckCircle;
+  tabColor: string;
 }> = {
   bgc_bekliyor: {
     label: 'BGC Bekliyor',
@@ -62,6 +63,7 @@ const STATUS_CONFIG: Record<AccountStatus, {
     bgColor: 'bg-amber-500/20',
     borderColor: 'border-amber-500/50',
     icon: Hourglass,
+    tabColor: 'data-[state=active]:text-amber-400',
   },
   clear: {
     label: 'Clear',
@@ -70,6 +72,7 @@ const STATUS_CONFIG: Record<AccountStatus, {
     bgColor: 'bg-blue-500/20',
     borderColor: 'border-blue-500/50',
     icon: CheckCircle,
+    tabColor: 'data-[state=active]:text-blue-400',
   },
   aktif: {
     label: 'Aktif',
@@ -78,6 +81,7 @@ const STATUS_CONFIG: Record<AccountStatus, {
     bgColor: 'bg-emerald-500/20',
     borderColor: 'border-emerald-500/50',
     icon: DollarSign,
+    tabColor: 'data-[state=active]:text-emerald-400',
   },
   kapandi: {
     label: 'Kapandı',
@@ -86,8 +90,28 @@ const STATUS_CONFIG: Record<AccountStatus, {
     bgColor: 'bg-red-500/20',
     borderColor: 'border-red-500/50',
     icon: XCircle,
+    tabColor: 'data-[state=active]:text-red-400',
   },
 };
+
+const TAB_ORDER: AccountStatus[] = ['bgc_bekliyor', 'clear', 'aktif', 'kapandi'];
+
+function getDisplayDate(account: AccountRow): string | null {
+  switch (account.status) {
+    case 'kapandi': return account.deactivatedDate;
+    case 'aktif': return account.firstPackageDate;
+    default: return account.bgcDate;
+  }
+}
+
+function getDateLabel(status: AccountStatus): string {
+  switch (status) {
+    case 'kapandi': return 'Kapanma Tarihi';
+    case 'aktif': return 'İlk Paket Tarihi';
+    case 'clear': return 'BGC Tarihi';
+    case 'bgc_bekliyor': return 'Kayıt Tarihi';
+  }
+}
 
 export default function BgcComplete() {
   const { isAdmin, profile } = useAuth();
@@ -97,7 +121,7 @@ export default function BgcComplete() {
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<AccountStatus | null>(null);
+  const [activeTab, setActiveTab] = useState<AccountStatus>('bgc_bekliyor');
   const [lastScan, setLastScan] = useState<Date | null>(null);
 
   const canViewBgcComplete = isAdmin || profile?.permissions?.can_view_bgc_complete;
@@ -176,14 +200,44 @@ export default function BgcComplete() {
     }
   };
 
-  const filtered = useMemo(() => {
+  const grouped = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    return accounts.filter(a => {
-      if (q && !a.account_email.toLowerCase().includes(q)) return false;
-      if (statusFilter && a.status !== statusFilter) return false;
-      return true;
+    const result: Record<AccountStatus, AccountRow[]> = {
+      bgc_bekliyor: [],
+      clear: [],
+      aktif: [],
+      kapandi: [],
+    };
+
+    for (const a of accounts) {
+      if (q && !a.account_email.toLowerCase().includes(q)) continue;
+      result[a.status].push(a);
+    }
+
+    // Sort each group by relevant date descending (newest first)
+    result.bgc_bekliyor.sort((a, b) => {
+      const da = a.bgcDate ? new Date(a.bgcDate).getTime() : 0;
+      const db = b.bgcDate ? new Date(b.bgcDate).getTime() : 0;
+      return db - da;
     });
-  }, [accounts, searchQuery, statusFilter]);
+    result.clear.sort((a, b) => {
+      const da = a.bgcDate ? new Date(a.bgcDate).getTime() : 0;
+      const db = b.bgcDate ? new Date(b.bgcDate).getTime() : 0;
+      return db - da;
+    });
+    result.aktif.sort((a, b) => {
+      const da = a.firstPackageDate ? new Date(a.firstPackageDate).getTime() : 0;
+      const db = b.firstPackageDate ? new Date(b.firstPackageDate).getTime() : 0;
+      return db - da;
+    });
+    result.kapandi.sort((a, b) => {
+      const da = a.deactivatedDate ? new Date(a.deactivatedDate).getTime() : 0;
+      const db = b.deactivatedDate ? new Date(b.deactivatedDate).getTime() : 0;
+      return db - da;
+    });
+
+    return result;
+  }, [accounts, searchQuery]);
 
   const stats = useMemo(() => {
     const counts: Record<AccountStatus, number> = { bgc_bekliyor: 0, clear: 0, aktif: 0, kapandi: 0 };
@@ -192,8 +246,10 @@ export default function BgcComplete() {
   }, [accounts]);
 
   const exportToCSV = () => {
+    const activeAccounts = grouped[activeTab];
+    if (activeAccounts.length === 0) return;
     const headers = ['Hesap', 'Durum', 'BGC Tarihi', 'Kapanma Tarihi', 'İlk Paket Tarihi'];
-    const rows = filtered.map(a => [
+    const rows = activeAccounts.map(a => [
       a.account_email,
       STATUS_CONFIG[a.status].label,
       a.bgcDate ? format(new Date(a.bgcDate), 'dd/MM/yyyy') : '-',
@@ -205,7 +261,7 @@ export default function BgcComplete() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `bgc-takip-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    link.download = `bgc-${STATUS_CONFIG[activeTab].label.toLowerCase().replace(/\s+/g, '-')}-${format(new Date(), 'yyyy-MM-dd')}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -253,23 +309,18 @@ export default function BgcComplete() {
                 <><RefreshCw className="mr-2 h-4 w-4" />Tara</>
               )}
             </Button>
-            <Button variant="outline" size="sm" onClick={exportToCSV} disabled={filtered.length === 0}>
+            <Button variant="outline" size="sm" onClick={exportToCSV} disabled={grouped[activeTab].length === 0}>
               <Download className="mr-2 h-4 w-4" />CSV
             </Button>
           </div>
         </div>
 
-        {/* Stats — tıklanabilir filtre */}
+        {/* Stats — sadece bilgilendirici */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {(Object.entries(STATUS_CONFIG) as [AccountStatus, typeof STATUS_CONFIG[AccountStatus]][]).map(([key, cfg]) => {
             const Icon = cfg.icon;
-            const isActive = statusFilter === key;
             return (
-              <Card
-                key={key}
-                className={`cyber-card cursor-pointer transition-all ${isActive ? 'ring-2 ring-primary' : 'hover:opacity-80'}`}
-                onClick={() => setStatusFilter(isActive ? null : key)}
-              >
+              <Card key={key} className="cyber-card">
                 <CardContent className="pt-3 pb-3">
                   <span className={`text-xs font-mono flex items-center gap-1 ${cfg.color}`}>
                     <Icon size={12} />
@@ -292,11 +343,6 @@ export default function BgcComplete() {
                 {formatDistanceToNow(lastScan, { locale: tr, addSuffix: true })}
               </span>
             )}
-            {statusFilter && (
-              <Button variant="ghost" size="sm" onClick={() => setStatusFilter(null)} className="text-xs font-mono h-6 px-2">
-                Filtreyi kaldır ×
-              </Button>
-            )}
           </div>
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -309,60 +355,75 @@ export default function BgcComplete() {
           </div>
         </div>
 
-        {/* Table */}
-        <Card className="cyber-card">
-          <CardContent className="p-0">
-            {filtered.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-                <Search size={40} className="mb-4 opacity-30" />
-                <p className="font-mono text-sm">
-                  {accounts.length === 0
-                    ? 'Henüz tarama yapılmamış. "Tara" butonuna tıklayın.'
-                    : 'Sonuç bulunamadı.'}
-                </p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="font-mono">Hesap</TableHead>
-                      <TableHead className="font-mono">Durum</TableHead>
-                      <TableHead className="font-mono">Tarih</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filtered.map(account => {
-                      const cfg = STATUS_CONFIG[account.status];
-                      const Icon = cfg.icon;
-                      // En alakalı tarihi göster
-                      const displayDate = account.status === 'kapandi'
-                        ? account.deactivatedDate
-                        : account.status === 'aktif'
-                        ? account.firstPackageDate
-                        : account.bgcDate;
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AccountStatus)}>
+          <TabsList className="w-full grid grid-cols-4 h-auto">
+            {TAB_ORDER.map((key) => {
+              const cfg = STATUS_CONFIG[key];
+              const Icon = cfg.icon;
+              return (
+                <TabsTrigger
+                  key={key}
+                  value={key}
+                  className={`font-mono text-xs gap-1.5 py-2 ${cfg.tabColor}`}
+                >
+                  <Icon size={14} />
+                  <span className="hidden sm:inline">{cfg.label}</span>
+                  <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full ${cfg.bgColor}`}>
+                    {grouped[key].length}
+                  </span>
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
 
-                      return (
-                        <TableRow key={account.account_email}>
-                          <TableCell className="font-mono text-sm">{account.account_email}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={`${cfg.bgColor} ${cfg.color} ${cfg.borderColor} font-mono text-xs gap-1`}>
-                              <Icon size={10} />
-                              {cfg.label}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="font-mono text-xs text-muted-foreground">
-                            {displayDate ? format(new Date(displayDate), 'dd/MM/yyyy') : '-'}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          {TAB_ORDER.map((key) => {
+            const cfg = STATUS_CONFIG[key];
+            const tabAccounts = grouped[key];
+            return (
+              <TabsContent key={key} value={key} className="mt-4">
+                <Card className="cyber-card">
+                  <CardContent className="p-0">
+                    {tabAccounts.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                        <cfg.icon size={40} className="mb-4 opacity-30" />
+                        <p className="font-mono text-sm">
+                          {accounts.length === 0
+                            ? 'Henüz tarama yapılmamış. "Tara" butonuna tıklayın.'
+                            : 'Bu durumda hesap yok.'}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="font-mono">Hesap</TableHead>
+                              <TableHead className="font-mono">{getDateLabel(key)}</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {tabAccounts.map(account => {
+                              const displayDate = getDisplayDate(account);
+                              return (
+                                <TableRow key={account.account_email}>
+                                  <TableCell className="font-mono text-sm">{account.account_email}</TableCell>
+                                  <TableCell className="font-mono text-xs text-muted-foreground">
+                                    {displayDate ? format(new Date(displayDate), 'dd/MM/yyyy') : '-'}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            );
+          })}
+        </Tabs>
       </div>
     </DashboardLayout>
   );
