@@ -31,6 +31,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const bgcResult = await bgcResponse.json();
 
+    // 1.5 Run BGC Submitted scan
+    const submittedResponse = await fetch(edgeFunctionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${serviceRoleKey}`,
+      },
+      body: JSON.stringify({ action: 'scanBgcSubmitted' }),
+    });
+
+    const submittedResult = await submittedResponse.json();
+
     // 2. Run First Package scan
     const fpResponse = await fetch(edgeFunctionUrl, {
       method: 'POST',
@@ -59,6 +71,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       success: true,
       timestamp: new Date().toISOString(),
       bgcScan: bgcResult,
+      bgcSubmittedScan: submittedResult,
       firstPackageScan: fpResult,
       considerRecheck: considerResult,
     });

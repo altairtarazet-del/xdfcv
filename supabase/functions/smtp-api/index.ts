@@ -652,6 +652,28 @@ const CONSIDER_BODY_PATTERNS = [
   /important that you review your report/i,
 ];
 
+// "Ready to dash" = DoorDash cleared the account (even after an initial consider result).
+// These subject patterns override any consider status.
+const CLEAR_OVERRIDE_SUBJECT_PATTERNS: RegExp[] = [
+  /ready to dash/i,
+  /you can now dash/i,
+  /start dashing/i,
+  /begin dashing/i,
+  /your account is ready/i,
+  /account.*activated/i,
+  /welcome.*dasher/i,
+];
+
+function isClearOverrideSignal(subject: string): boolean {
+  const s = (subject || '').toLowerCase();
+  // Exclude deactivation emails
+  if (s.includes('deactivat')) return false;
+  for (const p of CLEAR_OVERRIDE_SUBJECT_PATTERNS) {
+    if (p.test(s)) return true;
+  }
+  return false;
+}
+
 async function checkBgcReportForConsider(
   accountId: string,
   mailboxId: string,
@@ -686,6 +708,58 @@ async function checkBgcReportForConsider(
     return false;
   } catch (e) {
     console.error('[BGC_CONSIDER] Error checking email body:', e);
+    return false;
+  }
+}
+
+// Scan an account's mailboxes for "clear override" signals (e.g. "ready to dash").
+// If found, it means the account was ultimately cleared — any consider should be overridden.
+async function accountHasClearOverride(
+  accountId: string,
+  headers: Record<string, string>,
+  SCAN_FOLDERS: string[]
+): Promise<boolean> {
+  try {
+    const mbRes = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes`, { headers });
+    if (!mbRes.ok) return false;
+
+    const mbData = await mbRes.json();
+    const mailboxes = (mbData.member || []).filter((mb: any) =>
+      SCAN_FOLDERS.some(f => (mb.path || '').toUpperCase().includes(f.toUpperCase()))
+    );
+
+    for (const mailbox of mailboxes) {
+      let msgPage = 1;
+      let hasMore = true;
+
+      while (hasMore) {
+        const msgRes = await fetch(
+          `${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailbox.id}/messages?page=${msgPage}`,
+          { headers }
+        );
+        if (!msgRes.ok) break;
+
+        const msgData = await msgRes.json();
+        const messages = msgData.member || [];
+
+        for (const msg of messages) {
+          if (isClearOverrideSignal(msg.subject || '')) {
+            console.log(`[BGC_CONSIDER] Clear override found: "${msg.subject}" for account ${accountId}`);
+            return true;
+          }
+        }
+
+        if (msgData.view?.next) {
+          msgPage++;
+        } else {
+          hasMore = false;
+        }
+      }
+    }
+
+    return false;
+  } catch (e) {
+    console.error(`[BGC_CONSIDER] Error checking clear override for ${accountId}:`, e);
     return false;
   }
 }
@@ -770,32 +844,34 @@ async function scanSingleAccountBgc(
     );
     
     // Scan mailboxes in parallel
+    let hasClearOverride = false;
     const mailboxResults = await Promise.all(
       mailboxes.map(async (mailbox: any) => {
         const mbBgcEmails: any[] = [];
         const mbDeactivatedEmails: any[] = [];
         let mbMessagesScanned = 0;
         let mbSkippedMessages = 0;
+        let mbHasClearOverride = false;
         let reachedOldMessagesForBgc = false;
-        
+
         let msgPage = 1;
         let hasMoreMsgs = true;
-        
+
         while (hasMoreMsgs) {
           const msgUrl = `${SMTP_API_URL}/accounts/${account.id}/mailboxes/${mailbox.id}/messages?page=${msgPage}`;
-          
+
           const msgRes = await fetch(msgUrl, { headers });
           if (!msgRes.ok) break;
-          
+
           const msgData = await msgRes.json();
           const messages = msgData.member || [];
           mbMessagesScanned += messages.length;
-          
+
           for (const msg of messages) {
             const msgDate = new Date(msg.createdAt || msg.date || msg.receivedAt);
             const subject = (msg.subject || '').toLowerCase();
             const uniqueKey = `${account.id}_${mailbox.id}_${msg.id}`;
-            
+
             const fromData = msg.from || {};
             const baseEmailData = {
               account_id: account.id,
@@ -808,7 +884,7 @@ async function scanSingleAccountBgc(
               from_name: typeof fromData === 'string' ? null : fromData.name,
               email_date: msg.createdAt || msg.date || msg.receivedAt
             };
-            
+
             // BGC Complete scan (incremental - respects cutoff date)
             const isBgcComplete = PATTERNS.bgc_complete.some(p => subject.includes(p));
             if (isBgcComplete) {
@@ -822,14 +898,19 @@ async function scanSingleAccountBgc(
                 mbBgcEmails.push({ ...baseEmailData, email_type: isConsider ? 'bgc_consider' : 'bgc_complete' });
               }
             }
-            
+
             // Deactivation scan (only for BGC accounts, no cutoff)
             const isDeactivated = subject.includes(PATTERNS.deactivated);
             if (isDeactivated && shouldScanDeactivation && !existingDeactivatedIds.has(uniqueKey)) {
               mbDeactivatedEmails.push({ ...baseEmailData, email_type: 'deactivated' });
             }
+
+            // Clear override detection (e.g. "ready to dash" = BGC resolved as clear)
+            if (isClearOverrideSignal(msg.subject || '')) {
+              mbHasClearOverride = true;
+            }
           }
-          
+
           // Pagination logic
           if (msgData.view?.next) {
             if (shouldScanDeactivation || !reachedOldMessagesForBgc) {
@@ -841,24 +922,36 @@ async function scanSingleAccountBgc(
             hasMoreMsgs = false;
           }
         }
-        
-        return { 
-          bgcEmails: mbBgcEmails, 
-          deactivatedEmails: mbDeactivatedEmails, 
+
+        return {
+          bgcEmails: mbBgcEmails,
+          deactivatedEmails: mbDeactivatedEmails,
           messagesScanned: mbMessagesScanned,
-          skippedMessages: mbSkippedMessages
+          skippedMessages: mbSkippedMessages,
+          hasClearOverride: mbHasClearOverride
         };
       })
     );
-    
+
     // Aggregate mailbox results
     for (const mbResult of mailboxResults) {
       bgcEmails.push(...mbResult.bgcEmails);
       deactivatedEmails.push(...mbResult.deactivatedEmails);
       messagesScanned += mbResult.messagesScanned;
       skippedMessages += mbResult.skippedMessages;
+      if (mbResult.hasClearOverride) hasClearOverride = true;
     }
     scannedMailboxes = mailboxes.length;
+
+    // If account has "ready to dash" signal, any consider result should be overridden to clear
+    if (hasClearOverride) {
+      for (const email of bgcEmails) {
+        if (email.email_type === 'bgc_consider') {
+          console.log(`[BGC] ${account.address}: Consider → Clear (has "ready to dash" override signal)`);
+          email.email_type = 'bgc_complete';
+        }
+      }
+    }
     
   } catch (e) {
     console.error(`[BGC] Error processing account ${account.id}:`, e);
@@ -1031,6 +1124,135 @@ async function scanSingleAccountFirstPackage(
   }
 
   return { firstPackageEmails, messagesScanned };
+}
+
+// ============================================================
+// BGC SUBMITTED DETECTION ENGINE — Checkr Process Signals
+// ============================================================
+
+const BGC_SUBMITTED_SENDER_PATTERNS: RegExp[] = [
+  /checkr\.com/i,
+  /noreply@checkr/i,
+  /no-reply@checkr/i,
+];
+
+const BGC_SUBMITTED_SUBJECT_PATTERNS: RegExp[] = [
+  // Checkr identity/info verification
+  /your (information|identity) (was |has been )?(verified|confirmed)/i,
+  /information (verified|confirmed|submitted|received)/i,
+  /identity (verification|confirmed|verified)/i,
+  // BGC process signals
+  /background check.*(started|initiated|submitted|begin|underway)/i,
+  /background check.*(processing|in progress|progress|running|pending)/i,
+  /background check.*(update|status)/i,
+  // Checkr invitation/consent
+  /complete your background check/i,
+  /authorize your background check/i,
+  /consent.*background check/i,
+  /invited.*(background|checkr)/i,
+  // Checkr keyword in subject
+  /checkr/i,
+  // Submission confirmations
+  /we('ve| have) received your (information|submission|details)/i,
+];
+
+function isBgcSubmittedSignal(subject: string, senderAddress: string): boolean {
+  const subjectLower = (subject || '').toLowerCase();
+  const senderLower = (senderAddress || '').toLowerCase();
+
+  // EXCLUDE: BGC completion + deactivation emails (handled elsewhere)
+  if (subjectLower.includes('your background check is complete')) return false;
+  if (subjectLower.includes('your dasher account has been deactivated')) return false;
+
+  // Sender match (checkr.com = strong signal)
+  for (const p of BGC_SUBMITTED_SENDER_PATTERNS) {
+    if (p.test(senderLower)) return true;
+  }
+  // Subject match
+  for (const p of BGC_SUBMITTED_SUBJECT_PATTERNS) {
+    if (p.test(subjectLower)) return true;
+  }
+  return false;
+}
+
+// Helper: Scan a single account for BGC Submitted signals
+async function scanSingleAccountBgcSubmitted(
+  accountId: string,
+  accountEmail: string,
+  headers: Record<string, string>,
+  existingSubmittedIds: Set<string>,
+  SCAN_FOLDERS: string[]
+): Promise<{ bgcSubmittedEmails: any[]; messagesScanned: number }> {
+  const bgcSubmittedEmails: any[] = [];
+  let messagesScanned = 0;
+
+  try {
+    const mbRes = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes`, { headers });
+    if (!mbRes.ok) {
+      console.error(`[BGC_SUBMITTED] Failed to fetch mailboxes for account ${accountId}`);
+      return { bgcSubmittedEmails, messagesScanned };
+    }
+
+    const mbData = await mbRes.json();
+    const mailboxes = (mbData.member || []).filter((mb: any) =>
+      SCAN_FOLDERS.some(f => (mb.path || '').toUpperCase().includes(f.toUpperCase()))
+    );
+
+    let foundSubmitted = false;
+
+    // Scan mailboxes sequentially for early exit
+    for (const mailbox of mailboxes) {
+      if (foundSubmitted) break;
+
+      let msgPage = 1;
+      let hasMoreMsgs = true;
+
+      while (hasMoreMsgs && !foundSubmitted) {
+        const msgUrl = `${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailbox.id}/messages?page=${msgPage}`;
+
+        const msgRes = await fetch(msgUrl, { headers });
+        if (!msgRes.ok) break;
+
+        const msgData = await msgRes.json();
+        const messages = msgData.member || [];
+        messagesScanned += messages.length;
+
+        for (const msg of messages) {
+          const uniqueKey = `${accountId}_${mailbox.id}_${msg.id}`;
+          const fromData = msg.from || {};
+          const senderAddress = typeof fromData === 'string' ? fromData : (fromData.address || '');
+
+          if (isBgcSubmittedSignal(msg.subject || '', senderAddress) && !existingSubmittedIds.has(uniqueKey)) {
+            bgcSubmittedEmails.push({
+              account_id: accountId,
+              account_email: accountEmail,
+              mailbox_id: mailbox.id,
+              mailbox_path: mailbox.path,
+              message_id: msg.id,
+              subject: msg.subject,
+              from_address: senderAddress,
+              from_name: typeof fromData === 'string' ? null : fromData.name,
+              email_date: msg.createdAt || msg.date || msg.receivedAt,
+              email_type: 'bgc_submitted'
+            });
+            foundSubmitted = true;
+            console.log(`[BGC_SUBMITTED] DETECTED: "${msg.subject}" from=${senderAddress} account=${accountEmail}`);
+            break;
+          }
+        }
+
+        if (msgData.view?.next && !foundSubmitted) {
+          msgPage++;
+        } else {
+          hasMoreMsgs = false;
+        }
+      }
+    }
+  } catch (e) {
+    console.error(`[BGC_SUBMITTED] Error processing account ${accountId}:`, e);
+  }
+
+  return { bgcSubmittedEmails, messagesScanned };
 }
 
 // ============================================================
@@ -1973,56 +2195,96 @@ serve(async (req) => {
         console.log('[BGC_CONSIDER] Starting consider recheck for existing emails...');
         const recheckStart = Date.now();
         const RECHECK_TIMEOUT_MS = 50000;
+        const RECHECK_SCAN_FOLDERS = ['INBOX', 'Trash', 'Junk', 'Spam'];
 
-        // Get bgc_complete emails that haven't been checked for consider yet
+        // Phase 1: Check unchecked bgc_complete emails for consider
         const { data: uncheckedEmails } = await supabaseClient
           .from('bgc_complete_emails')
           .select('id, account_id, account_email, mailbox_id, message_id')
           .eq('email_type', 'bgc_complete')
           .is('extracted_data', null);
 
-        if (!uncheckedEmails || uncheckedEmails.length === 0) {
-          console.log('[BGC_CONSIDER] No unchecked emails found');
-          result = { checked: 0, considersFound: 0, remaining: 0 };
-          break;
-        }
-
-        console.log(`[BGC_CONSIDER] Found ${uncheckedEmails.length} unchecked BGC emails`);
-
         let checked = 0;
         let considersFound = 0;
 
-        for (const email of uncheckedEmails) {
-          if (Date.now() - recheckStart > RECHECK_TIMEOUT_MS) {
-            console.log(`[BGC_CONSIDER] Approaching timeout, stopping at ${checked}/${uncheckedEmails.length}`);
-            break;
+        if (uncheckedEmails && uncheckedEmails.length > 0) {
+          console.log(`[BGC_CONSIDER] Found ${uncheckedEmails.length} unchecked BGC emails`);
+
+          for (const email of uncheckedEmails) {
+            if (Date.now() - recheckStart > RECHECK_TIMEOUT_MS) {
+              console.log(`[BGC_CONSIDER] Approaching timeout, stopping at ${checked}/${uncheckedEmails.length}`);
+              break;
+            }
+
+            const isConsider = await checkBgcReportForConsider(
+              email.account_id, email.mailbox_id, email.message_id, headers
+            );
+
+            let finalResult = isConsider ? 'consider' : 'clear';
+
+            // If consider detected, check for clear override (e.g. "ready to dash")
+            if (isConsider) {
+              const hasOverride = await accountHasClearOverride(email.account_id, headers, RECHECK_SCAN_FOLDERS);
+              if (hasOverride) {
+                console.log(`[BGC_CONSIDER] ${email.account_email}: Consider → Clear (clear override found)`);
+                finalResult = 'clear';
+              }
+            }
+
+            // Update email_type and mark as checked via extracted_data
+            await supabaseClient
+              .from('bgc_complete_emails')
+              .update({
+                email_type: finalResult === 'consider' ? 'bgc_consider' : 'bgc_complete',
+                extracted_data: { bgc_result: finalResult }
+              })
+              .eq('id', email.id);
+
+            if (finalResult === 'consider') {
+              console.log(`[BGC_CONSIDER] ${email.account_email}: CONSIDER found!`);
+              considersFound++;
+            }
+
+            checked++;
           }
+        } else {
+          console.log('[BGC_CONSIDER] No unchecked emails found');
+        }
 
-          const isConsider = await checkBgcReportForConsider(
-            email.account_id, email.mailbox_id, email.message_id, headers
-          );
+        // Phase 2: Re-evaluate existing bgc_consider entries for clear override
+        let overridesFixed = 0;
+        const { data: existingConsiders } = await supabaseClient
+          .from('bgc_complete_emails')
+          .select('id, account_id, account_email')
+          .eq('email_type', 'bgc_consider');
 
-          const bgcResult = isConsider ? 'consider' : 'clear';
+        if (existingConsiders && existingConsiders.length > 0) {
+          console.log(`[BGC_CONSIDER] Checking ${existingConsiders.length} existing considers for clear override...`);
 
-          // Update email_type and mark as checked via extracted_data
-          await supabaseClient
-            .from('bgc_complete_emails')
-            .update({
-              email_type: isConsider ? 'bgc_consider' : 'bgc_complete',
-              extracted_data: { bgc_result: bgcResult }
-            })
-            .eq('id', email.id);
+          for (const consider of existingConsiders) {
+            if (Date.now() - recheckStart > RECHECK_TIMEOUT_MS) {
+              console.log(`[BGC_CONSIDER] Approaching timeout during override check`);
+              break;
+            }
 
-          if (isConsider) {
-            console.log(`[BGC_CONSIDER] ${email.account_email}: CONSIDER found!`);
-            considersFound++;
+            const hasOverride = await accountHasClearOverride(consider.account_id, headers, RECHECK_SCAN_FOLDERS);
+            if (hasOverride) {
+              await supabaseClient
+                .from('bgc_complete_emails')
+                .update({
+                  email_type: 'bgc_complete',
+                  extracted_data: { bgc_result: 'clear', overridden_from: 'consider' }
+                })
+                .eq('id', consider.id);
+
+              console.log(`[BGC_CONSIDER] ${consider.account_email}: Existing consider → Clear (override)`);
+              overridesFixed++;
+            }
           }
-
-          checked++;
         }
 
         const recheckElapsed = Date.now() - recheckStart;
-        console.log(`[BGC_CONSIDER] Recheck complete in ${recheckElapsed}ms: ${checked} checked, ${considersFound} considers found`);
+        console.log(`[BGC_CONSIDER] Recheck complete in ${recheckElapsed}ms: ${checked} checked, ${considersFound} considers found, ${overridesFixed} overrides fixed`);
 
         // Send notification if considers found
         if (considersFound > 0) {
@@ -2038,7 +2300,8 @@ serve(async (req) => {
         result = {
           checked,
           considersFound,
-          remaining: uncheckedEmails.length - checked
+          overridesFixed,
+          remaining: (uncheckedEmails?.length || 0) - checked
         };
         break;
       }
@@ -2218,6 +2481,124 @@ serve(async (req) => {
           scannedAccounts: clearAccounts.length,
           messagesScanned,
           elapsedMs
+        };
+        break;
+      }
+
+      case 'scanBgcSubmitted': {
+        if (!supabaseClient) throw new Error('Supabase not configured');
+
+        const SCAN_FOLDERS_SUB = ['INBOX', 'Trash', 'Junk', 'Spam'];
+
+        const newBgcSubmittedEmails: any[] = [];
+        let submittedMessagesScanned = 0;
+
+        console.log('[BGC_SUBMITTED] Starting scan...');
+        const submittedStartTime = Date.now();
+
+        // 1. Get all bgc_scan_status accounts
+        const { data: allScanAccounts } = await supabaseClient
+          .from('bgc_scan_status')
+          .select('account_id, account_email');
+
+        // 2. Get already bgc_submitted accounts
+        const { data: existingSubmitted } = await supabaseClient
+          .from('bgc_complete_emails')
+          .select('account_id, account_email, mailbox_id, message_id')
+          .eq('email_type', 'bgc_submitted');
+
+        const alreadySubmittedEmails = new Set(
+          (existingSubmitted || []).map((e: any) => e.account_email)
+        );
+        const existingSubmittedIds = new Set(
+          (existingSubmitted || []).map((e: any) => `${e.account_id}_${e.mailbox_id}_${e.message_id}`)
+        );
+
+        console.log(`[BGC_SUBMITTED] ${alreadySubmittedEmails.size} already have bgc_submitted`);
+
+        // 3. Build list of accounts to scan (all accounts minus already submitted)
+        const submittedAccounts: { id: string; email: string }[] = [];
+        for (const s of (allScanAccounts || [])) {
+          if (!alreadySubmittedEmails.has(s.account_email)) {
+            submittedAccounts.push({ id: s.account_id, email: s.account_email });
+          }
+        }
+
+        console.log(`[BGC_SUBMITTED] ${submittedAccounts.length} accounts to scan`);
+
+        // 4. Process in parallel batches
+        const submittedBatches: { id: string; email: string }[][] = [];
+        for (let i = 0; i < submittedAccounts.length; i += ACCOUNT_BATCH_SIZE) {
+          submittedBatches.push(submittedAccounts.slice(i, i + ACCOUNT_BATCH_SIZE));
+        }
+
+        for (let batchIndex = 0; batchIndex < submittedBatches.length; batchIndex++) {
+          const batch = submittedBatches[batchIndex];
+          console.log(`[BGC_SUBMITTED] Processing batch ${batchIndex + 1}/${submittedBatches.length}`);
+
+          // Safety: stop if approaching timeout (50s limit)
+          const MAX_EXEC_MS = 50000;
+          if (Date.now() - submittedStartTime > MAX_EXEC_MS) {
+            console.log(`[BGC_SUBMITTED] Approaching timeout at batch ${batchIndex + 1}, stopping early`);
+            break;
+          }
+
+          const batchResults = await Promise.all(
+            batch.map(account =>
+              scanSingleAccountBgcSubmitted(
+                account.id,
+                account.email,
+                headers,
+                existingSubmittedIds,
+                SCAN_FOLDERS_SUB
+              )
+            )
+          );
+
+          for (const accountResult of batchResults) {
+            newBgcSubmittedEmails.push(...accountResult.bgcSubmittedEmails);
+            submittedMessagesScanned += accountResult.messagesScanned;
+
+            for (const subEmail of accountResult.bgcSubmittedEmails) {
+              existingSubmittedIds.add(`${subEmail.account_id}_${subEmail.mailbox_id}_${subEmail.message_id}`);
+              alreadySubmittedEmails.add(subEmail.account_email);
+            }
+          }
+        }
+
+        const submittedElapsedMs = Date.now() - submittedStartTime;
+        console.log(`[BGC_SUBMITTED] Scan completed in ${submittedElapsedMs}ms (${(submittedElapsedMs/1000).toFixed(1)}s)`);
+
+        // 5. Insert new bgc_submitted emails
+        if (newBgcSubmittedEmails.length > 0) {
+          const { error: insertError } = await supabaseClient
+            .from('bgc_complete_emails')
+            .upsert(newBgcSubmittedEmails, {
+              onConflict: 'account_id,mailbox_id,message_id',
+              ignoreDuplicates: true
+            });
+
+          if (insertError) {
+            console.error('[BGC_SUBMITTED] Error inserting emails:', insertError);
+          } else {
+            console.log(`[BGC_SUBMITTED] Inserted ${newBgcSubmittedEmails.length} new bgc_submitted emails`);
+          }
+        }
+
+        // 6. Get total count
+        const { count: totalSubmittedInDb } = await supabaseClient
+          .from('bgc_complete_emails')
+          .select('*', { count: 'exact', head: true })
+          .eq('email_type', 'bgc_submitted');
+
+        console.log(`[BGC_SUBMITTED] Scan complete. New: ${newBgcSubmittedEmails.length}, Total: ${totalSubmittedInDb}`);
+
+        result = {
+          newSubmittedFound: newBgcSubmittedEmails.length,
+          totalSubmittedInDb: totalSubmittedInDb || 0,
+          scannedAccounts: submittedAccounts.length,
+          messagesScanned: submittedMessagesScanned,
+          elapsedMs: submittedElapsedMs
         };
         break;
       }

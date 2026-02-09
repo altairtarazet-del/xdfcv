@@ -135,12 +135,14 @@ const Overview = () => {
       const bgcAccounts = new Set<string>();
       const deactAccounts = new Set<string>();
       const fpAccounts = new Set<string>();
+      const bgcSubmittedAccounts = new Set<string>();
       const weekDeact = new Set<string>();
       const weekFp = new Set<string>();
 
       data.forEach((row: any) => {
         const emailDate = new Date(row.email_date);
         if (row.email_type === 'bgc_complete') bgcAccounts.add(row.account_email);
+        if (row.email_type === 'bgc_submitted') bgcSubmittedAccounts.add(row.account_email);
         if (row.email_type === 'deactivated') {
           deactAccounts.add(row.account_email);
           if (emailDate >= weekAgo) weekDeact.add(row.account_email);
@@ -157,6 +159,7 @@ const Overview = () => {
         totalClear: clearCount,
         totalDeactivated: deactAccounts.size,
         totalFirstPackage: fpAccounts.size,
+        totalBgcSubmitted: bgcSubmittedAccounts.size,
         weekDeactivated: weekDeact.size,
         weekFirstPackage: weekFp.size,
       };
@@ -168,8 +171,9 @@ const Overview = () => {
   // BGC pie chart data
   const bgcPieData = bgcStats ? [
     { name: 'Clear', value: bgcStats.totalClear, color: '#10b981' },
+    { name: 'BGC Surecte', value: bgcStats.totalBgcSubmitted, color: '#06b6d4' },
     { name: 'Deaktive', value: bgcStats.totalDeactivated, color: '#ef4444' },
-    { name: 'İlk Paket', value: bgcStats.totalFirstPackage, color: '#f59e0b' },
+    { name: 'Ilk Paket', value: bgcStats.totalFirstPackage, color: '#f59e0b' },
   ].filter(d => d.value > 0) : [];
 
   // Prepare pie chart data
@@ -303,10 +307,14 @@ const Overview = () => {
                     <Skeleton className="h-8 w-full" />
                   </div>
                 ) : bgcStats ? (
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-4 gap-4">
                     <div className="text-center">
                       <div className="text-2xl font-bold text-emerald-500">{bgcStats.totalClear}</div>
                       <div className="text-xs text-muted-foreground">Clear</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-cyan-500">{bgcStats.totalBgcSubmitted}</div>
+                      <div className="text-xs text-muted-foreground">BGC Surecte</div>
                     </div>
                     <div className="text-center">
                       <div className="text-2xl font-bold text-red-500">{bgcStats.weekDeactivated}</div>
@@ -314,7 +322,7 @@ const Overview = () => {
                     </div>
                     <div className="text-center">
                       <div className="text-2xl font-bold text-orange-500">{bgcStats.weekFirstPackage}</div>
-                      <div className="text-xs text-muted-foreground">İlk Paket (hafta)</div>
+                      <div className="text-xs text-muted-foreground">Ilk Paket (hafta)</div>
                     </div>
                   </div>
                 ) : (
