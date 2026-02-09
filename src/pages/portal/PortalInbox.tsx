@@ -13,6 +13,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import {
   Mail,
   Inbox,
@@ -24,6 +26,8 @@ import {
   ChevronRight,
   FolderOpen,
   X,
+  Send,
+  PenSquare,
 } from 'lucide-react';
 import { SMTPDevMailbox, SMTPDevMessage } from '@/types/mail';
 
@@ -59,6 +63,13 @@ export default function PortalInbox() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalMessages, setTotalMessages] = useState(0);
   const [paginationView, setPaginationView] = useState<PaginationView | null>(null);
+
+  // Compose state
+  const [showCompose, setShowCompose] = useState(false);
+  const [composeTo, setComposeTo] = useState('');
+  const [composeSubject, setComposeSubject] = useState('');
+  const [composeBody, setComposeBody] = useState('');
+  const [isSending, setIsSending] = useState(false);
 
   // Mobile: toggle folder panel
   const [showFolders, setShowFolders] = useState(false);
@@ -271,6 +282,45 @@ export default function PortalInbox() {
     return subject.includes(q) || fromAddr.toLowerCase().includes(q) || fromName.toLowerCase().includes(q);
   });
 
+  const handleSendEmail = async () => {
+    if (!composeTo.trim() || !composeSubject.trim()) {
+      toast({ variant: 'destructive', title: 'Hata', description: 'Alici ve konu zorunludur' });
+      return;
+    }
+    setIsSending(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('smtp-api', {
+        body: {
+          action: 'sendEmail',
+          from: portalUser?.email,
+          to: composeTo.trim(),
+          subject: composeSubject.trim(),
+          text: composeBody,
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast({ title: 'Basarili', description: 'Email gonderildi' });
+      setShowCompose(false);
+      setComposeTo('');
+      setComposeSubject('');
+      setComposeBody('');
+      // Refresh messages to show sent mail
+      if (selectedMailbox) {
+        setTimeout(() => fetchMessages(selectedMailbox.id, currentPage), 1500);
+      }
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Gonderilemedi',
+        description: err?.message || 'Email gonderilirken hata olustu',
+      });
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   const handleCloseMessageDialog = () => {
     setSelectedMessage(null);
     setFullMessageData(null);
@@ -368,9 +418,17 @@ export default function PortalInbox() {
 
         {/* Message List */}
         <div className="flex-1 flex flex-col min-w-0 border-r border-border">
-          {/* Search bar */}
-          <div className="p-3 border-b border-border">
-            <div className="relative">
+          {/* Search bar + Compose button */}
+          <div className="p-3 border-b border-border flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => setShowCompose(true)}
+              className="flex-shrink-0 h-9"
+            >
+              <PenSquare size={14} className="mr-1.5" />
+              Yeni Mail
+            </Button>
+            <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
               <Input
                 placeholder="Mesaj ara (konu, gonderen)..."
@@ -568,6 +626,84 @@ export default function PortalInbox() {
                 </div>
               </div>
             )}
+          </DialogContent>
+        </Dialog>
+        {/* Compose Dialog */}
+        <Dialog open={showCompose} onOpenChange={(open) => { if (!isSending) setShowCompose(open); }}>
+          <DialogContent className="max-w-lg bg-card border-border">
+            <DialogHeader>
+              <DialogTitle className="text-foreground flex items-center gap-2">
+                <Send size={18} className="text-primary" />
+                Yeni Email
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label className="text-xs text-muted-foreground">Gonderen</Label>
+                <Input
+                  value={portalUser?.email || ''}
+                  disabled
+                  className="mt-1 text-sm bg-muted/30 border-border"
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Alici *</Label>
+                <Input
+                  placeholder="ornek@email.com"
+                  value={composeTo}
+                  onChange={(e) => setComposeTo(e.target.value)}
+                  className="mt-1 text-sm bg-input border-border"
+                  disabled={isSending}
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Konu *</Label>
+                <Input
+                  placeholder="Email konusu"
+                  value={composeSubject}
+                  onChange={(e) => setComposeSubject(e.target.value)}
+                  className="mt-1 text-sm bg-input border-border"
+                  disabled={isSending}
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Mesaj</Label>
+                <Textarea
+                  placeholder="Mesajinizi yazin..."
+                  value={composeBody}
+                  onChange={(e) => setComposeBody(e.target.value)}
+                  className="mt-1 text-sm bg-input border-border min-h-[150px] resize-y"
+                  disabled={isSending}
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowCompose(false)}
+                  disabled={isSending}
+                >
+                  Iptal
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSendEmail}
+                  disabled={isSending || !composeTo.trim() || !composeSubject.trim()}
+                >
+                  {isSending ? (
+                    <>
+                      <RefreshCw size={14} className="mr-1.5 animate-spin" />
+                      Gonderiliyor...
+                    </>
+                  ) : (
+                    <>
+                      <Send size={14} className="mr-1.5" />
+                      Gonder
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       </div>

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { create, verify as jwtVerify, getNumericDate } from "https://deno.land/x/djwt@v3.0.2/mod.ts";
+import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 
 // Password hashing using Web Crypto API (no Worker dependency)
 async function hashPassword(password: string): Promise<string> {
@@ -3583,6 +3584,44 @@ serve(async (req) => {
         break;
       }
 
+      case 'sendEmail': {
+        // Send email via SMTP protocol
+        const { from, to, subject: emailSubject, text: emailText, html: emailHtml } = body;
+        if (!from) throw new Error('Gonderen (from) gerekli');
+        if (!to) throw new Error('Alici (to) gerekli');
+        if (!emailSubject) throw new Error('Konu (subject) gerekli');
+
+        const smtpSendPassword = Deno.env.get('DEFAULT_ACCOUNT_PASSWORD') || 'ChangeMe!123';
+
+        const smtpClient = new SMTPClient({
+          connection: {
+            hostname: 'send.smtp.dev',
+            port: 587,
+            tls: true,
+            auth: {
+              username: from,
+              password: smtpSendPassword,
+            },
+          },
+        });
+
+        try {
+          await smtpClient.send({
+            from,
+            to: Array.isArray(to) ? to.join(', ') : to,
+            subject: emailSubject,
+            content: emailText || '',
+            html: emailHtml || undefined,
+          });
+          await smtpClient.close();
+          result = { success: true, message: 'Email gonderildi' };
+        } catch (smtpErr: any) {
+          try { await smtpClient.close(); } catch {}
+          throw new Error('Email gonderilemedi: ' + (smtpErr?.message || smtpErr));
+        }
+        break;
+      }
+
       case 'portalSetPassword': {
         if (!supabaseClient) throw new Error('Supabase not configured');
 
@@ -3596,12 +3635,31 @@ serve(async (req) => {
 
         const hash = await hashPassword(newPassword);
 
-        const { error: updateError } = await supabaseClient
+        // Try update first
+        const { data: updated, error: updateError } = await supabaseClient
           .from('email_accounts')
           .update({ portal_password: hash })
-          .eq('email', email);
+          .eq('email', email)
+          .select();
 
         if (updateError) throw new Error('Sifre kaydedilemedi: ' + updateError.message);
+
+        // If no row was updated, the record doesn't exist - create it
+        if (!updated || updated.length === 0) {
+          console.log('[Portal] email_accounts record missing for', email, '- creating...');
+          // Extract name parts from email prefix (e.g. bilalerat@dasherhelp.com -> BILALERAT)
+          const emailPrefix = email.split('@')[0].toUpperCase();
+          const { error: insertError } = await supabaseClient
+            .from('email_accounts')
+            .insert({
+              email,
+              portal_password: hash,
+              first_name: emailPrefix,
+              date_of_birth: '2000-01-01',
+            });
+          if (insertError) throw new Error('Hesap olusturulamadi: ' + insertError.message);
+          console.log('[Portal] Created email_accounts record for', email);
+        }
 
         result = { success: true, message: 'Portal sifresi belirlendi' };
         break;
