@@ -14,51 +14,12 @@ export type Database = {
   }
   public: {
     Tables: {
-      account_events: {
-        Row: {
-          id: string
-          account_email: string
-          event_type: string
-          event_date: string
-          metadata: Json | null
-          source_email_id: string | null
-        }
-        Insert: {
-          id?: string
-          account_email: string
-          event_type: string
-          event_date?: string
-          metadata?: Json | null
-          source_email_id?: string | null
-        }
-        Update: {
-          id?: string
-          account_email?: string
-          event_type?: string
-          event_date?: string
-          metadata?: Json | null
-          source_email_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "account_events_source_email_id_fkey"
-            columns: ["source_email_id"]
-            isOneToOne: false
-            referencedRelation: "bgc_complete_emails"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       bgc_complete_emails: {
         Row: {
           account_email: string
           account_id: string
-          ai_classified: boolean | null
-          ai_confidence: number | null
-          email_body_fetched: boolean | null
           email_date: string
           email_type: string
-          extracted_data: Json | null
           from_address: string | null
           from_name: string | null
           id: string
@@ -72,12 +33,8 @@ export type Database = {
         Insert: {
           account_email: string
           account_id: string
-          ai_classified?: boolean | null
-          ai_confidence?: number | null
-          email_body_fetched?: boolean | null
           email_date: string
           email_type?: string
-          extracted_data?: Json | null
           from_address?: string | null
           from_name?: string | null
           id?: string
@@ -91,12 +48,8 @@ export type Database = {
         Update: {
           account_email?: string
           account_id?: string
-          ai_classified?: boolean | null
-          ai_confidence?: number | null
-          email_body_fetched?: boolean | null
           email_date?: string
           email_type?: string
-          extracted_data?: Json | null
           from_address?: string | null
           from_name?: string | null
           id?: string
@@ -106,30 +59,6 @@ export type Database = {
           scanned_at?: string | null
           scanned_by?: string | null
           subject?: string
-        }
-        Relationships: []
-      }
-      bgc_risk_scores: {
-        Row: {
-          id: string
-          account_email: string
-          risk_score: number
-          risk_factors: Json | null
-          last_calculated_at: string
-        }
-        Insert: {
-          id?: string
-          account_email: string
-          risk_score?: number
-          risk_factors?: Json | null
-          last_calculated_at?: string
-        }
-        Update: {
-          id?: string
-          account_email?: string
-          risk_score?: number
-          risk_factors?: Json | null
-          last_calculated_at?: string
         }
         Relationships: []
       }
@@ -157,39 +86,6 @@ export type Database = {
           last_message_date?: string | null
           last_scanned_at?: string
           updated_at?: string | null
-        }
-        Relationships: []
-      }
-      notifications: {
-        Row: {
-          id: string
-          user_id: string
-          type: string
-          title: string
-          message: string
-          metadata: Json | null
-          is_read: boolean
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          type: string
-          title: string
-          message: string
-          metadata?: Json | null
-          is_read?: boolean
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          type?: string
-          title?: string
-          message?: string
-          metadata?: Json | null
-          is_read?: boolean
-          created_at?: string
         }
         Relationships: []
       }
