@@ -1175,22 +1175,62 @@ function isBgcSubmittedSignal(subject: string, senderAddress: string): boolean {
   return false;
 }
 
-// Helper: Scan a single account for BGC Submitted signals
+// ============================================================
+// BGC INFO NEEDED DETECTION — Checkr "Extra Info Required" Signals
+// ============================================================
+
+const BGC_INFO_NEEDED_SUBJECT_PATTERNS: RegExp[] = [
+  /additional (information|info|documents?) (needed|required|requested)/i,
+  /more information (needed|required)/i,
+  /provide.*(additional|more) (information|info|documents?)/i,
+  /action required/i,
+  /action needed/i,
+  /your response (is )?(needed|required)/i,
+  /submit.*(missing|additional|required) (documents?|information|info)/i,
+  /documents? (needed|required|missing|requested)/i,
+  /verify your identity/i,
+  /identity verification (needed|required|failed|incomplete)/i,
+  /unable to verify/i,
+  /could not verify/i,
+  /we need.*(information|documents?|verify)/i,
+  /please (provide|submit|upload|verify|complete)/i,
+  /incomplete.*(application|submission|information|check)/i,
+  /background check.*(hold|paused|waiting|delayed|incomplete)/i,
+];
+
+function isBgcInfoNeededSignal(subject: string, senderAddress: string): boolean {
+  const senderLower = (senderAddress || '').toLowerCase();
+  const isFromCheckr = /checkr\.com/i.test(senderLower);
+  if (!isFromCheckr) return false;
+
+  const subjectLower = (subject || '').toLowerCase();
+  if (subjectLower.includes('your background check is complete')) return false;
+  if (subjectLower.includes('deactivated')) return false;
+
+  for (const p of BGC_INFO_NEEDED_SUBJECT_PATTERNS) {
+    if (p.test(subjectLower)) return true;
+  }
+  return false;
+}
+
+// Helper: Scan a single account for BGC Submitted + Info Needed signals
 async function scanSingleAccountBgcSubmitted(
   accountId: string,
   accountEmail: string,
   headers: Record<string, string>,
   existingSubmittedIds: Set<string>,
+  existingInfoNeededIds: Set<string>,
   SCAN_FOLDERS: string[]
-): Promise<{ bgcSubmittedEmails: any[]; messagesScanned: number }> {
+): Promise<{ bgcSubmittedEmails: any[]; bgcInfoNeededEmails: any[]; messagesScanned: number }> {
   const bgcSubmittedEmails: any[] = [];
+  const bgcInfoNeededEmails: any[] = [];
   let messagesScanned = 0;
 
   try {
     const mbRes = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes`, { headers });
     if (!mbRes.ok) {
       console.error(`[BGC_SUBMITTED] Failed to fetch mailboxes for account ${accountId}`);
-      return { bgcSubmittedEmails, messagesScanned };
+      return { bgcSubmittedEmails, bgcInfoNeededEmails, messagesScanned };
     }
 
     const mbData = await mbRes.json();
@@ -1199,15 +1239,16 @@ async function scanSingleAccountBgcSubmitted(
     );
 
     let foundSubmitted = false;
+    let foundInfoNeeded = false;
 
     // Scan mailboxes sequentially for early exit
     for (const mailbox of mailboxes) {
-      if (foundSubmitted) break;
+      if (foundSubmitted && foundInfoNeeded) break;
 
       let msgPage = 1;
       let hasMoreMsgs = true;
 
-      while (hasMoreMsgs && !foundSubmitted) {
+      while (hasMoreMsgs && !(foundSubmitted && foundInfoNeeded)) {
         const msgUrl = `${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailbox.id}/messages?page=${msgPage}`;
 
         const msgRes = await fetch(msgUrl, { headers });
@@ -1221,27 +1262,48 @@ async function scanSingleAccountBgcSubmitted(
           const uniqueKey = `${accountId}_${mailbox.id}_${msg.id}`;
           const fromData = msg.from || {};
           const senderAddress = typeof fromData === 'string' ? fromData : (fromData.address || '');
+          const subject = msg.subject || '';
 
-          if (isBgcSubmittedSignal(msg.subject || '', senderAddress) && !existingSubmittedIds.has(uniqueKey)) {
+          // Check info_needed first (more specific)
+          if (!foundInfoNeeded && isBgcInfoNeededSignal(subject, senderAddress) && !existingInfoNeededIds.has(uniqueKey)) {
+            bgcInfoNeededEmails.push({
+              account_id: accountId,
+              account_email: accountEmail,
+              mailbox_id: mailbox.id,
+              mailbox_path: mailbox.path,
+              message_id: msg.id,
+              subject: subject,
+              from_address: senderAddress,
+              from_name: typeof fromData === 'string' ? null : fromData.name,
+              email_date: msg.createdAt || msg.date || msg.receivedAt,
+              email_type: 'bgc_info_needed'
+            });
+            foundInfoNeeded = true;
+            // info_needed from Checkr also counts as submitted
+            if (!foundSubmitted) foundSubmitted = true;
+            console.log(`[BGC_INFO_NEEDED] DETECTED: "${subject}" from=${senderAddress} account=${accountEmail}`);
+          }
+
+          // Check submitted
+          if (!foundSubmitted && isBgcSubmittedSignal(subject, senderAddress) && !existingSubmittedIds.has(uniqueKey)) {
             bgcSubmittedEmails.push({
               account_id: accountId,
               account_email: accountEmail,
               mailbox_id: mailbox.id,
               mailbox_path: mailbox.path,
               message_id: msg.id,
-              subject: msg.subject,
+              subject: subject,
               from_address: senderAddress,
               from_name: typeof fromData === 'string' ? null : fromData.name,
               email_date: msg.createdAt || msg.date || msg.receivedAt,
               email_type: 'bgc_submitted'
             });
             foundSubmitted = true;
-            console.log(`[BGC_SUBMITTED] DETECTED: "${msg.subject}" from=${senderAddress} account=${accountEmail}`);
-            break;
+            console.log(`[BGC_SUBMITTED] DETECTED: "${subject}" from=${senderAddress} account=${accountEmail}`);
           }
         }
 
-        if (msgData.view?.next && !foundSubmitted) {
+        if (msgData.view?.next && !(foundSubmitted && foundInfoNeeded)) {
           msgPage++;
         } else {
           hasMoreMsgs = false;
@@ -1252,7 +1314,7 @@ async function scanSingleAccountBgcSubmitted(
     console.error(`[BGC_SUBMITTED] Error processing account ${accountId}:`, e);
   }
 
-  return { bgcSubmittedEmails, messagesScanned };
+  return { bgcSubmittedEmails, bgcInfoNeededEmails, messagesScanned };
 }
 
 // ============================================================
@@ -2491,6 +2553,7 @@ serve(async (req) => {
         const SCAN_FOLDERS_SUB = ['INBOX', 'Trash', 'Junk', 'Spam'];
 
         const newBgcSubmittedEmails: any[] = [];
+        const newBgcInfoNeededEmails: any[] = [];
         let submittedMessagesScanned = 0;
 
         console.log('[BGC_SUBMITTED] Starting scan...');
@@ -2514,12 +2577,27 @@ serve(async (req) => {
           (existingSubmitted || []).map((e: any) => `${e.account_id}_${e.mailbox_id}_${e.message_id}`)
         );
 
-        console.log(`[BGC_SUBMITTED] ${alreadySubmittedEmails.size} already have bgc_submitted`);
+        // 2b. Get already bgc_info_needed records
+        const { data: existingInfoNeeded } = await supabaseClient
+          .from('bgc_complete_emails')
+          .select('account_id, account_email, mailbox_id, message_id')
+          .eq('email_type', 'bgc_info_needed');
 
-        // 3. Build list of accounts to scan (all accounts minus already submitted)
+        const alreadyInfoNeededEmails = new Set(
+          (existingInfoNeeded || []).map((e: any) => e.account_email)
+        );
+        const existingInfoNeededIds = new Set(
+          (existingInfoNeeded || []).map((e: any) => `${e.account_id}_${e.mailbox_id}_${e.message_id}`)
+        );
+
+        console.log(`[BGC_SUBMITTED] ${alreadySubmittedEmails.size} already have bgc_submitted, ${alreadyInfoNeededEmails.size} already have bgc_info_needed`);
+
+        // 3. Build list of accounts to scan (need submitted OR info_needed)
         const submittedAccounts: { id: string; email: string }[] = [];
         for (const s of (allScanAccounts || [])) {
-          if (!alreadySubmittedEmails.has(s.account_email)) {
+          const needsSubmitted = !alreadySubmittedEmails.has(s.account_email);
+          const needsInfoNeeded = !alreadyInfoNeededEmails.has(s.account_email);
+          if (needsSubmitted || needsInfoNeeded) {
             submittedAccounts.push({ id: s.account_id, email: s.account_email });
           }
         }
@@ -2550,6 +2628,7 @@ serve(async (req) => {
                 account.email,
                 headers,
                 existingSubmittedIds,
+                existingInfoNeededIds,
                 SCAN_FOLDERS_SUB
               )
             )
@@ -2557,11 +2636,16 @@ serve(async (req) => {
 
           for (const accountResult of batchResults) {
             newBgcSubmittedEmails.push(...accountResult.bgcSubmittedEmails);
+            newBgcInfoNeededEmails.push(...accountResult.bgcInfoNeededEmails);
             submittedMessagesScanned += accountResult.messagesScanned;
 
             for (const subEmail of accountResult.bgcSubmittedEmails) {
               existingSubmittedIds.add(`${subEmail.account_id}_${subEmail.mailbox_id}_${subEmail.message_id}`);
               alreadySubmittedEmails.add(subEmail.account_email);
+            }
+            for (const infoEmail of accountResult.bgcInfoNeededEmails) {
+              existingInfoNeededIds.add(`${infoEmail.account_id}_${infoEmail.mailbox_id}_${infoEmail.message_id}`);
+              alreadyInfoNeededEmails.add(infoEmail.account_email);
             }
           }
         }
@@ -2585,17 +2669,40 @@ serve(async (req) => {
           }
         }
 
-        // 6. Get total count
+        // 5b. Insert new bgc_info_needed emails
+        if (newBgcInfoNeededEmails.length > 0) {
+          const { error: infoInsertError } = await supabaseClient
+            .from('bgc_complete_emails')
+            .upsert(newBgcInfoNeededEmails, {
+              onConflict: 'account_id,mailbox_id,message_id',
+              ignoreDuplicates: true
+            });
+
+          if (infoInsertError) {
+            console.error('[BGC_INFO_NEEDED] Error inserting emails:', infoInsertError);
+          } else {
+            console.log(`[BGC_INFO_NEEDED] Inserted ${newBgcInfoNeededEmails.length} new bgc_info_needed emails`);
+          }
+        }
+
+        // 6. Get total counts
         const { count: totalSubmittedInDb } = await supabaseClient
           .from('bgc_complete_emails')
           .select('*', { count: 'exact', head: true })
           .eq('email_type', 'bgc_submitted');
 
-        console.log(`[BGC_SUBMITTED] Scan complete. New: ${newBgcSubmittedEmails.length}, Total: ${totalSubmittedInDb}`);
+        const { count: totalInfoNeededInDb } = await supabaseClient
+          .from('bgc_complete_emails')
+          .select('*', { count: 'exact', head: true })
+          .eq('email_type', 'bgc_info_needed');
+
+        console.log(`[BGC_SUBMITTED] Scan complete. New submitted: ${newBgcSubmittedEmails.length}, Total: ${totalSubmittedInDb}. New info_needed: ${newBgcInfoNeededEmails.length}, Total: ${totalInfoNeededInDb}`);
 
         result = {
           newSubmittedFound: newBgcSubmittedEmails.length,
+          newInfoNeededFound: newBgcInfoNeededEmails.length,
           totalSubmittedInDb: totalSubmittedInDb || 0,
+          totalInfoNeededInDb: totalInfoNeededInDb || 0,
           scannedAccounts: submittedAccounts.length,
           messagesScanned: submittedMessagesScanned,
           elapsedMs: submittedElapsedMs

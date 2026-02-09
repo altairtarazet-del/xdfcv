@@ -45,6 +45,7 @@ interface AccountRow {
   deactivatedDate: string | null;
   firstPackageDate: string | null;
   bgcSubmittedDate: string | null;
+  bgcInfoNeededDate: string | null;
 }
 
 interface SuspiciousResult {
@@ -177,10 +178,10 @@ export default function BgcComplete() {
         supabase.from('bgc_complete_emails').select('account_email, email_type, email_date').order('email_date', { ascending: false }),
       ]);
 
-      const emailMap = new Map<string, { bgcDate: string | null; considerDate: string | null; deactivatedDate: string | null; firstPackageDate: string | null; bgcSubmittedDate: string | null }>();
+      const emailMap = new Map<string, { bgcDate: string | null; considerDate: string | null; deactivatedDate: string | null; firstPackageDate: string | null; bgcSubmittedDate: string | null; bgcInfoNeededDate: string | null }>();
       for (const email of (emailRes.data || [])) {
         if (!emailMap.has(email.account_email)) {
-          emailMap.set(email.account_email, { bgcDate: null, considerDate: null, deactivatedDate: null, firstPackageDate: null, bgcSubmittedDate: null });
+          emailMap.set(email.account_email, { bgcDate: null, considerDate: null, deactivatedDate: null, firstPackageDate: null, bgcSubmittedDate: null, bgcInfoNeededDate: null });
         }
         const entry = emailMap.get(email.account_email)!;
         if (email.email_type === 'bgc_complete' && !entry.bgcDate) entry.bgcDate = email.email_date;
@@ -188,6 +189,7 @@ export default function BgcComplete() {
         if (email.email_type === 'deactivated' && !entry.deactivatedDate) entry.deactivatedDate = email.email_date;
         if (email.email_type === 'first_package' && !entry.firstPackageDate) entry.firstPackageDate = email.email_date;
         if (email.email_type === 'bgc_submitted' && !entry.bgcSubmittedDate) entry.bgcSubmittedDate = email.email_date;
+        if (email.email_type === 'bgc_info_needed' && !entry.bgcInfoNeededDate) entry.bgcInfoNeededDate = email.email_date;
       }
 
       const rows: AccountRow[] = [];
@@ -201,6 +203,7 @@ export default function BgcComplete() {
           deactivatedDate: d?.deactivatedDate || null,
           firstPackageDate: d?.firstPackageDate || null,
           bgcSubmittedDate: d?.bgcSubmittedDate || null,
+          bgcInfoNeededDate: d?.bgcInfoNeededDate || null,
         });
       }
 
@@ -253,6 +256,7 @@ export default function BgcComplete() {
       if (bgcResult?.newConsiderFound) parts.push(`${bgcResult.newConsiderFound} consider`);
       if (bgcResult?.newDeactivatedFound) parts.push(`${bgcResult.newDeactivatedFound} kapanma`);
       if (submittedResult?.newSubmittedFound) parts.push(`${submittedResult.newSubmittedFound} BGC surecte`);
+      if (submittedResult?.newInfoNeededFound) parts.push(`${submittedResult.newInfoNeededFound} bilgi bekliyor`);
       if (fpResult?.newFirstPackageFound) parts.push(`${fpResult.newFirstPackageFound} ilk paket`);
       if (recheckResult?.considersFound) parts.push(`${recheckResult.considersFound} consider tespit`);
 
@@ -355,6 +359,10 @@ export default function BgcComplete() {
       return db - da;
     });
     result.bgc_process.sort((a, b) => {
+      // Info needed accounts come first
+      const aInfo = a.bgcInfoNeededDate ? 1 : 0;
+      const bInfo = b.bgcInfoNeededDate ? 1 : 0;
+      if (aInfo !== bInfo) return bInfo - aInfo;
       const da = a.bgcSubmittedDate ? new Date(a.bgcSubmittedDate).getTime() : 0;
       const db = b.bgcSubmittedDate ? new Date(b.bgcSubmittedDate).getTime() : 0;
       return db - da;
@@ -392,12 +400,13 @@ export default function BgcComplete() {
   const exportToCSV = () => {
     const activeAccounts = grouped[activeTab];
     if (activeAccounts.length === 0) return;
-    const headers = ['Hesap', 'Durum', 'BGC Tarihi', 'Basvuru Tarihi', 'Kapanma Tarihi', 'Ilk Paket Tarihi'];
+    const headers = ['Hesap', 'Durum', 'BGC Tarihi', 'Basvuru Tarihi', 'Bilgi Bekliyor Tarihi', 'Kapanma Tarihi', 'Ilk Paket Tarihi'];
     const rows = activeAccounts.map(a => [
       a.account_email,
       STATUS_CONFIG[a.status].label,
       a.bgcDate ? format(new Date(a.bgcDate), 'dd/MM/yyyy') : '-',
       a.bgcSubmittedDate ? format(new Date(a.bgcSubmittedDate), 'dd/MM/yyyy') : '-',
+      a.bgcInfoNeededDate ? format(new Date(a.bgcInfoNeededDate), 'dd/MM/yyyy') : '-',
       a.deactivatedDate ? format(new Date(a.deactivatedDate), 'dd/MM/yyyy') : '-',
       a.firstPackageDate ? format(new Date(a.firstPackageDate), 'dd/MM/yyyy') : '-',
     ]);
@@ -506,6 +515,7 @@ export default function BgcComplete() {
             {TAB_ORDER.map((key) => {
               const cfg = STATUS_CONFIG[key];
               const Icon = cfg.icon;
+              const infoNeededCount = key === 'bgc_process' ? grouped[key].filter(a => a.bgcInfoNeededDate).length : 0;
               return (
                 <TabsTrigger
                   key={key}
@@ -517,6 +527,11 @@ export default function BgcComplete() {
                   <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full ${cfg.bgColor}`}>
                     {grouped[key].length}
                   </span>
+                  {infoNeededCount > 0 && (
+                    <span className="ml-0.5 text-[10px] px-1 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
+                      ⚠{infoNeededCount}
+                    </span>
+                  )}
                 </TabsTrigger>
               );
             })}
@@ -682,7 +697,14 @@ export default function BgcComplete() {
                               const displayDate = getDisplayDate(account);
                               return (
                                 <TableRow key={account.account_email}>
-                                  <TableCell className="font-mono text-sm">{account.account_email}</TableCell>
+                                  <TableCell className="font-mono text-sm">
+                                    {account.account_email}
+                                    {account.bgcInfoNeededDate && (
+                                      <Badge className="ml-2 bg-amber-500/20 text-amber-400 border-amber-500/50 text-[10px]">
+                                        Bilgi Bekliyor
+                                      </Badge>
+                                    )}
+                                  </TableCell>
                                   <TableCell className="font-mono text-xs text-muted-foreground">
                                     {displayDate ? format(new Date(displayDate), 'dd/MM/yyyy') : '-'}
                                   </TableCell>
