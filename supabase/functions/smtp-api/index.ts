@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { create, verify as jwtVerify, getNumericDate } from "https://deno.land/x/djwt@v3.0.2/mod.ts";
-import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
+import nodemailer from "npm:nodemailer@6.9.8";
 
 // Password hashing using Web Crypto API (no Worker dependency)
 async function hashPassword(password: string): Promise<string> {
@@ -3585,40 +3585,58 @@ serve(async (req) => {
       }
 
       case 'sendEmail': {
-        // Send email via SMTP protocol
+        // Send email via SMTP using nodemailer
         const { from, to, subject: emailSubject, text: emailText, html: emailHtml } = body;
         if (!from) throw new Error('Gonderen (from) gerekli');
         if (!to) throw new Error('Alici (to) gerekli');
         if (!emailSubject) throw new Error('Konu (subject) gerekli');
 
-        const smtpSendPassword = Deno.env.get('DEFAULT_ACCOUNT_PASSWORD') || 'ChangeMe!123';
+        // Look up sender's smtp_account_id from DB
+        if (!supabaseClient) throw new Error('Supabase not configured');
+        const { data: senderAccount } = await supabaseClient
+          .from('email_accounts')
+          .select('smtp_account_id')
+          .eq('email', from)
+          .single();
 
-        const smtpClient = new SMTPClient({
-          connection: {
-            hostname: 'send.smtp.dev',
-            port: 587,
-            tls: true,
-            auth: {
-              username: from,
-              password: smtpSendPassword,
-            },
+        if (!senderAccount?.smtp_account_id) {
+          throw new Error('Gonderen hesabi bulunamadi veya smtp_account_id eksik');
+        }
+
+        // Set a known SMTP password for this account before sending
+        const sendPassword = 'SmtpSend!2025';
+        const patchRes = await fetch(`${SMTP_API_URL}/accounts/${senderAccount.smtp_account_id}`, {
+          method: 'PATCH',
+          headers: { ...headers, 'Content-Type': 'application/merge-patch+json' },
+          body: JSON.stringify({ password: sendPassword }),
+        });
+        if (!patchRes.ok) {
+          const patchErr = await patchRes.text();
+          console.error('[sendEmail] Password reset failed:', patchRes.status, patchErr);
+          throw new Error('Hesap sifresi ayarlanamadi');
+        }
+
+        const transporter = nodemailer.createTransport({
+          host: 'send.smtp.dev',
+          port: 587,
+          secure: false, // STARTTLS
+          auth: {
+            user: from,
+            pass: sendPassword,
           },
         });
 
-        try {
-          await smtpClient.send({
-            from,
-            to: Array.isArray(to) ? to.join(', ') : to,
-            subject: emailSubject,
-            content: emailText || '',
-            html: emailHtml || undefined,
-          });
-          await smtpClient.close();
-          result = { success: true, message: 'Email gonderildi' };
-        } catch (smtpErr: any) {
-          try { await smtpClient.close(); } catch {}
-          throw new Error('Email gonderilemedi: ' + (smtpErr?.message || smtpErr));
-        }
+        const mailOptions: any = {
+          from,
+          to: Array.isArray(to) ? to.join(', ') : to,
+          subject: emailSubject,
+        };
+        if (emailText) mailOptions.text = emailText;
+        if (emailHtml) mailOptions.html = emailHtml;
+
+        const sendResult = await transporter.sendMail(mailOptions);
+        console.log('[sendEmail] Success:', JSON.stringify(sendResult));
+        result = { success: true, message: 'Email gonderildi', messageId: sendResult.messageId };
         break;
       }
 
