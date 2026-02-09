@@ -1440,18 +1440,11 @@ serve(async (req) => {
           .from('bgc_scan_status')
           .select('*');
 
-        const excludedAccountIds = new Set(
-          (scanStatuses || []).filter((s: any) => s.is_excluded).map((s: any) => s.account_id)
-        );
-        const excludedEmails = new Set(
-          (scanStatuses || []).filter((s: any) => s.is_excluded).map((s: any) => s.account_email)
-        );
-
         const statusMap = new Map(
           (scanStatuses || []).map((s: any) => [s.account_id, s])
         );
 
-        console.log(`[BGC] Found ${statusMap.size} previously scanned accounts (${excludedAccountIds.size} excluded)`);
+        console.log(`[BGC] Found ${statusMap.size} previously scanned accounts`);
         
         // 2. Get existing BGC email IDs and accounts to avoid duplicates
         const { data: existingBgcEmails } = await supabaseClient
@@ -1520,10 +1513,6 @@ serve(async (req) => {
         }
         
         console.log(`[BGC] Found ${allAccounts.length} accounts total`);
-
-        // Filter out excluded accounts
-        allAccounts = allAccounts.filter((a: any) => !excludedAccountIds.has(a.id) && !excludedEmails.has(a.address));
-        console.log(`[BGC] ${allAccounts.length} accounts after excluding ${excludedAccountIds.size} excluded`);
 
         // 5. Process accounts in parallel batches
         const batches: any[][] = [];
@@ -1863,17 +1852,13 @@ serve(async (req) => {
         
         console.log(`[FIRST_PACKAGE] ${deactivatedEmails.size} deactivated, ${alreadyFirstPackageEmails.size} already have first package`);
 
-        // Get scan statuses for incremental scanning + exclusion filter
+        // Get scan statuses for incremental scanning
         const { data: fpScanStatuses } = await supabaseClient
           .from('bgc_scan_status')
-          .select('account_id, account_email, last_scanned_at, is_excluded');
+          .select('account_id, account_email, last_scanned_at');
 
         const fpStatusMap = new Map(
           (fpScanStatuses || []).map((s: any) => [s.account_id, s.last_scanned_at])
-        );
-
-        const fpExcludedEmails = new Set(
-          (fpScanStatuses || []).filter((s: any) => s.is_excluded).map((s: any) => s.account_email)
         );
 
         // 4. Build list of accounts to scan for first package
@@ -1884,7 +1869,7 @@ serve(async (req) => {
 
         // 4a. BGC complete accounts
         for (const [accountId, email] of bgcAccountMap.entries()) {
-          if (!alreadyFirstPackageEmails.has(email) && !fpExcludedEmails.has(email)) {
+          if (!alreadyFirstPackageEmails.has(email)) {
             clearAccounts.push({ id: accountId, email });
             addedEmails.add(email);
           }
@@ -1898,7 +1883,6 @@ serve(async (req) => {
         const accountsWithAnyEmail = new Set((allEmailRecords || []).map((e: any) => e.account_email));
 
         for (const s of (fpScanStatuses || [])) {
-          if (s.is_excluded) continue;
           if (addedEmails.has(s.account_email)) continue;
           if (alreadyFirstPackageEmails.has(s.account_email)) continue;
           // This account has no email records at all — it's BGC Bekliyor
@@ -2489,57 +2473,42 @@ serve(async (req) => {
         break;
       }
 
-      case 'excludeFromBgc': {
+      case 'deleteFromBgc': {
         if (!supabaseClient) throw new Error('Supabase not configured');
-        const { accountEmails, reason } = body;
+        const { accountEmails } = body;
         if (!accountEmails || !Array.isArray(accountEmails) || accountEmails.length === 0) {
           throw new Error('accountEmails array is required');
         }
 
-        const now = new Date().toISOString();
-        let updated = 0;
+        let deleted = 0;
         for (const email of accountEmails) {
-          const { error } = await supabaseClient
+          // Delete from bgc_scan_status
+          const { error: scanError } = await supabaseClient
             .from('bgc_scan_status')
-            .update({ is_excluded: true, excluded_at: now, excluded_reason: reason || 'Manuel dışlama' })
+            .delete()
             .eq('account_email', email);
-          if (!error) updated++;
-        }
 
-        console.log(`[EXCLUDE] Excluded ${updated}/${accountEmails.length} accounts. Reason: ${reason}`);
-        result = { updated, total: accountEmails.length };
-        break;
-      }
-
-      case 'restoreFromBgcExclusion': {
-        if (!supabaseClient) throw new Error('Supabase not configured');
-        const { accountEmails: restoreEmails } = body;
-        if (!restoreEmails || !Array.isArray(restoreEmails) || restoreEmails.length === 0) {
-          throw new Error('accountEmails array is required');
-        }
-
-        let restored = 0;
-        for (const email of restoreEmails) {
-          const { error } = await supabaseClient
-            .from('bgc_scan_status')
-            .update({ is_excluded: false, excluded_at: null, excluded_reason: null })
+          // Delete related records from bgc_complete_emails
+          await supabaseClient
+            .from('bgc_complete_emails')
+            .delete()
             .eq('account_email', email);
-          if (!error) restored++;
+
+          if (!scanError) deleted++;
         }
 
-        console.log(`[RESTORE] Restored ${restored}/${restoreEmails.length} accounts`);
-        result = { restored, total: restoreEmails.length };
+        console.log(`[DELETE] Deleted ${deleted}/${accountEmails.length} accounts permanently`);
+        result = { deleted, total: accountEmails.length };
         break;
       }
 
       case 'detectSuspiciousAccounts': {
         if (!supabaseClient) throw new Error('Supabase not configured');
 
-        // Get all non-excluded accounts
+        // Get all accounts
         const { data: allScanAccounts } = await supabaseClient
           .from('bgc_scan_status')
-          .select('account_email, is_excluded')
-          .eq('is_excluded', false);
+          .select('account_email');
 
         // Get accounts that have any email record (these have BGC results)
         const { data: emailRecords } = await supabaseClient
@@ -2601,10 +2570,135 @@ serve(async (req) => {
           }
         }
 
-        const totalSuspicious = new Set([...testAccounts, ...duplicates.map(d => d.email)]).size;
-        console.log(`[DETECT] Found ${testAccounts.length} test accounts, ${duplicates.length} duplicates. Total suspicious: ${totalSuspicious}`);
+        // Collect emails already detected by regex/levenshtein
+        const alreadyDetected = new Set([...testAccounts.map(e => e), ...duplicates.map(d => d.email)]);
 
-        result = { testAccounts, duplicates, totalSuspicious };
+        // AI detection for remaining BGC Bekliyor emails
+        const undetectedEmails = bgcBekliyorEmails.filter((email: string) => !alreadyDetected.has(email));
+
+        const aiTestAccounts: Array<{ email: string; detectionMethod: string }> = [];
+        const aiDuplicates: Array<{ email: string; similarTo: string; distance: number; reason: string; detectionMethod: string }> = [];
+        const aiSuspicious: Array<{ email: string; reason: string; detectionMethod: string }> = [];
+
+        if (undetectedEmails.length > 0) {
+          try {
+            const syntheticApiKey = Deno.env.get('SYNTHETIC_API_KEY');
+            const syntheticApiUrl = Deno.env.get('SYNTHETIC_API_URL') || 'https://api.synthetic.new/openai/v1';
+
+            if (syntheticApiKey) {
+              // Process in batches of 200
+              const AI_BATCH_SIZE = 200;
+              for (let i = 0; i < undetectedEmails.length; i += AI_BATCH_SIZE) {
+                const batch = undetectedEmails.slice(i, i + AI_BATCH_SIZE);
+                console.log(`[DETECT_AI] Processing batch ${Math.floor(i / AI_BATCH_SIZE) + 1}, ${batch.length} emails`);
+
+                const aiResponse = await fetch(`${syntheticApiUrl}/chat/completions`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${syntheticApiKey}`,
+                  },
+                  body: JSON.stringify({
+                    model: 'hf:deepseek-ai/DeepSeek-V3.2',
+                    messages: [
+                      {
+                        role: 'system',
+                        content: `You are an email account analyzer. Given a list of email addresses, identify suspicious ones that may be:
+1. Test/dummy accounts (e.g., random characters, keyboard patterns like "asdf", sequential numbers)
+2. Duplicate/typo variants of each other (e.g., "john.doe" vs "johndoe", "mike123" vs "mike124")
+3. Suspicious patterns (e.g., auto-generated names, bot-like patterns, nonsensical usernames)
+
+Respond ONLY with valid JSON in this exact format:
+{
+  "test": [{"email": "...", "reason": "..."}],
+  "duplicates": [{"email": "...", "similarTo": "...", "reason": "..."}],
+  "suspicious": [{"email": "...", "reason": "..."}]
+}
+If nothing suspicious is found, return empty arrays. Be conservative — only flag clearly suspicious accounts.`
+                      },
+                      {
+                        role: 'user',
+                        content: `Analyze these email addresses:\n${batch.join('\n')}`
+                      }
+                    ],
+                    temperature: 0.1,
+                    max_tokens: 4000,
+                  }),
+                });
+
+                if (aiResponse.ok) {
+                  const aiData = await aiResponse.json();
+                  const content = aiData.choices?.[0]?.message?.content || '';
+
+                  // Parse JSON from response (handle markdown code blocks)
+                  let parsed: any = null;
+                  try {
+                    const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, content];
+                    parsed = JSON.parse(jsonMatch[1].trim());
+                  } catch (e) {
+                    console.error('[DETECT_AI] Failed to parse AI response:', e);
+                  }
+
+                  if (parsed) {
+                    for (const t of (parsed.test || [])) {
+                      if (t.email && batch.includes(t.email)) {
+                        aiTestAccounts.push({ email: t.email, detectionMethod: 'ai' });
+                      }
+                    }
+                    for (const d of (parsed.duplicates || [])) {
+                      if (d.email && batch.includes(d.email)) {
+                        aiDuplicates.push({
+                          email: d.email,
+                          similarTo: d.similarTo || '',
+                          distance: 0,
+                          reason: d.reason || '',
+                          detectionMethod: 'ai',
+                        });
+                      }
+                    }
+                    for (const s of (parsed.suspicious || [])) {
+                      if (s.email && batch.includes(s.email)) {
+                        aiSuspicious.push({ email: s.email, reason: s.reason || '', detectionMethod: 'ai' });
+                      }
+                    }
+                  }
+                } else {
+                  console.error(`[DETECT_AI] API error: ${aiResponse.status}`);
+                }
+              }
+              console.log(`[DETECT_AI] AI found: ${aiTestAccounts.length} test, ${aiDuplicates.length} duplicates, ${aiSuspicious.length} suspicious`);
+            } else {
+              console.log('[DETECT_AI] No SYNTHETIC_API_KEY configured, skipping AI detection');
+            }
+          } catch (aiError) {
+            console.error('[DETECT_AI] AI detection failed (graceful fallback):', aiError);
+          }
+        }
+
+        // Merge results with detectionMethod labels
+        const mergedTestAccounts = [
+          ...testAccounts.map(email => ({ email, detectionMethod: 'regex' })),
+          ...aiTestAccounts,
+        ];
+        const mergedDuplicates = [
+          ...duplicates.map(d => ({ ...d, reason: '', detectionMethod: 'levenshtein' })),
+          ...aiDuplicates,
+        ];
+
+        const totalSuspicious = new Set([
+          ...mergedTestAccounts.map(t => t.email),
+          ...mergedDuplicates.map(d => d.email),
+          ...aiSuspicious.map(s => s.email),
+        ]).size;
+
+        console.log(`[DETECT] Total: ${mergedTestAccounts.length} test, ${mergedDuplicates.length} duplicates, ${aiSuspicious.length} suspicious. Grand total: ${totalSuspicious}`);
+
+        result = {
+          testAccounts: mergedTestAccounts,
+          duplicates: mergedDuplicates,
+          suspicious: aiSuspicious,
+          totalSuspicious,
+        };
         break;
       }
 

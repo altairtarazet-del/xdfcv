@@ -16,7 +16,7 @@ import {
   FileSearch,
   PanelLeftClose,
   PanelLeft,
-  Wallet,
+
   LayoutDashboard,
   CheckCircle,
 } from 'lucide-react';
@@ -65,7 +65,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   if (!user) return null;
 
   const canManageEmails = isAdmin || profile?.permissions?.can_create_email || profile?.permissions?.can_change_password;
-  const canViewCash = isAdmin || profile?.permissions?.can_view_cash || profile?.permissions?.can_manage_cash;
+
   const canViewBgcComplete = isAdmin || (profile?.permissions as any)?.can_view_bgc_complete;
 
   const navItems = [
@@ -75,7 +75,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     { to: '/dashboard/roles', icon: Shield, label: 'Roller', show: isAdmin },
     { to: '/dashboard/emails', icon: Server, label: 'Email Yönetimi', show: canManageEmails },
     { to: '/dashboard/background', icon: FileSearch, label: 'Background', show: canManageEmails },
-    { to: '/dashboard/cash', icon: Wallet, label: 'Kasa', show: canViewCash },
+
     { to: '/dashboard/bgc-complete', icon: CheckCircle, label: 'BGC Complete', show: canViewBgcComplete },
     { to: '/dashboard/settings', icon: Settings, label: 'Ayarlar', show: true },
   ];

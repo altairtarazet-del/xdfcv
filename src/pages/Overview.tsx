@@ -10,15 +10,12 @@ import {
   Users,
   Shield,
   Mail,
-  Banknote,
   TrendingUp,
-  TrendingDown,
   Activity,
-  DollarSign,
   ArrowRight,
   CheckCircle
 } from "lucide-react";
-import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 
 const STATUS_COLORS: Record<string, string> = {
   acildi: "#22c55e",
@@ -39,7 +36,6 @@ const STATUS_LABELS: Record<string, string> = {
 const Overview = () => {
   const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
-  const [canViewCash, setCanViewCash] = useState(false);
   const [canViewBgcComplete, setCanViewBgcComplete] = useState(false);
 
   // Check permissions
@@ -48,7 +44,6 @@ const Overview = () => {
       if (!user) return;
 
       if (isAdmin) {
-        setCanViewCash(true);
         setCanViewBgcComplete(true);
         return;
       }
@@ -57,14 +52,13 @@ const Overview = () => {
         .from("user_roles")
         .select(`
           custom_role_id,
-          role_permissions!inner(can_view_cash, can_manage_cash, can_view_bgc_complete)
+          role_permissions!inner(can_view_bgc_complete)
         `)
         .eq("user_id", user.id)
         .single();
 
       if (data?.role_permissions) {
         const perms = data.role_permissions as any;
-        setCanViewCash(perms.can_view_cash || perms.can_manage_cash || false);
         setCanViewBgcComplete(perms.can_view_bgc_complete || false);
       }
     };
@@ -93,46 +87,6 @@ const Overview = () => {
         aktif: statusCounts["aktif"] || 0
       };
     },
-    refetchInterval: 30000
-  });
-
-  // Fetch cash stats
-  const { data: cashStats, isLoading: cashLoading } = useQuery({
-    queryKey: ["cash-stats"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("cash_transactions")
-        .select("amount, transaction_type, payment_stage");
-      
-      if (error) throw error;
-
-      let totalPayments = 0;
-      let totalRefunds = 0;
-      const paymentsByStage: Record<string, { count: number; total: number }> = {};
-
-      data.forEach((tx) => {
-        if (tx.transaction_type === "payment") {
-          totalPayments += Number(tx.amount);
-          const stage = tx.payment_stage || "1";
-          if (!paymentsByStage[stage]) {
-            paymentsByStage[stage] = { count: 0, total: 0 };
-          }
-          paymentsByStage[stage].count++;
-          paymentsByStage[stage].total += Number(tx.amount);
-        } else if (tx.transaction_type === "refund") {
-          totalRefunds += Number(tx.amount);
-        }
-      });
-
-      return {
-        gross: totalPayments,
-        refunds: totalRefunds,
-        net: totalPayments - totalRefunds,
-        transactionCount: data.length,
-        byStage: paymentsByStage
-      };
-    },
-    enabled: canViewCash,
     refetchInterval: 30000
   });
 
@@ -227,23 +181,6 @@ const Overview = () => {
       }))
     : [];
 
-  // Prepare bar chart data
-  const barChartData = cashStats?.byStage
-    ? Object.entries(cashStats.byStage).map(([stage, data]) => ({
-        name: `${stage}. Ödeme`,
-        adet: data.count,
-        tutar: data.total
-      }))
-    : [];
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("tr-TR", {
-      style: "currency",
-      currency: "TRY",
-      minimumFractionDigits: 0
-    }).format(value);
-  };
-
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -253,7 +190,7 @@ const Overview = () => {
         </div>
 
         {/* Top Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Total Accounts */}
           <Card className="bg-card/50 border-border/50 backdrop-blur">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -292,55 +229,6 @@ const Overview = () => {
             </CardContent>
           </Card>
 
-          {/* Gross Cash - Only if permitted */}
-          {canViewCash && (
-            <Card className="bg-card/50 border-border/50 backdrop-blur">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Brüt Kasa
-                </CardTitle>
-                <TrendingUp className="h-4 w-4 text-blue-500" />
-              </CardHeader>
-              <CardContent>
-                {cashLoading ? (
-                  <Skeleton className="h-8 w-24" />
-                ) : (
-                  <div className="text-2xl font-bold text-blue-500">
-                    {formatCurrency(cashStats?.gross || 0)}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Net Cash - Only if permitted */}
-          {canViewCash && (
-            <Card className="bg-card/50 border-border/50 backdrop-blur">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Net Kasa
-                </CardTitle>
-                <DollarSign className="h-4 w-4 text-emerald-500" />
-              </CardHeader>
-              <CardContent>
-                {cashLoading ? (
-                  <Skeleton className="h-8 w-24" />
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl font-bold text-emerald-500">
-                      {formatCurrency(cashStats?.net || 0)}
-                    </span>
-                    {cashStats && cashStats.refunds > 0 && (
-                      <span className="text-xs text-red-400 flex items-center">
-                        <TrendingDown className="h-3 w-3 mr-0.5" />
-                        {formatCurrency(cashStats.refunds)} iade
-                      </span>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
         </div>
 
         {/* Charts Section */}
@@ -395,58 +283,6 @@ const Overview = () => {
             </CardContent>
           </Card>
 
-          {/* Cash Bar Chart - Only if permitted */}
-          {canViewCash && (
-            <Card className="bg-card/50 border-border/50 backdrop-blur">
-              <CardHeader>
-                <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                  <Banknote className="h-5 w-5 text-primary" />
-                  Kasa Özeti
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {cashLoading ? (
-                  <div className="h-64 flex items-center justify-center">
-                    <Skeleton className="h-48 w-full" />
-                  </div>
-                ) : barChartData.length > 0 ? (
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={barChartData}>
-                        <XAxis 
-                          dataKey="name" 
-                          stroke="hsl(var(--muted-foreground))"
-                          fontSize={12}
-                        />
-                        <YAxis 
-                          stroke="hsl(var(--muted-foreground))"
-                          fontSize={12}
-                        />
-                        <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: 'hsl(var(--card))', 
-                            border: '1px solid hsl(var(--border))',
-                            borderRadius: '8px'
-                          }}
-                          formatter={(value: number, name: string) => [
-                            name === "tutar" ? formatCurrency(value) : value,
-                            name === "tutar" ? "Tutar" : "Adet"
-                          ]}
-                        />
-                        <Legend />
-                        <Bar dataKey="adet" fill="#3b82f6" name="Adet" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="tutar" fill="#10b981" name="Tutar (₺)" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                ) : (
-                  <div className="h-64 flex items-center justify-center text-muted-foreground">
-                    Veri bulunamadı
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
         </div>
 
         {/* BGC Stats Section */}
@@ -620,32 +456,6 @@ const Overview = () => {
             </CardContent>
           </Card>
 
-          {/* Transactions - Only if permitted */}
-          {canViewCash && (
-            <Card 
-              className="bg-card/50 border-border/50 backdrop-blur cursor-pointer hover:bg-card/70 transition-colors group"
-              onClick={() => navigate("/dashboard/cash")}
-            >
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-emerald-500/20">
-                      <Banknote className="h-5 w-5 text-emerald-500" />
-                    </div>
-                    <div>
-                      {cashLoading ? (
-                        <Skeleton className="h-6 w-8" />
-                      ) : (
-                        <div className="text-xl font-bold">{cashStats?.transactionCount || 0}</div>
-                      )}
-                      <div className="text-xs text-muted-foreground">İşlem</div>
-                    </div>
-                  </div>
-                  <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                </div>
-              </CardContent>
-            </Card>
-          )}
         </div>
       </div>
     </DashboardLayout>
