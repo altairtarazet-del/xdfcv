@@ -47,7 +47,7 @@ interface AccountRow {
 }
 
 interface SuspiciousResult {
-  testAccounts: Array<{ email: string; detectionMethod: string }>;
+  testAccounts: Array<{ email: string; detectionMethod: string; reason?: string }>;
   duplicates: Array<{ email: string; similarTo: string; distance: number; reason: string; detectionMethod: string }>;
   suspicious: Array<{ email: string; reason: string; detectionMethod: string }>;
   totalSuspicious: number;
@@ -543,55 +543,84 @@ export default function BgcComplete() {
                         <div className="space-y-2">
                           {suspiciousResult.testAccounts.length > 0 && (
                             <div className="space-y-1">
-                              <span className="text-xs font-mono text-red-400">Test Hesaplari:</span>
+                              <span className="text-xs font-mono text-red-400">Test/Sahte Hesaplar ({suspiciousResult.testAccounts.length}):</span>
                               {suspiciousResult.testAccounts.map(t => (
-                                <div key={t.email} className="flex items-center gap-2 pl-2">
+                                <div key={t.email} className="flex items-center gap-2 pl-2 flex-wrap">
                                   <Checkbox
                                     checked={selectedForDeletion.has(t.email)}
                                     onCheckedChange={() => toggleDeletionSelection(t.email)}
                                   />
                                   <span className="font-mono text-xs">{t.email}</span>
-                                  <Badge className="bg-red-500/20 text-red-400 border-red-500/50 text-[10px]">test ({t.detectionMethod})</Badge>
+                                  <Badge className="bg-red-500/20 text-red-400 border-red-500/50 text-[10px]">
+                                    {t.detectionMethod}
+                                  </Badge>
+                                  {t.reason && (
+                                    <span className="text-[10px] text-muted-foreground font-mono">{t.reason}</span>
+                                  )}
                                 </div>
                               ))}
                             </div>
                           )}
                           {suspiciousResult.duplicates.length > 0 && (
                             <div className="space-y-1">
-                              <span className="text-xs font-mono text-orange-400">Duplike/Typo Hesaplar:</span>
+                              <span className="text-xs font-mono text-orange-400">Duplike/Benzer Hesaplar ({suspiciousResult.duplicates.length}):</span>
                               {suspiciousResult.duplicates.map(dup => (
-                                <div key={dup.email} className="flex items-center gap-2 pl-2">
+                                <div key={`${dup.email}-${dup.similarTo}`} className="flex items-center gap-2 pl-2 flex-wrap">
                                   <Checkbox
                                     checked={selectedForDeletion.has(dup.email)}
                                     onCheckedChange={() => toggleDeletionSelection(dup.email)}
                                   />
                                   <span className="font-mono text-xs">{dup.email}</span>
-                                  <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/50 text-[10px]">
-                                    {dup.detectionMethod === 'ai' ? dup.reason : `benzer: ${dup.similarTo.split('@')[0]} (d=${dup.distance})`} ({dup.detectionMethod})
+                                  <Badge className={`text-[10px] ${
+                                    dup.detectionMethod === 'fingerprint'
+                                      ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/50'
+                                      : dup.detectionMethod === 'fuzzy'
+                                      ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50'
+                                      : dup.detectionMethod === 'ai'
+                                      ? 'bg-purple-500/20 text-purple-400 border-purple-500/50'
+                                      : 'bg-orange-500/20 text-orange-400 border-orange-500/50'
+                                  }`}>
+                                    {dup.detectionMethod === 'fingerprint'
+                                      ? `= ${dup.similarTo.split('@')[0]}`
+                                      : dup.detectionMethod === 'fuzzy'
+                                      ? `~ ${dup.similarTo.split('@')[0]} (${Math.round(dup.distance * 100)}%)`
+                                      : dup.detectionMethod === 'ai'
+                                      ? dup.reason
+                                      : `~ ${dup.similarTo.split('@')[0]} (d=${dup.distance})`
+                                    }
                                   </Badge>
+                                  <span className="text-[10px] text-muted-foreground font-mono">{dup.detectionMethod}</span>
                                 </div>
                               ))}
                             </div>
                           )}
                           {suspiciousResult.suspicious && suspiciousResult.suspicious.length > 0 && (
                             <div className="space-y-1">
-                              <span className="text-xs font-mono text-purple-400">AI Tespit - Supheli:</span>
+                              <span className="text-xs font-mono text-purple-400">AI Tespit - Supheli ({suspiciousResult.suspicious.length}):</span>
                               {suspiciousResult.suspicious.map(s => (
-                                <div key={s.email} className="flex items-center gap-2 pl-2">
+                                <div key={s.email} className="flex items-center gap-2 pl-2 flex-wrap">
                                   <Checkbox
                                     checked={selectedForDeletion.has(s.email)}
                                     onCheckedChange={() => toggleDeletionSelection(s.email)}
                                   />
                                   <span className="font-mono text-xs">{s.email}</span>
                                   <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/50 text-[10px]">
-                                    {s.reason} (ai)
+                                    {s.reason}
                                   </Badge>
+                                  <span className="text-[10px] text-muted-foreground font-mono">ai</span>
                                 </div>
                               ))}
                             </div>
                           )}
-                          {suspiciousResult.totalSuspicious === 0 && (
+                          {suspiciousResult.totalSuspicious === 0 ? (
                             <p className="text-xs font-mono text-muted-foreground">Supheli hesap bulunamadi.</p>
+                          ) : (
+                            <div className="pt-2 border-t border-border/30">
+                              <span className="text-xs font-mono text-muted-foreground">
+                                Toplam: {suspiciousResult.totalSuspicious} supheli
+                                {selectedForDeletion.size > 0 && ` | ${selectedForDeletion.size} secili`}
+                              </span>
+                            </div>
                           )}
                         </div>
                       )}

@@ -1033,6 +1033,247 @@ async function scanSingleAccountFirstPackage(
   return { firstPackageEmails, messagesScanned };
 }
 
+// ============================================================
+// SUSPICIOUS ACCOUNT DETECTION ENGINE — Multi-Stage Pipeline
+// ============================================================
+
+const ENHANCED_TEST_PATTERNS = [
+  /^test/i, /test\d+/i, /^demo/i, /^fake/i, /^dummy/i, /^sample/i,
+  /^example/i, /^temp\b/i, /^tmp/i, /^noreply/i, /^nobody/i,
+  /^placeholder/i, /^foo$/i, /^bar$/i, /^baz$/i, /^xxx/i, /^zzz/i,
+  /^null$/i, /^undefined$/i, /^admin$/i, /^user\d*$/i,
+  /^deneme/i, /^ornek/i, /^gecici/i, /^sahte/i,
+  /^bot[_-]?\d/i, /^auto[_-]?\d/i,
+  /^asd[f]?$/i, /^qwer/i, /^asdf/i, /^zxcv/i,
+];
+
+const KEYBOARD_ROWS = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm', '1234567890'];
+
+function isKeyboardWalk(s: string, minLen = 4): boolean {
+  const lower = s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (lower.length < minLen) return false;
+  for (const row of KEYBOARD_ROWS) {
+    for (let start = 0; start <= row.length - minLen; start++) {
+      if (lower.includes(row.substring(start, start + minLen))) return true;
+    }
+    const rev = row.split('').reverse().join('');
+    for (let start = 0; start <= rev.length - minLen; start++) {
+      if (lower.includes(rev.substring(start, start + minLen))) return true;
+    }
+  }
+  return false;
+}
+
+function shannonEntropy(s: string): number {
+  const freq: Record<string, number> = {};
+  for (const c of s) freq[c] = (freq[c] || 0) + 1;
+  let ent = 0;
+  for (const count of Object.values(freq)) {
+    const p = count / s.length;
+    ent -= p * Math.log2(p);
+  }
+  return ent;
+}
+
+function isLikelyRandom(local: string): boolean {
+  const clean = local.toLowerCase().replace(/[._-]/g, '');
+  if (clean.length < 6) return false;
+  const entropy = shannonEntropy(clean);
+  const vowels = clean.replace(/[^aeiou]/gi, '').length;
+  const letters = clean.replace(/[^a-z]/gi, '').length;
+  const vowelRatio = letters > 0 ? vowels / letters : 0;
+  return (entropy > 3.5 && (vowelRatio < 0.15 || vowelRatio > 0.65) && clean.length >= 8) ||
+         (entropy > 4.0 && clean.length >= 6);
+}
+
+function isNumericSuspicious(local: string): boolean {
+  const clean = local.replace(/[._-]/g, '');
+  if (/^\d+$/.test(clean)) return true;
+  const digits = clean.replace(/[^0-9]/g, '').length;
+  if (digits / clean.length > 0.7 && clean.length >= 5) return true;
+  if (/(\d)\1{3,}/.test(clean)) return true;
+  if (/1234|2345|3456|4567|5678|6789|7890/.test(clean)) return true;
+  return false;
+}
+
+function hasExcessiveRepetition(local: string): boolean {
+  const clean = local.toLowerCase().replace(/[._-]/g, '');
+  return /(.)\1{3,}/.test(clean) || /(.{2})\1{2,}/.test(clean);
+}
+
+function stage1Score(local: string): { score: number; reasons: string[] } {
+  const reasons: string[] = [];
+  let score = 0;
+  if (ENHANCED_TEST_PATTERNS.some(p => p.test(local))) { score += 40; reasons.push('test_pattern'); }
+  if (isKeyboardWalk(local)) { score += 35; reasons.push('keyboard_walk'); }
+  if (isLikelyRandom(local)) { score += 30; reasons.push('random_chars'); }
+  if (isNumericSuspicious(local)) { score += 35; reasons.push('numeric'); }
+  if (hasExcessiveRepetition(local)) { score += 25; reasons.push('repetition'); }
+  if (local.replace(/[._-]/g, '').length <= 2) { score += 15; reasons.push('very_short'); }
+  return { score: Math.min(score, 100), reasons };
+}
+
+// Fingerprinting for exact-after-normalization duplicate detection
+function generateFingerprints(local: string): string[] {
+  const lower = local.toLowerCase();
+  const noPunct = lower.replace(/[._-]/g, '');
+  const noTrailingNums = noPunct.replace(/\d+$/, '');
+  const sorted = noPunct.split('').sort().join('');
+  const alphaOnly = noPunct.replace(/[0-9]/g, '');
+  return [
+    `exact:${noPunct}`,
+    `base:${noTrailingNums}`,
+    `sorted:${sorted}`,
+    `alpha:${alphaOnly}`,
+  ];
+}
+
+function findFingerprintDuplicates(
+  bgcAccounts: Array<{ email: string; local: string }>,
+  allAccounts: Array<{ email: string; local: string }>
+): Array<{ email: string; similarTo: string; reason: string }> {
+  const index = new Map<string, string[]>();
+  for (const a of allAccounts) {
+    for (const fp of generateFingerprints(a.local)) {
+      const arr = index.get(fp) || [];
+      arr.push(a.email);
+      index.set(fp, arr);
+    }
+  }
+  const results: Array<{ email: string; similarTo: string; reason: string }> = [];
+  const seen = new Set<string>();
+  for (const bgc of bgcAccounts) {
+    if (seen.has(bgc.email)) continue;
+    for (const fp of generateFingerprints(bgc.local)) {
+      const matches = (index.get(fp) || []).filter(e => e !== bgc.email);
+      if (matches.length > 0) {
+        const fpType = fp.split(':')[0];
+        results.push({ email: bgc.email, similarTo: matches[0], reason: `fingerprint_${fpType}` });
+        seen.add(bgc.email);
+        break;
+      }
+    }
+  }
+  return results;
+}
+
+// Jaro-Winkler similarity
+function jaroWinkler(s1: string, s2: string): number {
+  if (s1 === s2) return 1.0;
+  const len1 = s1.length, len2 = s2.length;
+  if (!len1 || !len2) return 0;
+  const matchDist = Math.floor(Math.max(len1, len2) / 2) - 1;
+  const s1m = new Array(len1).fill(false);
+  const s2m = new Array(len2).fill(false);
+  let matches = 0, transpositions = 0;
+  for (let i = 0; i < len1; i++) {
+    const lo = Math.max(0, i - matchDist), hi = Math.min(i + matchDist + 1, len2);
+    for (let j = lo; j < hi; j++) {
+      if (s2m[j] || s1[i] !== s2[j]) continue;
+      s1m[i] = s2m[j] = true;
+      matches++;
+      break;
+    }
+  }
+  if (!matches) return 0;
+  let k = 0;
+  for (let i = 0; i < len1; i++) {
+    if (!s1m[i]) continue;
+    while (!s2m[k]) k++;
+    if (s1[i] !== s2[k]) transpositions++;
+    k++;
+  }
+  const jaro = (matches / len1 + matches / len2 + (matches - transpositions / 2) / matches) / 3;
+  let prefix = 0;
+  for (let i = 0; i < Math.min(4, len1, len2); i++) {
+    if (s1[i] === s2[i]) prefix++; else break;
+  }
+  return jaro + prefix * 0.1 * (1 - jaro);
+}
+
+// Bigram Jaccard similarity (order-independent)
+function bigramJaccard(s1: string, s2: string): number {
+  if (s1.length < 2 || s2.length < 2) return 0;
+  const bg1 = new Set<string>(), bg2 = new Set<string>();
+  for (let i = 0; i < s1.length - 1; i++) bg1.add(s1.substring(i, i + 2));
+  for (let i = 0; i < s2.length - 1; i++) bg2.add(s2.substring(i, i + 2));
+  let inter = 0;
+  for (const b of bg1) if (bg2.has(b)) inter++;
+  const union = bg1.size + bg2.size - inter;
+  return union ? inter / union : 0;
+}
+
+// Bucketed fuzzy matching to avoid O(n^2)
+function fuzzyMatchBucketed(
+  bgcAccounts: Array<{ email: string; local: string }>,
+  allAccounts: Array<{ email: string; local: string }>,
+  threshold = 0.88
+): Array<{ email: string; similarTo: string; similarity: number; method: string }> {
+  const buckets = new Map<string, Array<{ email: string; norm: string }>>();
+  function bucketKeys(local: string): string[] {
+    const norm = local.toLowerCase().replace(/[._-]/g, '');
+    const lenB = Math.floor(norm.length / 3);
+    const prefix = norm.substring(0, 2);
+    const sortedP = norm.split('').sort().join('').substring(0, 2);
+    return [`${prefix}:${lenB}`, `s:${sortedP}:${lenB}`];
+  }
+  for (const a of allAccounts) {
+    const norm = a.local.toLowerCase().replace(/[._-]/g, '');
+    for (const key of bucketKeys(a.local)) {
+      const b = buckets.get(key) || [];
+      b.push({ email: a.email, norm });
+      buckets.set(key, b);
+    }
+  }
+  const results: Array<{ email: string; similarTo: string; similarity: number; method: string }> = [];
+  const seen = new Set<string>();
+  for (const bgc of bgcAccounts) {
+    const bgcNorm = bgc.local.toLowerCase().replace(/[._-]/g, '');
+    if (bgcNorm.length < 3) continue;
+    const candidates = new Map<string, string>();
+    for (const key of bucketKeys(bgc.local)) {
+      for (const c of (buckets.get(key) || [])) {
+        if (c.email !== bgc.email) candidates.set(c.email, c.norm);
+      }
+    }
+    for (const [cEmail, cNorm] of candidates) {
+      const pairKey = [bgc.email, cEmail].sort().join('::');
+      if (seen.has(pairKey)) continue;
+      const lenRatio = Math.min(bgcNorm.length, cNorm.length) / Math.max(bgcNorm.length, cNorm.length);
+      if (lenRatio < 0.6) continue;
+      const jw = jaroWinkler(bgcNorm, cNorm);
+      const bg = bigramJaccard(bgcNorm, cNorm);
+      const best = Math.max(jw, bg);
+      if (best >= threshold) {
+        results.push({ email: bgc.email, similarTo: cEmail, similarity: Math.round(best * 100) / 100, method: best === bg ? 'bigram' : 'jaro_winkler' });
+        seen.add(pairKey);
+      }
+    }
+  }
+  return results;
+}
+
+const AI_DETECT_SYSTEM_PROMPT = `You are analyzing email accounts for a DoorDash Dasher management system.
+
+CONTEXT: These are email addresses used to register DoorDash Dasher accounts. They are in "BGC Bekliyor" (Background Check Waiting) status — registered but never received a background check result. This strongly suggests they may be test, throwaway, or fraudulent.
+
+TASK: Identify suspicious accounts in these categories:
+
+1. TEST/DUMMY: Generated for testing — random chars, keyboard patterns, auto-generated names, meaningless strings
+2. DUPLICATE/VARIANT: Same person registering multiple times — number suffixes (maria1/maria2), phonetic similarity (kristina/christina), abbreviations (mike/michael)
+3. SUSPICIOUS: Non-genuine patterns — auto-generated from name lists, culturally inconsistent, bot-like
+
+RULES:
+- Do NOT flag common legitimate names (john, maria, alex, etc.)
+- Only flag clearly non-human patterns
+- For duplicates, BOTH emails must be in the provided list
+- Return VALID JSON only, no markdown
+
+RESPONSE FORMAT:
+{"test":[{"email":"...","reason":"..."}],"duplicates":[{"email":"...","similarTo":"...","reason":"..."}],"suspicious":[{"email":"...","reason":"..."}]}
+
+Empty arrays if nothing found.`;
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -2504,77 +2745,56 @@ serve(async (req) => {
 
       case 'detectSuspiciousAccounts': {
         if (!supabaseClient) throw new Error('Supabase not configured');
+        const detectStart = Date.now();
 
-        // Get all accounts
+        // 1. Fetch data
         const { data: allScanAccounts } = await supabaseClient
           .from('bgc_scan_status')
           .select('account_email');
-
-        // Get accounts that have any email record (these have BGC results)
         const { data: emailRecords } = await supabaseClient
           .from('bgc_complete_emails')
           .select('account_email');
 
         const accountsWithEmails = new Set((emailRecords || []).map((e: any) => e.account_email));
-        const allEmails = (allScanAccounts || []).map((a: any) => a.account_email);
+        const allEmails: string[] = (allScanAccounts || []).map((a: any) => a.account_email);
+        const bgcBekliyorEmails = allEmails.filter((e: string) => !accountsWithEmails.has(e));
 
-        // BGC Bekliyor = accounts without any email record
-        const bgcBekliyorEmails = allEmails.filter((email: string) => !accountsWithEmails.has(email));
+        const bgcAccounts = bgcBekliyorEmails.map((e: string) => ({ email: e, local: e.split('@')[0] }));
+        const allAccounts = allEmails.map((e: string) => ({ email: e, local: e.split('@')[0] }));
 
-        // Test account detection
-        const TEST_PATTERNS = [/^test/i, /test\d+/i, /demo/i, /fake/i, /dummy/i, /sample/i];
-        const testAccounts: string[] = [];
-        for (const email of bgcBekliyorEmails) {
-          const localPart = email.split('@')[0];
-          if (TEST_PATTERNS.some(p => p.test(localPart))) {
-            testAccounts.push(email);
+        console.log(`[DETECT] ${bgcBekliyorEmails.length} BGC Bekliyor, ${allEmails.length} total accounts`);
+
+        // STAGE 1: Deterministic fast filters (regex + entropy + keyboard + numeric)
+        const testAccounts: Array<{ email: string; detectionMethod: string; reason: string }> = [];
+        for (const bgc of bgcAccounts) {
+          const { score, reasons } = stage1Score(bgc.local);
+          if (score >= 30) {
+            testAccounts.push({ email: bgc.email, detectionMethod: reasons[0] || 'pattern', reason: reasons.join(', ') });
           }
         }
+        console.log(`[DETECT] Stage 1: ${testAccounts.length} test/suspicious accounts`);
 
-        // Duplicate/typo detection (Levenshtein)
-        function levenshtein(a: string, b: string): number {
-          const m = a.length, n = b.length;
-          const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
-          for (let i = 0; i <= m; i++) dp[i][0] = i;
-          for (let j = 0; j <= n; j++) dp[0][j] = j;
-          for (let i = 1; i <= m; i++) {
-            for (let j = 1; j <= n; j++) {
-              dp[i][j] = Math.min(
-                dp[i - 1][j] + 1,
-                dp[i][j - 1] + 1,
-                dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
-              );
-            }
-          }
-          return dp[m][n];
-        }
+        // STAGE 2: Fingerprint exact-duplicate detection (BGC vs ALL including BGC vs BGC)
+        const stage1Emails = new Set(testAccounts.map(t => t.email));
+        const fpCandidates = bgcAccounts.filter(a => !stage1Emails.has(a.email));
+        const fpDuplicates = findFingerprintDuplicates(fpCandidates, allAccounts);
+        console.log(`[DETECT] Stage 2: ${fpDuplicates.length} fingerprint duplicates`);
 
-        // Compare BGC Bekliyor local parts against ALL other accounts
-        const allLocalParts = allEmails.map((e: string) => ({ email: e, local: e.split('@')[0] }));
-        const duplicates: Array<{ email: string; similarTo: string; distance: number }> = [];
+        // STAGE 3: Fuzzy matching (Jaro-Winkler + Bigram Jaccard, bucketed)
+        const stage12Emails = new Set([...stage1Emails, ...fpDuplicates.map(d => d.email)]);
+        const fuzzyCandidates = bgcAccounts.filter(a => !stage12Emails.has(a.email));
+        const fuzzyDuplicates = fuzzyMatchBucketed(fuzzyCandidates, allAccounts, 0.88);
+        console.log(`[DETECT] Stage 3: ${fuzzyDuplicates.length} fuzzy duplicates`);
 
-        for (const bgcEmail of bgcBekliyorEmails) {
-          const bgcLocal = bgcEmail.split('@')[0];
-          // Skip very short names (too many false positives)
-          if (bgcLocal.length < 4) continue;
+        // Merge stages 2+3 into duplicates
+        const mergedDuplicates: Array<{ email: string; similarTo: string; distance: number; reason: string; detectionMethod: string }> = [
+          ...fpDuplicates.map(d => ({ email: d.email, similarTo: d.similarTo, distance: 0, reason: d.reason, detectionMethod: 'fingerprint' })),
+          ...fuzzyDuplicates.map(d => ({ email: d.email, similarTo: d.similarTo, distance: 0, reason: `similarity: ${d.similarity}`, detectionMethod: d.method })),
+        ];
 
-          for (const other of allLocalParts) {
-            if (other.email === bgcEmail) continue;
-            // Only compare accounts not already in BGC Bekliyor (we want to find dupes of active accounts)
-            if (bgcBekliyorEmails.includes(other.email)) continue;
-            const dist = levenshtein(bgcLocal, other.local);
-            if (dist > 0 && dist <= 2) {
-              duplicates.push({ email: bgcEmail, similarTo: other.email, distance: dist });
-              break; // Only report first match per account
-            }
-          }
-        }
-
-        // Collect emails already detected by regex/levenshtein
-        const alreadyDetected = new Set([...testAccounts.map(e => e), ...duplicates.map(d => d.email)]);
-
-        // AI detection for remaining BGC Bekliyor emails
-        const undetectedEmails = bgcBekliyorEmails.filter((email: string) => !alreadyDetected.has(email));
+        // STAGE 4: AI detection for remaining
+        const allDetected = new Set([...stage12Emails, ...fuzzyDuplicates.map(m => m.email)]);
+        const undetectedEmails = bgcBekliyorEmails.filter((e: string) => !allDetected.has(e));
 
         const aiTestAccounts: Array<{ email: string; detectionMethod: string }> = [];
         const aiDuplicates: Array<{ email: string; similarTo: string; distance: number; reason: string; detectionMethod: string }> = [];
@@ -2586,116 +2806,108 @@ serve(async (req) => {
             const syntheticApiUrl = Deno.env.get('SYNTHETIC_API_URL') || 'https://api.synthetic.new/openai/v1';
 
             if (syntheticApiKey) {
-              // Process in batches of 200
-              const AI_BATCH_SIZE = 200;
+              const AI_BATCH_SIZE = 150;
+              const activeEmailSample = allEmails.filter(e => !new Set(bgcBekliyorEmails).has(e)).slice(0, 80);
+
               for (let i = 0; i < undetectedEmails.length; i += AI_BATCH_SIZE) {
                 const batch = undetectedEmails.slice(i, i + AI_BATCH_SIZE);
-                console.log(`[DETECT_AI] Processing batch ${Math.floor(i / AI_BATCH_SIZE) + 1}, ${batch.length} emails`);
+                const batchNum = Math.floor(i / AI_BATCH_SIZE) + 1;
+                console.log(`[DETECT_AI] Batch ${batchNum}, ${batch.length} emails`);
 
-                const aiResponse = await fetch(`${syntheticApiUrl}/chat/completions`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${syntheticApiKey}`,
-                  },
-                  body: JSON.stringify({
-                    model: 'hf:deepseek-ai/DeepSeek-V3.2',
-                    messages: [
-                      {
-                        role: 'system',
-                        content: `You are an email account analyzer. Given a list of email addresses, identify suspicious ones that may be:
-1. Test/dummy accounts (e.g., random characters, keyboard patterns like "asdf", sequential numbers)
-2. Duplicate/typo variants of each other (e.g., "john.doe" vs "johndoe", "mike123" vs "mike124")
-3. Suspicious patterns (e.g., auto-generated names, bot-like patterns, nonsensical usernames)
+                // Safety: stop if approaching 45s timeout
+                if (Date.now() - detectStart > 45000) {
+                  console.log(`[DETECT_AI] Approaching timeout, stopping AI at batch ${batchNum}`);
+                  break;
+                }
 
-Respond ONLY with valid JSON in this exact format:
-{
-  "test": [{"email": "...", "reason": "..."}],
-  "duplicates": [{"email": "...", "similarTo": "...", "reason": "..."}],
-  "suspicious": [{"email": "...", "reason": "..."}]
-}
-If nothing suspicious is found, return empty arrays. Be conservative — only flag clearly suspicious accounts.`
-                      },
-                      {
-                        role: 'user',
-                        content: `Analyze these email addresses:\n${batch.join('\n')}`
-                      }
-                    ],
-                    temperature: 0.1,
-                    max_tokens: 4000,
-                  }),
-                });
+                let userPrompt = `Analyze these ${batch.length} BGC Bekliyor emails:\n${batch.join('\n')}`;
+                if (activeEmailSample.length > 0) {
+                  userPrompt += `\n\n--- Reference: legitimate active accounts ---\n${activeEmailSample.join('\n')}`;
+                }
 
-                if (aiResponse.ok) {
-                  const aiData = await aiResponse.json();
-                  const content = aiData.choices?.[0]?.message?.content || '';
-
-                  // Parse JSON from response (handle markdown code blocks)
-                  let parsed: any = null;
+                for (let attempt = 0; attempt < 2; attempt++) {
                   try {
-                    const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, content];
-                    parsed = JSON.parse(jsonMatch[1].trim());
-                  } catch (e) {
-                    console.error('[DETECT_AI] Failed to parse AI response:', e);
-                  }
+                    const aiResponse = await fetch(`${syntheticApiUrl}/chat/completions`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${syntheticApiKey}` },
+                      body: JSON.stringify({
+                        model: 'hf:deepseek-ai/DeepSeek-V3.2',
+                        messages: [
+                          { role: 'system', content: AI_DETECT_SYSTEM_PROMPT },
+                          { role: 'user', content: userPrompt },
+                        ],
+                        temperature: 0.0,
+                        max_tokens: 6000,
+                      }),
+                    });
 
-                  if (parsed) {
-                    for (const t of (parsed.test || [])) {
-                      if (t.email && batch.includes(t.email)) {
-                        aiTestAccounts.push({ email: t.email, detectionMethod: 'ai' });
+                    if (!aiResponse.ok) {
+                      console.error(`[DETECT_AI] HTTP ${aiResponse.status}`);
+                      if (attempt === 0) { await new Promise(r => setTimeout(r, 2000)); continue; }
+                      break;
+                    }
+
+                    const aiData = await aiResponse.json();
+                    const content = aiData.choices?.[0]?.message?.content || '';
+
+                    let parsed: any = null;
+                    try {
+                      parsed = JSON.parse(content);
+                    } catch {
+                      const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+                      if (jsonMatch) try { parsed = JSON.parse(jsonMatch[1].trim()); } catch {}
+                      if (!parsed) {
+                        const fb = content.indexOf('{'), lb = content.lastIndexOf('}');
+                        if (fb !== -1 && lb > fb) try { parsed = JSON.parse(content.substring(fb, lb + 1)); } catch {}
                       }
                     }
-                    for (const d of (parsed.duplicates || [])) {
-                      if (d.email && batch.includes(d.email)) {
-                        aiDuplicates.push({
-                          email: d.email,
-                          similarTo: d.similarTo || '',
-                          distance: 0,
-                          reason: d.reason || '',
-                          detectionMethod: 'ai',
-                        });
+
+                    if (parsed) {
+                      const batchSet = new Set(batch);
+                      for (const t of (parsed.test || [])) {
+                        if (t.email && batchSet.has(t.email)) aiTestAccounts.push({ email: t.email, detectionMethod: 'ai' });
+                      }
+                      for (const d of (parsed.duplicates || [])) {
+                        const em = d.email || d.email1;
+                        if (em && batchSet.has(em)) aiDuplicates.push({ email: em, similarTo: d.similarTo || d.email2 || '', distance: 0, reason: d.reason || '', detectionMethod: 'ai' });
+                      }
+                      for (const s of (parsed.suspicious || [])) {
+                        if (s.email && batchSet.has(s.email)) aiSuspicious.push({ email: s.email, reason: s.reason || '', detectionMethod: 'ai' });
                       }
                     }
-                    for (const s of (parsed.suspicious || [])) {
-                      if (s.email && batch.includes(s.email)) {
-                        aiSuspicious.push({ email: s.email, reason: s.reason || '', detectionMethod: 'ai' });
-                      }
-                    }
+                    break; // Success
+                  } catch (e) {
+                    console.error(`[DETECT_AI] Attempt ${attempt + 1} error:`, e);
+                    if (attempt === 0) await new Promise(r => setTimeout(r, 2000));
                   }
-                } else {
-                  console.error(`[DETECT_AI] API error: ${aiResponse.status}`);
                 }
               }
-              console.log(`[DETECT_AI] AI found: ${aiTestAccounts.length} test, ${aiDuplicates.length} duplicates, ${aiSuspicious.length} suspicious`);
-            } else {
-              console.log('[DETECT_AI] No SYNTHETIC_API_KEY configured, skipping AI detection');
+              console.log(`[DETECT_AI] AI: ${aiTestAccounts.length} test, ${aiDuplicates.length} duplicates, ${aiSuspicious.length} suspicious`);
             }
           } catch (aiError) {
             console.error('[DETECT_AI] AI detection failed (graceful fallback):', aiError);
           }
         }
 
-        // Merge results with detectionMethod labels
-        const mergedTestAccounts = [
-          ...testAccounts.map(email => ({ email, detectionMethod: 'regex' })),
-          ...aiTestAccounts,
+        // MERGE all results
+        const finalTestAccounts = [
+          ...testAccounts.map(t => ({ email: t.email, detectionMethod: t.detectionMethod, reason: t.reason })),
+          ...aiTestAccounts.map(t => ({ ...t, reason: '' })),
         ];
-        const mergedDuplicates = [
-          ...duplicates.map(d => ({ ...d, reason: '', detectionMethod: 'levenshtein' })),
-          ...aiDuplicates,
-        ];
+        const finalDuplicates = [...mergedDuplicates, ...aiDuplicates];
 
         const totalSuspicious = new Set([
-          ...mergedTestAccounts.map(t => t.email),
-          ...mergedDuplicates.map(d => d.email),
+          ...finalTestAccounts.map(t => t.email),
+          ...finalDuplicates.map(d => d.email),
           ...aiSuspicious.map(s => s.email),
         ]).size;
 
-        console.log(`[DETECT] Total: ${mergedTestAccounts.length} test, ${mergedDuplicates.length} duplicates, ${aiSuspicious.length} suspicious. Grand total: ${totalSuspicious}`);
+        const elapsed = Date.now() - detectStart;
+        console.log(`[DETECT] Complete in ${elapsed}ms. Test: ${finalTestAccounts.length}, Dupes: ${finalDuplicates.length}, Suspicious: ${aiSuspicious.length}. Total: ${totalSuspicious}`);
 
         result = {
-          testAccounts: mergedTestAccounts,
-          duplicates: mergedDuplicates,
+          testAccounts: finalTestAccounts,
+          duplicates: finalDuplicates,
           suspicious: aiSuspicious,
           totalSuspicious,
         };
