@@ -49,6 +49,102 @@ export type Database = {
           },
         ]
       }
+      account_insights: {
+        Row: {
+          id: string
+          account_email: string
+          insight_type: string
+          priority: string
+          title: string
+          description: string
+          suggested_action: string | null
+          is_dismissed: boolean
+          metadata: Json | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          account_email: string
+          insight_type: string
+          priority?: string
+          title: string
+          description: string
+          suggested_action?: string | null
+          is_dismissed?: boolean
+          metadata?: Json | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          account_email?: string
+          insight_type?: string
+          priority?: string
+          title?: string
+          description?: string
+          suggested_action?: string | null
+          is_dismissed?: boolean
+          metadata?: Json | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      account_states: {
+        Row: {
+          id: string
+          account_email: string
+          current_state: string
+          previous_state: string | null
+          state_changed_at: string
+          state_confidence: number
+          days_in_state: number
+          lifecycle_score: number
+          anomaly_flags: Json | null
+          email_count: number
+          first_email_at: string | null
+          last_email_at: string | null
+          last_analyzed_at: string
+          metadata: Json | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          account_email: string
+          current_state?: string
+          previous_state?: string | null
+          state_changed_at?: string
+          state_confidence?: number
+          days_in_state?: number
+          lifecycle_score?: number
+          anomaly_flags?: Json | null
+          email_count?: number
+          first_email_at?: string | null
+          last_email_at?: string | null
+          last_analyzed_at?: string
+          metadata?: Json | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          account_email?: string
+          current_state?: string
+          previous_state?: string | null
+          state_changed_at?: string
+          state_confidence?: number
+          days_in_state?: number
+          lifecycle_score?: number
+          anomaly_flags?: Json | null
+          email_count?: number
+          first_email_at?: string | null
+          last_email_at?: string | null
+          last_analyzed_at?: string
+          metadata?: Json | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       bgc_complete_emails: {
         Row: {
           account_email: string
@@ -189,6 +285,54 @@ export type Database = {
           message?: string
           metadata?: Json | null
           is_read?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      }
+      email_classifications: {
+        Row: {
+          id: string
+          account_email: string
+          account_id: string
+          message_id: string
+          subject: string
+          sender: string | null
+          received_at: string
+          category: string
+          sub_category: string | null
+          confidence: number
+          extracted_data: Json | null
+          pattern_matched: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          account_email: string
+          account_id: string
+          message_id: string
+          subject: string
+          sender?: string | null
+          received_at: string
+          category: string
+          sub_category?: string | null
+          confidence?: number
+          extracted_data?: Json | null
+          pattern_matched?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          account_email?: string
+          account_id?: string
+          message_id?: string
+          subject?: string
+          sender?: string | null
+          received_at?: string
+          category?: string
+          sub_category?: string | null
+          confidence?: number
+          extracted_data?: Json | null
+          pattern_matched?: string | null
           created_at?: string
         }
         Relationships: []
