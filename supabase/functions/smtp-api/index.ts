@@ -3470,17 +3470,13 @@ serve(async (req) => {
           .maybeSingle();
 
         if (accError || !account) {
-          return new Response(JSON.stringify({ error: 'Hesap bulunamadi' }), {
-            status: 401,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          result = { error: 'Hesap bulunamadi' };
+          break;
         }
 
         if (!account.portal_password) {
-          return new Response(JSON.stringify({ error: 'Portal erisimi aktif degil' }), {
-            status: 401,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          result = { error: 'Portal erisimi aktif degil' };
+          break;
         }
 
         // Auto-sync smtp_account_id if missing
@@ -3513,19 +3509,15 @@ serve(async (req) => {
             account.smtp_account_id = foundId;
             console.log('[Portal] Synced smtp_account_id:', foundId);
           } else {
-            return new Response(JSON.stringify({ error: 'SMTP hesap eslesmesi yapilamadi' }), {
-              status: 401,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
+            result = { error: 'SMTP hesap eslesmesi yapilamadi' };
+            break;
           }
         }
 
         const passwordValid = await verifyPassword(body.password, account.portal_password);
         if (!passwordValid) {
-          return new Response(JSON.stringify({ error: 'Sifre hatali' }), {
-            status: 401,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          result = { error: 'Sifre hatali' };
+          break;
         }
 
         // Create JWT
@@ -3586,10 +3578,7 @@ serve(async (req) => {
             },
           };
         } catch {
-          return new Response(JSON.stringify({ error: 'Oturum suresi dolmus' }), {
-            status: 401,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          result = { error: 'Oturum suresi dolmus' };
         }
         break;
       }
