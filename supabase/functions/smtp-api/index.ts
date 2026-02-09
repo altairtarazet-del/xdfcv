@@ -1,5 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
+import { create, verify as jwtVerify, getNumericDate } from "https://deno.land/x/djwt@v3.0.2/mod.ts";
 
 const ALLOWED_ORIGIN = Deno.env.get('ALLOWED_ORIGIN') || '*';
 const corsHeaders = {
@@ -3431,6 +3433,139 @@ serve(async (req) => {
           suspicious: aiSuspicious,
           totalSuspicious,
         };
+        break;
+      }
+
+      // ============================================================
+      // PORTAL AUTH ACTIONS
+      // ============================================================
+
+      case 'portalLogin': {
+        if (!supabaseClient) throw new Error('Supabase not configured');
+        if (!email || !body.password) throw new Error('Email ve sifre gerekli');
+
+        const { data: account, error: accError } = await supabaseClient
+          .from('email_accounts')
+          .select('email, smtp_account_id, portal_password, first_name, last_name')
+          .eq('email', email)
+          .maybeSingle();
+
+        if (accError || !account) {
+          return new Response(JSON.stringify({ error: 'Hesap bulunamadi' }), {
+            status: 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        if (!account.portal_password) {
+          return new Response(JSON.stringify({ error: 'Portal erisimi aktif degil' }), {
+            status: 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        if (!account.smtp_account_id) {
+          return new Response(JSON.stringify({ error: 'SMTP hesap eslesmesi yapilmamis' }), {
+            status: 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const passwordValid = await bcrypt.compare(body.password, account.portal_password);
+        if (!passwordValid) {
+          return new Response(JSON.stringify({ error: 'Sifre hatali' }), {
+            status: 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Create JWT
+        const jwtSecret = Deno.env.get('PORTAL_JWT_SECRET') || Deno.env.get('SUPABASE_JWT_SECRET') || 'portal-secret-key';
+        const key = await crypto.subtle.importKey(
+          'raw',
+          new TextEncoder().encode(jwtSecret),
+          { name: 'HMAC', hash: 'SHA-256' },
+          false,
+          ['sign', 'verify']
+        );
+
+        const token = await create(
+          { alg: 'HS256', typ: 'JWT' },
+          {
+            email: account.email,
+            smtp_account_id: account.smtp_account_id,
+            first_name: account.first_name,
+            last_name: account.last_name,
+            exp: getNumericDate(60 * 60 * 24), // 24 hours
+          },
+          key
+        );
+
+        result = {
+          token,
+          user: {
+            email: account.email,
+            smtp_account_id: account.smtp_account_id,
+            first_name: account.first_name,
+            last_name: account.last_name,
+          },
+        };
+        break;
+      }
+
+      case 'portalVerify': {
+        const { portalToken } = body;
+        if (!portalToken) throw new Error('Token gerekli');
+
+        try {
+          const jwtSecret = Deno.env.get('PORTAL_JWT_SECRET') || Deno.env.get('SUPABASE_JWT_SECRET') || 'portal-secret-key';
+          const key = await crypto.subtle.importKey(
+            'raw',
+            new TextEncoder().encode(jwtSecret),
+            { name: 'HMAC', hash: 'SHA-256' },
+            false,
+            ['sign', 'verify']
+          );
+
+          const payload = await jwtVerify(portalToken, key);
+          result = {
+            user: {
+              email: payload.email,
+              smtp_account_id: payload.smtp_account_id,
+              first_name: payload.first_name,
+              last_name: payload.last_name,
+            },
+          };
+        } catch {
+          return new Response(JSON.stringify({ error: 'Oturum suresi dolmus' }), {
+            status: 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        break;
+      }
+
+      case 'portalSetPassword': {
+        if (!supabaseClient) throw new Error('Supabase not configured');
+
+        // Verify admin auth
+        const authHeader = req.headers.get('Authorization');
+        if (!authHeader) throw new Error('Yetkilendirme gerekli');
+
+        const { newPassword } = body;
+        if (!email) throw new Error('Email gerekli');
+        if (!newPassword || newPassword.length < 6) throw new Error('Sifre en az 6 karakter olmali');
+
+        const hash = await bcrypt.hash(newPassword);
+
+        const { error: updateError } = await supabaseClient
+          .from('email_accounts')
+          .update({ portal_password: hash })
+          .eq('email', email);
+
+        if (updateError) throw new Error('Sifre kaydedilemedi: ' + updateError.message);
+
+        result = { success: true, message: 'Portal sifresi belirlendi' };
         break;
       }
 

@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Key, Mail, RefreshCw, Shield, Eye, EyeOff, Server, ChevronLeft, ChevronRight, AlertCircle, Trash2, Calendar, Search, X } from 'lucide-react';
+import { Plus, Key, Mail, RefreshCw, Shield, Eye, EyeOff, Server, ChevronLeft, ChevronRight, AlertCircle, Trash2, Calendar, Search, X, Globe, Link2 } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -57,6 +57,12 @@ interface Account {
   id: string;
   name?: string;
   address?: string;
+}
+
+interface DbEmailAccount {
+  email: string;
+  smtp_account_id: string | null;
+  portal_password: string | null;
 }
 
 interface PaginationView {
@@ -112,6 +118,14 @@ export default function EmailManagementPage() {
   const canDeleteEmails = isAdmin || profile?.permissions?.can_delete_emails;
 
   const [apiError, setApiError] = useState<string | null>(null);
+
+  // Portal states
+  const [dbAccounts, setDbAccounts] = useState<DbEmailAccount[]>([]);
+  const [isPortalPasswordDialogOpen, setIsPortalPasswordDialogOpen] = useState(false);
+  const [portalPasswordEmail, setPortalPasswordEmail] = useState('');
+  const [portalPassword, setPortalPassword] = useState('');
+  const [portalPasswordConfirm, setPortalPasswordConfirm] = useState('');
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Filter accounts based on search query
   const filteredAccounts = useMemo(() => {
@@ -175,9 +189,26 @@ export default function EmailManagementPage() {
     }
   }, [toast, currentPage]);
 
+  const fetchDbAccounts = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('email_accounts')
+        .select('email, smtp_account_id, portal_password');
+      if (!error && data) {
+        setDbAccounts(data);
+      }
+    } catch (e) {
+      console.error('Error fetching db accounts:', e);
+    }
+  }, []);
+
   useEffect(() => {
     fetchAccounts(currentPage);
   }, [currentPage]);
+
+  useEffect(() => {
+    fetchDbAccounts();
+  }, [fetchDbAccounts]);
 
   const handlePrevPage = () => {
     if (paginationView?.previous && currentPage > 1) {
@@ -276,6 +307,9 @@ export default function EmailManagementPage() {
 
       if (error) throw error;
 
+      // Extract smtp_account_id from the response
+      const smtpAccountId = data?.id || data?.['@id'] || null;
+
       // Then, save to email_accounts table with DOB
       const { data: session } = await supabase.auth.getSession();
       const userId = session?.session?.user?.id;
@@ -289,6 +323,7 @@ export default function EmailManagementPage() {
           first_name: firstName,
           middle_name: middleName || null,
           last_name: lastName,
+          smtp_account_id: smtpAccountId,
         });
 
       if (dbError) {
@@ -317,6 +352,7 @@ export default function EmailManagementPage() {
       setDobMonth('');
       setDobYear('');
       fetchAccounts(currentPage);
+      fetchDbAccounts();
     } catch (error: any) {
       console.error('Error creating email:', error);
       toast({
@@ -469,6 +505,112 @@ export default function EmailManagementPage() {
     }
   };
 
+  const handleSetPortalPassword = async () => {
+    if (!portalPassword) {
+      toast({ variant: 'destructive', title: 'Hata', description: 'Sifre zorunludur' });
+      return;
+    }
+    if (portalPassword.length < 6) {
+      toast({ variant: 'destructive', title: 'Hata', description: 'Sifre en az 6 karakter olmali' });
+      return;
+    }
+    if (portalPassword !== portalPasswordConfirm) {
+      toast({ variant: 'destructive', title: 'Hata', description: 'Sifreler eslesiyor degil' });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('smtp-api', {
+        body: {
+          action: 'portalSetPassword',
+          email: portalPasswordEmail,
+          newPassword: portalPassword,
+        },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast({ title: 'Basarili', description: 'Portal sifresi belirlendi' });
+      setIsPortalPasswordDialogOpen(false);
+      setPortalPassword('');
+      setPortalPasswordConfirm('');
+      setPortalPasswordEmail('');
+      fetchDbAccounts();
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Hata',
+        description: error.message || 'Portal sifresi belirlenirken hata olustu',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSyncSmtpIds = async () => {
+    setIsSyncing(true);
+    try {
+      // Get all accounts from SMTP API (all pages)
+      let allSmtpAccounts: Account[] = [];
+      let page = 1;
+      let hasMore = true;
+      while (hasMore) {
+        const { data, error } = await supabase.functions.invoke('smtp-api', {
+          body: { action: 'getAccounts', page },
+        });
+        if (error) throw error;
+        const list = Array.isArray(data?.accounts) ? data.accounts : [];
+        allSmtpAccounts = [...allSmtpAccounts, ...list];
+        hasMore = !!data?.view?.next;
+        page++;
+        if (page > 50) break;
+      }
+
+      // Find DB accounts missing smtp_account_id
+      const unlinked = dbAccounts.filter(db => !db.smtp_account_id);
+      let syncCount = 0;
+
+      for (const dbAcc of unlinked) {
+        const match = allSmtpAccounts.find(
+          smtp => smtp.address === dbAcc.email || smtp.name === dbAcc.email
+        );
+        if (match) {
+          const { error } = await supabase
+            .from('email_accounts')
+            .update({ smtp_account_id: match.id })
+            .eq('email', dbAcc.email);
+          if (!error) syncCount++;
+        }
+      }
+
+      toast({
+        title: 'Senkronizasyon Tamamlandi',
+        description: `${syncCount} hesap eslesti`,
+      });
+      fetchDbAccounts();
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Hata',
+        description: error.message || 'Senkronizasyon sirasinda hata olustu',
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const getPortalStatus = (address?: string) => {
+    if (!address) return null;
+    const db = dbAccounts.find(d => d.email === address);
+    if (!db) return null;
+    return {
+      hasPassword: !!db.portal_password,
+      hasSmtpId: !!db.smtp_account_id,
+    };
+  };
+
   // Access control
   if (!canCreateEmail && !canChangePassword && !canDeleteAccount && !canDeleteEmails) {
     return (
@@ -526,9 +668,24 @@ export default function EmailManagementPage() {
               size="icon"
               onClick={() => fetchAccounts(currentPage)}
               className="hover:bg-primary/10"
+              title="Yenile"
             >
               <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
             </Button>
+
+            {isAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSyncSmtpIds}
+                disabled={isSyncing}
+                className="text-xs"
+                title="SMTP hesap ID eslemesi"
+              >
+                <Link2 size={14} className={`mr-1 ${isSyncing ? 'animate-spin' : ''}`} />
+                {isSyncing ? 'Senkronize...' : 'Senkronize Et'}
+              </Button>
+            )}
 
             {canCreateEmail && (
               <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
@@ -728,13 +885,19 @@ export default function EmailManagementPage() {
                     EMAIL ADRESİ
                   </div>
                 </TableHead>
+                <TableHead className="text-muted-foreground">
+                  <div className="flex items-center gap-2">
+                    <Globe size={14} />
+                    PORTAL
+                  </div>
+                </TableHead>
                 <TableHead className="text-muted-foreground">İŞLEMLER</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={3} className="text-center py-8">
+                  <TableCell colSpan={4} className="text-center py-8">
                     <span className="text-muted-foreground animate-pulse">
                       Yükleniyor...
                     </span>
@@ -742,7 +905,7 @@ export default function EmailManagementPage() {
                 </TableRow>
               ) : apiError ? (
                 <TableRow>
-                  <TableCell colSpan={3} className="text-center py-8">
+                  <TableCell colSpan={4} className="text-center py-8">
                     <AlertCircle size={32} className="mx-auto text-destructive mb-2" />
                     <p className="text-destructive text-sm mb-2">{apiError}</p>
                     <Button
@@ -757,7 +920,7 @@ export default function EmailManagementPage() {
                 </TableRow>
               ) : filteredAccounts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={3} className="text-center py-8">
+                  <TableCell colSpan={4} className="text-center py-8">
                     <Mail size={32} className="mx-auto text-muted-foreground mb-2" />
                     <span className="text-muted-foreground">
                       {searchQuery ? 'Arama sonucu bulunamadı' : 'Henüz email hesabı yok'}
@@ -776,7 +939,35 @@ export default function EmailManagementPage() {
                       </span>
                     </TableCell>
                     <TableCell>
+                      {(() => {
+                        const status = getPortalStatus(account.address || account.name);
+                        if (!status) return <span className="text-xs text-muted-foreground">-</span>;
+                        return status.hasPassword && status.hasSmtpId ? (
+                          <span className="px-2 py-0.5 text-xs bg-green-500/20 text-green-500 rounded font-medium">Aktif</span>
+                        ) : (
+                          <span className="px-2 py-0.5 text-xs bg-muted text-muted-foreground rounded">Pasif</span>
+                        );
+                      })()}
+                    </TableCell>
+                    <TableCell>
                       <div className="flex items-center gap-1 flex-wrap">
+                        {isAdmin && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setPortalPasswordEmail(account.address || account.name || '');
+                              setPortalPassword('');
+                              setPortalPasswordConfirm('');
+                              setIsPortalPasswordDialogOpen(true);
+                            }}
+                            disabled={isSubmitting}
+                            className="hover:bg-green-500/10 hover:text-green-500 text-xs"
+                          >
+                            <Globe size={14} className="mr-1" />
+                            Portal
+                          </Button>
+                        )}
                         {canChangePassword && (
                           <Button
                             variant="ghost"
@@ -858,6 +1049,51 @@ export default function EmailManagementPage() {
             </div>
           )}
         </div>
+
+        {/* Portal Password Dialog */}
+        <Dialog open={isPortalPasswordDialogOpen} onOpenChange={setIsPortalPasswordDialogOpen}>
+          <DialogContent className="cyber-card border-primary/30">
+            <DialogHeader>
+              <DialogTitle className="text-foreground flex items-center gap-2">
+                <Globe size={20} className="text-green-500" />
+                Portal Sifresi Belirle
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 mt-4">
+              <div className="p-3 bg-muted/30 rounded-lg">
+                <p className="text-xs text-muted-foreground">Hesap:</p>
+                <p className="font-mono text-sm text-primary">{portalPasswordEmail}</p>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-muted-foreground text-xs">PORTAL SiFRESi</Label>
+                <Input
+                  type={showPassword ? 'text' : 'password'}
+                  value={portalPassword}
+                  onChange={(e) => setPortalPassword(e.target.value)}
+                  className="cyber-input"
+                  placeholder="En az 6 karakter"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-muted-foreground text-xs">SiFRE TEKRAR</Label>
+                <Input
+                  type={showPassword ? 'text' : 'password'}
+                  value={portalPasswordConfirm}
+                  onChange={(e) => setPortalPasswordConfirm(e.target.value)}
+                  className="cyber-input"
+                  placeholder="Sifreyi tekrar girin"
+                />
+              </div>
+              <Button
+                onClick={handleSetPortalPassword}
+                disabled={isSubmitting}
+                className="w-full"
+              >
+                {isSubmitting ? 'Kaydediliyor...' : 'Portal Sifresi Kaydet'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Change Password Dialog */}
         <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>

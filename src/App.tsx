@@ -15,7 +15,11 @@ import Background from "./pages/Background";
 
 import Settings from "./pages/Settings";
 import BgcComplete from "./pages/BgcComplete";
+import AccountDetail from "./pages/AccountDetail";
+import Intelligence from "./pages/Intelligence";
 
+import PortalLogin from "./pages/portal/PortalLogin";
+import PortalInbox from "./pages/portal/PortalInbox";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -38,7 +42,11 @@ const App = () => (
             <Route path="/dashboard/background" element={<Background />} />
 
             <Route path="/dashboard/bgc-complete" element={<BgcComplete />} />
+            <Route path="/dashboard/account/:email" element={<AccountDetail />} />
+            <Route path="/dashboard/intelligence" element={<Intelligence />} />
             <Route path="/dashboard/settings" element={<Settings />} />
+            <Route path="/portal/login" element={<PortalLogin />} />
+            <Route path="/portal" element={<PortalInbox />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

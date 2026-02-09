@@ -436,6 +436,8 @@ export type Database = {
           id: string
           last_name: string | null
           middle_name: string | null
+          portal_password: string | null
+          smtp_account_id: string | null
           status: Database["public"]["Enums"]["account_status"]
         }
         Insert: {
@@ -447,6 +449,8 @@ export type Database = {
           id?: string
           last_name?: string | null
           middle_name?: string | null
+          portal_password?: string | null
+          smtp_account_id?: string | null
           status?: Database["public"]["Enums"]["account_status"]
         }
         Update: {
@@ -458,6 +462,8 @@ export type Database = {
           id?: string
           last_name?: string | null
           middle_name?: string | null
+          portal_password?: string | null
+          smtp_account_id?: string | null
           status?: Database["public"]["Enums"]["account_status"]
         }
         Relationships: []
