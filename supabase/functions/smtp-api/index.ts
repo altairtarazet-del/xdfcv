@@ -150,7 +150,8 @@ async function scanSingleAccountFirstPackage(
   headers: Record<string, string>,
   existingFirstPackageIds: Set<string>,
   FIRST_PACKAGE_PATTERNS: string[],
-  SCAN_FOLDERS: string[]
+  SCAN_FOLDERS: string[],
+  cutoffDate: Date | null = null
 ): Promise<{ firstPackageEmails: any[]; messagesScanned: number }> {
   const firstPackageEmails: any[] = [];
   let messagesScanned = 0;
@@ -187,9 +188,16 @@ async function scanSingleAccountFirstPackage(
         messagesScanned += messages.length;
         
         for (const msg of messages) {
+          const msgDate = new Date(msg.createdAt || msg.date || msg.receivedAt);
+
+          // Skip messages older than cutoff (incremental scan)
+          if (cutoffDate && msgDate <= cutoffDate) {
+            continue;
+          }
+
           const subject = (msg.subject || '').toLowerCase();
           const uniqueKey = `${accountId}_${mailbox.id}_${msg.id}`;
-          
+
           const isFirstPackage = FIRST_PACKAGE_PATTERNS.some(p => subject.includes(p));
           
           if (isFirstPackage && !existingFirstPackageIds.has(uniqueKey)) {
@@ -245,6 +253,13 @@ serve(async (req) => {
       'X-API-KEY': apiKey,
       'Content-Type': 'application/json',
     };
+
+    // Shared Supabase client for DB operations
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const supabaseClient = supabaseUrl && supabaseServiceKey
+      ? createClient(supabaseUrl, supabaseServiceKey)
+      : null;
 
     let result;
 
@@ -602,14 +617,11 @@ serve(async (req) => {
       }
 
       case 'scanBgcComplete': {
-        // Initialize Supabase client with service role for DB operations
-        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-        const supabase = createClient(supabaseUrl, supabaseKey);
-        
+        if (!supabaseClient) throw new Error('Supabase not configured');
+
         // Email subject patterns to track
         const PATTERNS = {
-          bgc_complete: ['your background check is complete', 'your is complete'],
+          bgc_complete: ['your background check is complete'],
           deactivated: 'your dasher account has been deactivated',
         };
         const SCAN_FOLDERS = ['INBOX', 'Trash', 'Junk', 'Spam'];
@@ -624,7 +636,7 @@ serve(async (req) => {
         const startTime = Date.now();
         
         // 1. Get existing scan statuses from DB (for BGC incremental scan)
-        const { data: scanStatuses } = await supabase
+        const { data: scanStatuses } = await supabaseClient
           .from('bgc_scan_status')
           .select('*');
         
@@ -635,7 +647,7 @@ serve(async (req) => {
         console.log(`[BGC] Found ${statusMap.size} previously scanned accounts`);
         
         // 2. Get existing BGC email IDs and accounts to avoid duplicates
-        const { data: existingBgcEmails } = await supabase
+        const { data: existingBgcEmails } = await supabaseClient
           .from('bgc_complete_emails')
           .select('account_id, account_email, mailbox_id, message_id')
           .eq('email_type', 'bgc_complete');
@@ -655,7 +667,7 @@ serve(async (req) => {
         console.log(`[BGC] ${existingBgcIds.size} BGC emails in database, ${bgcAccountIds.size} unique accounts`);
         
         // 3. Get already deactivated accounts (to skip them)
-        const { data: existingDeactivated } = await supabase
+        const { data: existingDeactivated } = await supabaseClient
           .from('bgc_complete_emails')
           .select('account_id, account_email, mailbox_id, message_id')
           .eq('email_type', 'deactivated');
@@ -713,7 +725,17 @@ serve(async (req) => {
         for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
           const batch = batches[batchIndex];
           console.log(`[BGC] Processing batch ${batchIndex + 1}/${batches.length}`);
-          
+
+          // Safety: stop if approaching timeout (50s limit)
+          const MAX_EXECUTION_MS = 50000;
+          if (Date.now() - startTime > MAX_EXECUTION_MS) {
+            console.log(`[BGC] Approaching timeout at batch ${batchIndex + 1}, stopping early`);
+            break;
+          }
+
+          // Save state before batch for re-scan of newly discovered BGC accounts
+          const bgcAccountIdsBeforeBatch = new Set(bgcAccountIds);
+
           // Process batch in parallel
           const batchResults = await Promise.all(
             batch.map(account => {
@@ -756,7 +778,38 @@ serve(async (req) => {
               alreadyDeactivatedEmails.add(deactEmail.account_email);
             }
           }
-          
+
+          // Re-scan newly discovered BGC accounts for deactivation (they were missed in the initial batch)
+          const newlyDiscoveredBgcInBatch = batchResults.flatMap(r => r.bgcEmails)
+            .filter(e => !bgcAccountIdsBeforeBatch.has(e.account_id));
+
+          if (newlyDiscoveredBgcInBatch.length > 0) {
+            const newBgcAccountIds = new Set(newlyDiscoveredBgcInBatch.map(e => e.account_id));
+            const accountsToRescan = batch.filter(a => newBgcAccountIds.has(a.id) && !alreadyDeactivatedEmails.has(a.address));
+
+            if (accountsToRescan.length > 0) {
+              console.log(`[BGC] Re-scanning ${accountsToRescan.length} newly discovered BGC accounts for deactivation`);
+              const deactResults = await Promise.all(
+                accountsToRescan.map(account =>
+                  scanSingleAccountBgc(
+                    account, headers, statusMap,
+                    existingBgcIds, bgcAccountIds, bgcAccountEmails,
+                    true, // force deactivation scan
+                    existingDeactivatedIds, alreadyDeactivatedEmails,
+                    PATTERNS, SCAN_FOLDERS
+                  )
+                )
+              );
+              for (const deactResult of deactResults) {
+                newDeactivatedEmails.push(...deactResult.deactivatedEmails);
+                for (const deactEmail of deactResult.deactivatedEmails) {
+                  existingDeactivatedIds.add(`${deactEmail.account_id}_${deactEmail.mailbox_id}_${deactEmail.message_id}`);
+                  alreadyDeactivatedEmails.add(deactEmail.account_email);
+                }
+              }
+            }
+          }
+
           // Update scan status for batch accounts
           const statusUpdates = batch.map(account => ({
             account_id: account.id,
@@ -765,7 +818,7 @@ serve(async (req) => {
             updated_at: new Date().toISOString()
           }));
           
-          await supabase.from('bgc_scan_status').upsert(statusUpdates, { onConflict: 'account_id' });
+          await supabaseClient.from('bgc_scan_status').upsert(statusUpdates, { onConflict: 'account_id' });
         }
         
         const elapsedMs = Date.now() - startTime;
@@ -775,13 +828,13 @@ serve(async (req) => {
         const allNewEmails = [...newBgcEmails, ...newDeactivatedEmails];
         
         if (allNewEmails.length > 0) {
-          const { error: insertError } = await supabase
+          const { error: insertError } = await supabaseClient
             .from('bgc_complete_emails')
-            .upsert(allNewEmails, { 
+            .upsert(allNewEmails, {
               onConflict: 'account_id,mailbox_id,message_id',
-              ignoreDuplicates: true 
+              ignoreDuplicates: true
             });
-          
+
           if (insertError) {
             console.error('[BGC] Error inserting emails:', insertError);
           } else {
@@ -790,12 +843,12 @@ serve(async (req) => {
         }
         
         // 7. Get counts from database
-        const { count: totalBgcInDb } = await supabase
+        const { count: totalBgcInDb } = await supabaseClient
           .from('bgc_complete_emails')
           .select('*', { count: 'exact', head: true })
           .eq('email_type', 'bgc_complete');
-        
-        const { count: totalDeactivatedInDb } = await supabase
+
+        const { count: totalDeactivatedInDb } = await supabaseClient
           .from('bgc_complete_emails')
           .select('*', { count: 'exact', head: true })
           .eq('email_type', 'deactivated');
@@ -815,11 +868,9 @@ serve(async (req) => {
       }
 
       case 'scanFirstPackage': {
+        if (!supabaseClient) throw new Error('Supabase not configured');
+
         // Scan only Clear accounts for first package patterns
-        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-        const supabase = createClient(supabaseUrl, supabaseKey);
-        
         const FIRST_PACKAGE_PATTERNS = [
           'congratulations, your dasher welcome gift is on its way!',
           'your first dash, done.',
@@ -834,7 +885,7 @@ serve(async (req) => {
         const startTime = Date.now();
         
         // 1. Get BGC complete accounts
-        const { data: bgcAccounts } = await supabase
+        const { data: bgcAccounts } = await supabaseClient
           .from('bgc_complete_emails')
           .select('account_id, account_email')
           .eq('email_type', 'bgc_complete');
@@ -846,7 +897,7 @@ serve(async (req) => {
         console.log(`[FIRST_PACKAGE] ${bgcAccountMap.size} BGC accounts`);
         
         // 2. Get deactivated accounts (these are NOT clear)
-        const { data: deactivatedAccounts } = await supabase
+        const { data: deactivatedAccounts } = await supabaseClient
           .from('bgc_complete_emails')
           .select('account_email')
           .eq('email_type', 'deactivated');
@@ -856,7 +907,7 @@ serve(async (req) => {
         );
         
         // 3. Get already first_package accounts
-        const { data: existingFirstPackage } = await supabase
+        const { data: existingFirstPackage } = await supabaseClient
           .from('bgc_complete_emails')
           .select('account_id, account_email, mailbox_id, message_id')
           .eq('email_type', 'first_package');
@@ -869,7 +920,16 @@ serve(async (req) => {
         );
         
         console.log(`[FIRST_PACKAGE] ${deactivatedEmails.size} deactivated, ${alreadyFirstPackageEmails.size} already have first package`);
-        
+
+        // Get scan statuses for incremental scanning
+        const { data: fpScanStatuses } = await supabaseClient
+          .from('bgc_scan_status')
+          .select('account_id, last_scanned_at');
+
+        const fpStatusMap = new Map(
+          (fpScanStatuses || []).map((s: any) => [s.account_id, s.last_scanned_at])
+        );
+
         // 4. Build list of Clear accounts (BGC complete but not deactivated, not already first package)
         const clearAccounts: { id: string; email: string }[] = [];
         for (const [accountId, email] of bgcAccountMap.entries()) {
@@ -891,19 +951,29 @@ serve(async (req) => {
         for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
           const batch = batches[batchIndex];
           console.log(`[FIRST_PACKAGE] Processing batch ${batchIndex + 1}/${batches.length}`);
-          
+
+          // Safety: stop if approaching timeout (50s limit)
+          const MAX_EXECUTION_MS = 50000;
+          if (Date.now() - startTime > MAX_EXECUTION_MS) {
+            console.log(`[FIRST_PACKAGE] Approaching timeout at batch ${batchIndex + 1}, stopping early`);
+            break;
+          }
+
           // Process batch in parallel
           const batchResults = await Promise.all(
-            batch.map(account => 
-              scanSingleAccountFirstPackage(
+            batch.map(account => {
+              const lastScanned = fpStatusMap.get(account.id);
+              const cutoff = lastScanned ? new Date(lastScanned) : null;
+              return scanSingleAccountFirstPackage(
                 account.id,
                 account.email,
                 headers,
                 existingFirstPackageIds,
                 FIRST_PACKAGE_PATTERNS,
-                SCAN_FOLDERS
-              )
-            )
+                SCAN_FOLDERS,
+                cutoff
+              );
+            })
           );
           
           // Aggregate batch results
@@ -924,11 +994,11 @@ serve(async (req) => {
         
         // 6. Insert new first package emails
         if (newFirstPackageEmails.length > 0) {
-          const { error: insertError } = await supabase
+          const { error: insertError } = await supabaseClient
             .from('bgc_complete_emails')
-            .upsert(newFirstPackageEmails, { 
+            .upsert(newFirstPackageEmails, {
               onConflict: 'account_id,mailbox_id,message_id',
-              ignoreDuplicates: true 
+              ignoreDuplicates: true
             });
           
           if (insertError) {
@@ -939,7 +1009,7 @@ serve(async (req) => {
         }
         
         // 7. Get total count
-        const { count: totalFirstPackageInDb } = await supabase
+        const { count: totalFirstPackageInDb } = await supabaseClient
           .from('bgc_complete_emails')
           .select('*', { count: 'exact', head: true })
           .eq('email_type', 'first_package');

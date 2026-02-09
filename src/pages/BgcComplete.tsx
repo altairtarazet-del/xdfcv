@@ -61,7 +61,7 @@ export default function BgcComplete() {
   const [lastScan, setLastScan] = useState<Date | null>(null);
 
   // Check permission
-  const canViewBgcComplete = isAdmin || (profile?.permissions as any)?.can_view_bgc_complete;
+  const canViewBgcComplete = isAdmin || profile?.permissions?.can_view_bgc_complete;
 
   // Fetch saved emails from database
   const fetchSavedEmails = useCallback(async () => {
@@ -99,21 +99,38 @@ export default function BgcComplete() {
       
       if (bgcData) {
         setBgcEmails(bgcData);
-        setScanStats(prev => ({ ...prev, totalBgcInDb: bgcData.length }));
+        // For BGC: deduplicate by account_email
+        const uniqueBgcAccounts = new Set(bgcData.map(e => e.account_email));
+        setScanStats(prev => ({ ...prev, totalBgcInDb: uniqueBgcAccounts.size }));
       }
 
       // Build set of deactivated account emails and recent list
       if (deactivatedData) {
-        setDeactivatedAccounts(new Set(deactivatedData.map(e => e.account_email)));
+        const deactivatedAccountSet = new Set(deactivatedData.map(e => e.account_email));
+        setDeactivatedAccounts(deactivatedAccountSet);
         setRecentDeactivated(deactivatedData.slice(0, 5).map(e => e.account_email));
-        setScanStats(prev => ({ ...prev, totalDeactivatedInDb: deactivatedData.length }));
+        // For deactivated: use unique account count
+        setScanStats(prev => ({ ...prev, totalDeactivatedInDb: deactivatedAccountSet.size }));
       }
 
       // Build set of first package account emails and recent list
       if (firstPackageData) {
-        setFirstPackageAccounts(new Set(firstPackageData.map(e => e.account_email)));
+        const firstPackageAccountSet = new Set(firstPackageData.map(e => e.account_email));
+        setFirstPackageAccounts(firstPackageAccountSet);
         setRecentFirstPackage(firstPackageData.slice(0, 5).map(e => e.account_email));
-        setScanStats(prev => ({ ...prev, totalFirstPackageInDb: firstPackageData.length }));
+        // For firstPackage: use unique account count
+        setScanStats(prev => ({ ...prev, totalFirstPackageInDb: firstPackageAccountSet.size }));
+      }
+      // Load last scan time from database
+      const { data: lastScanData } = await supabase
+        .from('bgc_scan_status')
+        .select('last_scanned_at')
+        .order('last_scanned_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (lastScanData?.last_scanned_at) {
+        setLastScan(new Date(lastScanData.last_scanned_at));
       }
     } catch (error: any) {
       console.error('Error fetching saved emails:', error);
@@ -145,10 +162,14 @@ export default function BgcComplete() {
           totalDeactivatedInDb: data.totalDeactivatedInDb || 0
         }));
         setLastScan(new Date());
-        
+
         // Refresh emails from database
         await fetchSavedEmails();
-        
+
+        toast({
+          title: 'Tarama Tamamlandı',
+          description: `${data.newBgcFound || 0} yeni BGC, ${data.newDeactivatedFound || 0} yeni deaktive bulundu.`,
+        });
       }
     } catch (error: any) {
       console.error('Scan error:', error);
@@ -179,7 +200,11 @@ export default function BgcComplete() {
         
         // Refresh emails from database
         await fetchSavedEmails();
-        
+
+        toast({
+          title: 'İlk Paket Taraması Tamamlandı',
+          description: `${data.newFirstPackageFound || 0} yeni ilk paket bulundu.`,
+        });
       }
     } catch (error: any) {
       console.error('First package scan error:', error);
@@ -193,13 +218,21 @@ export default function BgcComplete() {
     }
   };
 
-  // Filter emails by time and search query
+  // Filter emails by time and search query, deduplicated by account_email
   const filteredEmails = useMemo(() => {
     const now = new Date();
     const query = searchQuery.toLowerCase().trim();
-    
-    return bgcEmails.filter(email => {
-      // Time filter
+
+    // Deduplicate by account_email — keep the latest email per account
+    const accountMap = new Map<string, BgcEmail>();
+    for (const email of bgcEmails) {
+      const existing = accountMap.get(email.account_email);
+      if (!existing || new Date(email.email_date) > new Date(existing.email_date)) {
+        accountMap.set(email.account_email, email);
+      }
+    }
+
+    return Array.from(accountMap.values()).filter(email => {
       const emailDate = new Date(email.email_date);
       let passesTimeFilter = true;
       if (activeTab === '24h') {
@@ -207,13 +240,10 @@ export default function BgcComplete() {
       } else if (activeTab === '7d') {
         passesTimeFilter = now.getTime() - emailDate.getTime() < 7 * 24 * 60 * 60 * 1000;
       }
-      
-      // Search filter
       const passesSearchFilter = !query || email.account_email.toLowerCase().includes(query);
-      
       return passesTimeFilter && passesSearchFilter;
     });
-  }, [bgcEmails, activeTab]);
+  }, [bgcEmails, activeTab, searchQuery]);
 
   if (!canViewBgcComplete) {
     return (
@@ -378,7 +408,7 @@ export default function BgcComplete() {
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="cyber-card">
               <TabsTrigger value="all" className="font-mono">
-                Tümü ({bgcEmails.length})
+                Tümü ({scanStats.totalBgcInDb})
               </TabsTrigger>
               <TabsTrigger value="24h" className="font-mono">
                 Son 24 Saat
