@@ -812,50 +812,126 @@ async function scanSingleAccountBgc(
   return { bgcEmails, deactivatedEmails, messagesScanned, scannedMailboxes, skippedMessages };
 }
 
-// Helper: Scan a single account for First Package patterns
+// --- FIRST PACKAGE DETECTION ENGINE ---
+// "İlk paket atıldı" diye direkt mail gelmez.
+// Ama bu mailler geldiyse, hesap KESİNLİKLE paket atmıştır:
+
+const FIRST_PACKAGE_SUBJECT_PATTERNS: RegExp[] = [
+  // Direkt ilk teslimat teyidi
+  /first dash/i,
+  /first (delivery|order)/i,
+
+  // Welcome gift (ilk teslimatlardan sonra gönderilir)
+  /welcome gift/i,
+  /dasher welcome/i,
+  /congratulations.*dasher/i,
+  /hey,?\s*you made it/i,
+
+  // Kazanç mailleri (kazanç = teslimat yapmış)
+  /you earned \$/i,
+  /you('ve| have) earned/i,
+  /(weekly|daily|monthly)\s*(earnings?|pay|summary)/i,
+  /earnings?\s*(summary|report|update)/i,
+
+  // Ödeme mailleri (ödeme = teslimat yapmış)
+  /your pay (is|has been)/i,
+  /pay.*(deposited|sent|on the way)/i,
+  /direct deposit/i,
+  /deposit.*(processed|complete)/i,
+  /payout/i,
+  /fast pay/i,
+  /instant (pay|transfer)/i,
+  /dasher\s*pay/i,
+
+  // Aktivite kanıtı (bunlar sadece aktif dasher'lara gider)
+  /top dasher/i,
+  /contract violation/i,
+  /extremely late/i,
+  /customer rat(ed|ing)/i,
+  /your (dasher )?rating/i,
+  /delivery.*(late|missing|issue)/i,
+
+  // Vergi belgesi (vergi = gelir = teslimat)
+  /1099/i,
+  /tax (form|document|statement)/i,
+
+  // Aktif dasher promosyonları
+  /\$\d+.*bonus/i,
+  /guaranteed.*earnings/i,
+  /peak pay/i,
+  /here'?s \d+% off/i,
+  /earn.*(extra|more|bonus)/i,
+  /challenge.*\$/i,
+];
+
+// Sender domain patterns (bu domain'lerden mail = paket atmış)
+const FIRST_PACKAGE_SENDER_PATTERNS: RegExp[] = [
+  /overturepromo\.com/i,
+  /ship2/i,
+];
+
+// Check if a message indicates the account has delivered
+function isFirstPackageSignal(subject: string, senderAddress: string): boolean {
+  const subjectLower = (subject || '').toLowerCase();
+  const senderLower = (senderAddress || '').toLowerCase();
+
+  // Check sender first (overture/ship2 = welcome gift = delivered)
+  for (const pattern of FIRST_PACKAGE_SENDER_PATTERNS) {
+    if (pattern.test(senderLower)) return true;
+  }
+
+  // Check subject patterns
+  for (const pattern of FIRST_PACKAGE_SUBJECT_PATTERNS) {
+    if (pattern.test(subjectLower)) return true;
+  }
+
+  return false;
+}
+
+// Helper: Scan a single account for First Package signals
 async function scanSingleAccountFirstPackage(
   accountId: string,
   accountEmail: string,
   headers: Record<string, string>,
   existingFirstPackageIds: Set<string>,
-  FIRST_PACKAGE_PATTERNS: string[],
+  _patterns: any, // kept for signature compatibility
   SCAN_FOLDERS: string[],
   cutoffDate: Date | null = null
 ): Promise<{ firstPackageEmails: any[]; messagesScanned: number }> {
   const firstPackageEmails: any[] = [];
   let messagesScanned = 0;
-  
+
   try {
     const mbRes = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes`, { headers });
     if (!mbRes.ok) {
       console.error(`[FIRST_PACKAGE] Failed to fetch mailboxes for account ${accountId}`);
       return { firstPackageEmails, messagesScanned };
     }
-    
+
     const mbData = await mbRes.json();
-    const mailboxes = (mbData.member || []).filter((mb: any) => 
+    const mailboxes = (mbData.member || []).filter((mb: any) =>
       SCAN_FOLDERS.some(f => (mb.path || '').toUpperCase().includes(f.toUpperCase()))
     );
-    
+
     let foundFirstPackage = false;
-    
+
     // Scan mailboxes sequentially for early exit
     for (const mailbox of mailboxes) {
       if (foundFirstPackage) break;
-      
+
       let msgPage = 1;
       let hasMoreMsgs = true;
-      
+
       while (hasMoreMsgs && !foundFirstPackage) {
         const msgUrl = `${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailbox.id}/messages?page=${msgPage}`;
-        
+
         const msgRes = await fetch(msgUrl, { headers });
         if (!msgRes.ok) break;
-        
+
         const msgData = await msgRes.json();
         const messages = msgData.member || [];
         messagesScanned += messages.length;
-        
+
         for (const msg of messages) {
           const msgDate = new Date(msg.createdAt || msg.date || msg.receivedAt);
 
@@ -864,13 +940,12 @@ async function scanSingleAccountFirstPackage(
             continue;
           }
 
-          const subject = (msg.subject || '').toLowerCase();
           const uniqueKey = `${accountId}_${mailbox.id}_${msg.id}`;
+          const fromData = msg.from || {};
+          const senderAddress = typeof fromData === 'string' ? fromData : (fromData.address || '');
 
-          const isFirstPackage = FIRST_PACKAGE_PATTERNS.some(p => subject.includes(p));
-          
-          if (isFirstPackage && !existingFirstPackageIds.has(uniqueKey)) {
-            const fromData = msg.from || {};
+          // Use the smart detection engine
+          if (isFirstPackageSignal(msg.subject || '', senderAddress) && !existingFirstPackageIds.has(uniqueKey)) {
             firstPackageEmails.push({
               account_id: accountId,
               account_email: accountEmail,
@@ -878,17 +953,17 @@ async function scanSingleAccountFirstPackage(
               mailbox_path: mailbox.path,
               message_id: msg.id,
               subject: msg.subject,
-              from_address: typeof fromData === 'string' ? fromData : fromData.address,
+              from_address: senderAddress,
               from_name: typeof fromData === 'string' ? null : fromData.name,
               email_date: msg.createdAt || msg.date || msg.receivedAt,
               email_type: 'first_package'
             });
             foundFirstPackage = true;
-            console.log(`[FIRST_PACKAGE] Found: ${msg.subject} from ${accountEmail}`);
+            console.log(`[FIRST_PACKAGE] DETECTED: "${msg.subject}" from=${senderAddress} account=${accountEmail}`);
             break;
           }
         }
-        
+
         if (msgData.view?.next && !foundFirstPackage) {
           msgPage++;
         } else {
@@ -899,7 +974,7 @@ async function scanSingleAccountFirstPackage(
   } catch (e) {
     console.error(`[FIRST_PACKAGE] Error processing account ${accountId}:`, e);
   }
-  
+
   return { firstPackageEmails, messagesScanned };
 }
 
@@ -1575,12 +1650,8 @@ serve(async (req) => {
       case 'scanFirstPackage': {
         if (!supabaseClient) throw new Error('Supabase not configured');
 
-        // Scan only Clear accounts for first package patterns
-        const FIRST_PACKAGE_PATTERNS = [
-          'congratulations, your dasher welcome gift is on its way!',
-          'your first dash, done.',
-          'hey, you made it 🥂 here\'s 40% off'
-        ];
+        // Patterns now handled by isFirstPackageSignal() engine
+        const FIRST_PACKAGE_PATTERNS: string[] = []; // kept for compatibility, detection uses regex engine
         const SCAN_FOLDERS = ['INBOX', 'Trash', 'Junk', 'Spam'];
         
         const newFirstPackageEmails: any[] = [];
@@ -1635,15 +1706,16 @@ serve(async (req) => {
           (fpScanStatuses || []).map((s: any) => [s.account_id, s.last_scanned_at])
         );
 
-        // 4. Build list of Clear accounts (BGC complete but not deactivated, not already first package)
+        // 4. Build list of BGC complete accounts that don't have first_package yet
+        // Include deactivated accounts too — they may have delivered before deactivation
         const clearAccounts: { id: string; email: string }[] = [];
         for (const [accountId, email] of bgcAccountMap.entries()) {
-          if (!deactivatedEmails.has(email) && !alreadyFirstPackageEmails.has(email)) {
+          if (!alreadyFirstPackageEmails.has(email)) {
             clearAccounts.push({ id: accountId, email });
           }
         }
-        
-        console.log(`[FIRST_PACKAGE] ${clearAccounts.length} Clear accounts to scan`);
+
+        console.log(`[FIRST_PACKAGE] ${clearAccounts.length} accounts to scan (incl. deactivated)`);
         
         // 5. Process accounts in parallel batches
         const batches: { id: string; email: string }[][] = [];
@@ -1665,10 +1737,10 @@ serve(async (req) => {
           }
 
           // Process batch in parallel
+          // No cutoff date — scan ALL messages for first package signals
+          // Accounts that already have first_package are already filtered out above
           const batchResults = await Promise.all(
             batch.map(account => {
-              const lastScanned = fpStatusMap.get(account.id);
-              const cutoff = lastScanned ? new Date(lastScanned) : null;
               return scanSingleAccountFirstPackage(
                 account.id,
                 account.email,
@@ -1676,7 +1748,7 @@ serve(async (req) => {
                 existingFirstPackageIds,
                 FIRST_PACKAGE_PATTERNS,
                 SCAN_FOLDERS,
-                cutoff
+                null // scan all messages, no cutoff
               );
             })
           );
