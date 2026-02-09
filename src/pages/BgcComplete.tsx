@@ -13,6 +13,9 @@ import {
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useToast } from '@/hooks/use-toast';
 import {
   Loader2,
@@ -25,6 +28,11 @@ import {
   RefreshCw,
   Hourglass,
   AlertTriangle,
+  ShieldAlert,
+  Undo2,
+  ChevronDown,
+  ChevronRight,
+  EyeOff,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
@@ -40,6 +48,15 @@ interface AccountRow {
   considerDate: string | null;
   deactivatedDate: string | null;
   firstPackageDate: string | null;
+  is_excluded?: boolean;
+  excluded_reason?: string | null;
+  excluded_at?: string | null;
+}
+
+interface SuspiciousResult {
+  testAccounts: string[];
+  duplicates: Array<{ email: string; similarTo: string; distance: number }>;
+  totalSuspicious: number;
 }
 
 function getStatus(bgcClear: boolean, bgcConsider: boolean, deactivated: boolean, firstPackage: boolean): AccountStatus {
@@ -132,18 +149,26 @@ export default function BgcComplete() {
   const { toast } = useToast();
 
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
+  const [excludedAccounts, setExcludedAccounts] = useState<AccountRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<AccountStatus>('bgc_bekliyor');
   const [lastScan, setLastScan] = useState<Date | null>(null);
 
+  // Exclusion feature state
+  const [detecting, setDetecting] = useState(false);
+  const [suspiciousResult, setSuspiciousResult] = useState<SuspiciousResult | null>(null);
+  const [selectedForExclusion, setSelectedForExclusion] = useState<Set<string>>(new Set());
+  const [excluding, setExcluding] = useState(false);
+  const [excludedOpen, setExcludedOpen] = useState(false);
+
   const canViewBgcComplete = isAdmin || profile?.permissions?.can_view_bgc_complete;
 
   const fetchData = useCallback(async () => {
     try {
       const [scanRes, emailRes] = await Promise.all([
-        supabase.from('bgc_scan_status').select('account_id, account_email, last_scanned_at').order('account_email'),
+        supabase.from('bgc_scan_status').select('account_id, account_email, last_scanned_at, is_excluded, excluded_reason, excluded_at').order('account_email'),
         supabase.from('bgc_complete_emails').select('account_email, email_type, email_date').order('email_date', { ascending: false }),
       ]);
 
@@ -159,19 +184,32 @@ export default function BgcComplete() {
         if (email.email_type === 'first_package' && !entry.firstPackageDate) entry.firstPackageDate = email.email_date;
       }
 
-      const rows: AccountRow[] = (scanRes.data || []).map(s => {
+      const activeRows: AccountRow[] = [];
+      const excludedRows: AccountRow[] = [];
+
+      for (const s of (scanRes.data || [])) {
         const d = emailMap.get(s.account_email);
-        return {
+        const row: AccountRow = {
           account_email: s.account_email,
           status: getStatus(!!d?.bgcDate, !!d?.considerDate, !!d?.deactivatedDate, !!d?.firstPackageDate),
           bgcDate: d?.bgcDate || null,
           considerDate: d?.considerDate || null,
           deactivatedDate: d?.deactivatedDate || null,
           firstPackageDate: d?.firstPackageDate || null,
+          is_excluded: s.is_excluded || false,
+          excluded_reason: s.excluded_reason,
+          excluded_at: s.excluded_at,
         };
-      });
 
-      setAccounts(rows);
+        if (s.is_excluded) {
+          excludedRows.push(row);
+        } else {
+          activeRows.push(row);
+        }
+      }
+
+      setAccounts(activeRows);
+      setExcludedAccounts(excludedRows);
 
       if (scanRes.data && scanRes.data.length > 0) {
         const dates = scanRes.data.map(s => new Date(s.last_scanned_at).getTime());
@@ -218,14 +256,106 @@ export default function BgcComplete() {
       if (recheckResult?.considersFound) parts.push(`${recheckResult.considersFound} consider tespit`);
 
       toast({
-        title: 'Tarama Tamamlandı',
-        description: parts.length > 0 ? parts.join(', ') + '.' : 'Yeni sonuç yok.',
+        title: 'Tarama Tamamlandi',
+        description: parts.length > 0 ? parts.join(', ') + '.' : 'Yeni sonuc yok.',
       });
     } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Hata', description: error.message || 'Tarama hatası' });
+      toast({ variant: 'destructive', title: 'Hata', description: error.message || 'Tarama hatasi' });
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDetectSuspicious = async () => {
+    setDetecting(true);
+    setSuspiciousResult(null);
+    setSelectedForExclusion(new Set());
+    try {
+      const { data, error } = await supabase.functions.invoke('smtp-api', {
+        body: { action: 'detectSuspiciousAccounts' },
+      });
+      if (error) throw error;
+      setSuspiciousResult(data as SuspiciousResult);
+
+      // Auto-select all suspicious accounts
+      const allSuspicious = new Set([
+        ...(data.testAccounts || []),
+        ...(data.duplicates || []).map((d: any) => d.email),
+      ]);
+      setSelectedForExclusion(allSuspicious);
+
+      toast({
+        title: 'Tespit Tamamlandi',
+        description: `${data.totalSuspicious} supheli hesap bulundu.`,
+      });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Hata', description: error.message || 'Tespit hatasi' });
+    } finally {
+      setDetecting(false);
+    }
+  };
+
+  const handleExcludeSelected = async () => {
+    if (selectedForExclusion.size === 0) return;
+    setExcluding(true);
+    try {
+      const emails = Array.from(selectedForExclusion);
+      // Build reason string
+      const reasons: string[] = [];
+      if (suspiciousResult) {
+        const testSet = new Set(suspiciousResult.testAccounts);
+        const dupeSet = new Set(suspiciousResult.duplicates.map(d => d.email));
+        const testCount = emails.filter(e => testSet.has(e)).length;
+        const dupeCount = emails.filter(e => dupeSet.has(e)).length;
+        if (testCount > 0) reasons.push(`Test hesap (${testCount})`);
+        if (dupeCount > 0) reasons.push(`Duplike/typo (${dupeCount})`);
+      }
+      const reason = reasons.length > 0 ? reasons.join(', ') : 'Manuel dislama';
+
+      const { data, error } = await supabase.functions.invoke('smtp-api', {
+        body: { action: 'excludeFromBgc', accountEmails: emails, reason },
+      });
+      if (error) throw error;
+
+      await fetchData();
+      setSuspiciousResult(null);
+      setSelectedForExclusion(new Set());
+
+      toast({
+        title: 'Hesaplar Dislanadi',
+        description: `${data.updated} hesap dislandi.`,
+      });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Hata', description: error.message || 'Dislama hatasi' });
+    } finally {
+      setExcluding(false);
+    }
+  };
+
+  const handleRestore = async (email: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('smtp-api', {
+        body: { action: 'restoreFromBgcExclusion', accountEmails: [email] },
+      });
+      if (error) throw error;
+
+      await fetchData();
+      toast({
+        title: 'Geri Alindi',
+        description: `${email.split('@')[0]} tekrar aktif listeye eklendi.`,
+      });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Hata', description: error.message || 'Geri alma hatasi' });
+    }
+  };
+
+  const toggleExclusionSelection = (email: string) => {
+    setSelectedForExclusion(prev => {
+      const next = new Set(prev);
+      if (next.has(email)) next.delete(email);
+      else next.add(email);
+      return next;
+    });
   };
 
   const grouped = useMemo(() => {
@@ -282,7 +412,7 @@ export default function BgcComplete() {
   const exportToCSV = () => {
     const activeAccounts = grouped[activeTab];
     if (activeAccounts.length === 0) return;
-    const headers = ['Hesap', 'Durum', 'BGC Tarihi', 'Kapanma Tarihi', 'İlk Paket Tarihi'];
+    const headers = ['Hesap', 'Durum', 'BGC Tarihi', 'Kapanma Tarihi', 'Ilk Paket Tarihi'];
     const rows = activeAccounts.map(a => [
       a.account_email,
       STATUS_CONFIG[a.status].label,
@@ -306,7 +436,7 @@ export default function BgcComplete() {
         <div className="flex items-center justify-center h-[60vh]">
           <Card className="cyber-card border-destructive/50">
             <CardContent className="pt-6">
-              <p className="text-muted-foreground font-mono">Bu sayfaya erişim yetkiniz bulunmuyor.</p>
+              <p className="text-muted-foreground font-mono">Bu sayfaya erisim yetkiniz bulunmuyor.</p>
             </CardContent>
           </Card>
         </div>
@@ -338,7 +468,7 @@ export default function BgcComplete() {
           <div className="flex gap-2">
             <Button onClick={handleScan} disabled={loading} className="cyber-button">
               {loading ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Taranıyor...</>
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Taraniyor...</>
               ) : (
                 <><RefreshCw className="mr-2 h-4 w-4" />Tara</>
               )}
@@ -349,10 +479,11 @@ export default function BgcComplete() {
           </div>
         </div>
 
-        {/* Stats — sadece bilgilendirici */}
+        {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {(Object.entries(STATUS_CONFIG) as [AccountStatus, typeof STATUS_CONFIG[AccountStatus]][]).map(([key, cfg]) => {
             const Icon = cfg.icon;
+            const excluded = key === 'bgc_bekliyor' ? excludedAccounts.filter(a => a.status === 'bgc_bekliyor').length : 0;
             return (
               <Card key={key} className="cyber-card">
                 <CardContent className="pt-3 pb-3">
@@ -362,6 +493,9 @@ export default function BgcComplete() {
                   </span>
                   <div className={`text-2xl font-bold ${cfg.color} mt-1`}>{stats[key]}</div>
                   <span className="text-[10px] font-mono text-muted-foreground">{cfg.description}</span>
+                  {excluded > 0 && (
+                    <span className="text-[10px] font-mono text-muted-foreground/60 block">(+{excluded} dislanmis)</span>
+                  )}
                 </CardContent>
               </Card>
             );
@@ -415,7 +549,91 @@ export default function BgcComplete() {
             const cfg = STATUS_CONFIG[key];
             const tabAccounts = grouped[key];
             return (
-              <TabsContent key={key} value={key} className="mt-4">
+              <TabsContent key={key} value={key} className="mt-4 space-y-4">
+                {/* Suspicious Detection Panel — only on BGC Bekliyor tab */}
+                {key === 'bgc_bekliyor' && (
+                  <Card className="cyber-card border-amber-500/30">
+                    <CardContent className="pt-4 pb-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-mono text-amber-400 flex items-center gap-2">
+                          <ShieldAlert size={16} />
+                          Hesap Temizligi
+                        </span>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleDetectSuspicious}
+                            disabled={detecting}
+                          >
+                            {detecting ? (
+                              <><Loader2 className="mr-2 h-3 w-3 animate-spin" />Tespit ediliyor...</>
+                            ) : (
+                              <><Search className="mr-2 h-3 w-3" />Supheli Hesaplari Tespit Et</>
+                            )}
+                          </Button>
+                          {selectedForExclusion.size > 0 && (
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={handleExcludeSelected}
+                              disabled={excluding}
+                            >
+                              {excluding ? (
+                                <><Loader2 className="mr-2 h-3 w-3 animate-spin" />Dislaniyor...</>
+                              ) : (
+                                <><EyeOff className="mr-2 h-3 w-3" />Secilenleri Disla ({selectedForExclusion.size})</>
+                              )}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Suspicious Results */}
+                      {suspiciousResult && (
+                        <div className="space-y-2">
+                          {suspiciousResult.testAccounts.length > 0 && (
+                            <div className="space-y-1">
+                              <span className="text-xs font-mono text-red-400">Test Hesaplari:</span>
+                              {suspiciousResult.testAccounts.map(email => (
+                                <div key={email} className="flex items-center gap-2 pl-2">
+                                  <Checkbox
+                                    checked={selectedForExclusion.has(email)}
+                                    onCheckedChange={() => toggleExclusionSelection(email)}
+                                  />
+                                  <span className="font-mono text-xs">{email}</span>
+                                  <Badge className="bg-red-500/20 text-red-400 border-red-500/50 text-[10px]">test</Badge>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {suspiciousResult.duplicates.length > 0 && (
+                            <div className="space-y-1">
+                              <span className="text-xs font-mono text-orange-400">Duplike/Typo Hesaplar:</span>
+                              {suspiciousResult.duplicates.map(dup => (
+                                <div key={dup.email} className="flex items-center gap-2 pl-2">
+                                  <Checkbox
+                                    checked={selectedForExclusion.has(dup.email)}
+                                    onCheckedChange={() => toggleExclusionSelection(dup.email)}
+                                  />
+                                  <span className="font-mono text-xs">{dup.email}</span>
+                                  <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/50 text-[10px]">
+                                    benzer: {dup.similarTo.split('@')[0]} (d={dup.distance})
+                                  </Badge>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {suspiciousResult.totalSuspicious === 0 && (
+                            <p className="text-xs font-mono text-muted-foreground">Supheli hesap bulunamadi.</p>
+                          )}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Account Table */}
                 <Card className="cyber-card">
                   <CardContent className="p-0">
                     {tabAccounts.length === 0 ? (
@@ -423,7 +641,7 @@ export default function BgcComplete() {
                         <cfg.icon size={40} className="mb-4 opacity-30" />
                         <p className="font-mono text-sm">
                           {accounts.length === 0
-                            ? 'Henüz tarama yapılmamış. "Tara" butonuna tıklayın.'
+                            ? 'Henuz tarama yapilmamis. "Tara" butonuna tiklayin.'
                             : 'Bu durumda hesap yok.'}
                         </p>
                       </div>
@@ -458,6 +676,63 @@ export default function BgcComplete() {
             );
           })}
         </Tabs>
+
+        {/* Excluded Accounts Section */}
+        {excludedAccounts.length > 0 && (
+          <Collapsible open={excludedOpen} onOpenChange={setExcludedOpen}>
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" className="w-full justify-between font-mono text-sm text-muted-foreground hover:text-foreground">
+                <span className="flex items-center gap-2">
+                  <EyeOff size={14} />
+                  Dislanan Hesaplar ({excludedAccounts.length})
+                </span>
+                {excludedOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <Card className="cyber-card border-muted-foreground/20 mt-2">
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="font-mono">Hesap</TableHead>
+                          <TableHead className="font-mono">Sebep</TableHead>
+                          <TableHead className="font-mono">Dislama Tarihi</TableHead>
+                          <TableHead className="font-mono w-20"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {excludedAccounts.map(account => (
+                          <TableRow key={account.account_email} className="opacity-60 hover:opacity-100">
+                            <TableCell className="font-mono text-sm">{account.account_email}</TableCell>
+                            <TableCell className="font-mono text-xs text-muted-foreground">
+                              {account.excluded_reason || '-'}
+                            </TableCell>
+                            <TableCell className="font-mono text-xs text-muted-foreground">
+                              {account.excluded_at ? format(new Date(account.excluded_at), 'dd/MM/yyyy HH:mm') : '-'}
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRestore(account.account_email)}
+                                className="text-xs"
+                              >
+                                <Undo2 className="mr-1 h-3 w-3" />
+                                Geri Al
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </CollapsibleContent>
+          </Collapsible>
+        )}
       </div>
     </DashboardLayout>
   );

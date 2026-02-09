@@ -1435,15 +1435,23 @@ serve(async (req) => {
         const startTime = Date.now();
         
         // 1. Get existing scan statuses from DB (for BGC incremental scan)
+        // Skip excluded accounts
         const { data: scanStatuses } = await supabaseClient
           .from('bgc_scan_status')
           .select('*');
-        
+
+        const excludedAccountIds = new Set(
+          (scanStatuses || []).filter((s: any) => s.is_excluded).map((s: any) => s.account_id)
+        );
+        const excludedEmails = new Set(
+          (scanStatuses || []).filter((s: any) => s.is_excluded).map((s: any) => s.account_email)
+        );
+
         const statusMap = new Map(
           (scanStatuses || []).map((s: any) => [s.account_id, s])
         );
-        
-        console.log(`[BGC] Found ${statusMap.size} previously scanned accounts`);
+
+        console.log(`[BGC] Found ${statusMap.size} previously scanned accounts (${excludedAccountIds.size} excluded)`);
         
         // 2. Get existing BGC email IDs and accounts to avoid duplicates
         const { data: existingBgcEmails } = await supabaseClient
@@ -1512,7 +1520,11 @@ serve(async (req) => {
         }
         
         console.log(`[BGC] Found ${allAccounts.length} accounts total`);
-        
+
+        // Filter out excluded accounts
+        allAccounts = allAccounts.filter((a: any) => !excludedAccountIds.has(a.id) && !excludedEmails.has(a.address));
+        console.log(`[BGC] ${allAccounts.length} accounts after excluding ${excludedAccountIds.size} excluded`);
+
         // 5. Process accounts in parallel batches
         const batches: any[][] = [];
         for (let i = 0; i < allAccounts.length; i += ACCOUNT_BATCH_SIZE) {
@@ -1851,25 +1863,53 @@ serve(async (req) => {
         
         console.log(`[FIRST_PACKAGE] ${deactivatedEmails.size} deactivated, ${alreadyFirstPackageEmails.size} already have first package`);
 
-        // Get scan statuses for incremental scanning
+        // Get scan statuses for incremental scanning + exclusion filter
         const { data: fpScanStatuses } = await supabaseClient
           .from('bgc_scan_status')
-          .select('account_id, last_scanned_at');
+          .select('account_id, account_email, last_scanned_at, is_excluded');
 
         const fpStatusMap = new Map(
           (fpScanStatuses || []).map((s: any) => [s.account_id, s.last_scanned_at])
         );
 
-        // 4. Build list of BGC complete accounts that don't have first_package yet
-        // Include deactivated accounts too — they may have delivered before deactivation
+        const fpExcludedEmails = new Set(
+          (fpScanStatuses || []).filter((s: any) => s.is_excluded).map((s: any) => s.account_email)
+        );
+
+        // 4. Build list of accounts to scan for first package
+        // Include BGC complete accounts + BGC Bekliyor accounts (they may have BGC email missed)
+        // Skip excluded accounts and those that already have first_package
         const clearAccounts: { id: string; email: string }[] = [];
+        const addedEmails = new Set<string>();
+
+        // 4a. BGC complete accounts
         for (const [accountId, email] of bgcAccountMap.entries()) {
-          if (!alreadyFirstPackageEmails.has(email)) {
+          if (!alreadyFirstPackageEmails.has(email) && !fpExcludedEmails.has(email)) {
             clearAccounts.push({ id: accountId, email });
+            addedEmails.add(email);
           }
         }
 
-        console.log(`[FIRST_PACKAGE] ${clearAccounts.length} accounts to scan (incl. deactivated)`);
+        // 4b. Also scan BGC Bekliyor accounts (not in bgc_complete_emails at all)
+        // These might have passed BGC but the email was missed
+        const { data: allEmailRecords } = await supabaseClient
+          .from('bgc_complete_emails')
+          .select('account_email');
+        const accountsWithAnyEmail = new Set((allEmailRecords || []).map((e: any) => e.account_email));
+
+        for (const s of (fpScanStatuses || [])) {
+          if (s.is_excluded) continue;
+          if (addedEmails.has(s.account_email)) continue;
+          if (alreadyFirstPackageEmails.has(s.account_email)) continue;
+          // This account has no email records at all — it's BGC Bekliyor
+          // Scan it too, in case it has first package signals (BGC email was missed)
+          if (!accountsWithAnyEmail.has(s.account_email)) {
+            clearAccounts.push({ id: s.account_id, email: s.account_email });
+            addedEmails.add(s.account_email);
+          }
+        }
+
+        console.log(`[FIRST_PACKAGE] ${clearAccounts.length} accounts to scan (incl. deactivated + BGC Bekliyor)`);
         
         // 5. Process accounts in parallel batches
         const batches: { id: string; email: string }[][] = [];
@@ -2446,6 +2486,125 @@ serve(async (req) => {
           stateDistribution,
           elapsedMs,
         };
+        break;
+      }
+
+      case 'excludeFromBgc': {
+        if (!supabaseClient) throw new Error('Supabase not configured');
+        const { accountEmails, reason } = body;
+        if (!accountEmails || !Array.isArray(accountEmails) || accountEmails.length === 0) {
+          throw new Error('accountEmails array is required');
+        }
+
+        const now = new Date().toISOString();
+        let updated = 0;
+        for (const email of accountEmails) {
+          const { error } = await supabaseClient
+            .from('bgc_scan_status')
+            .update({ is_excluded: true, excluded_at: now, excluded_reason: reason || 'Manuel dışlama' })
+            .eq('account_email', email);
+          if (!error) updated++;
+        }
+
+        console.log(`[EXCLUDE] Excluded ${updated}/${accountEmails.length} accounts. Reason: ${reason}`);
+        result = { updated, total: accountEmails.length };
+        break;
+      }
+
+      case 'restoreFromBgcExclusion': {
+        if (!supabaseClient) throw new Error('Supabase not configured');
+        const { accountEmails: restoreEmails } = body;
+        if (!restoreEmails || !Array.isArray(restoreEmails) || restoreEmails.length === 0) {
+          throw new Error('accountEmails array is required');
+        }
+
+        let restored = 0;
+        for (const email of restoreEmails) {
+          const { error } = await supabaseClient
+            .from('bgc_scan_status')
+            .update({ is_excluded: false, excluded_at: null, excluded_reason: null })
+            .eq('account_email', email);
+          if (!error) restored++;
+        }
+
+        console.log(`[RESTORE] Restored ${restored}/${restoreEmails.length} accounts`);
+        result = { restored, total: restoreEmails.length };
+        break;
+      }
+
+      case 'detectSuspiciousAccounts': {
+        if (!supabaseClient) throw new Error('Supabase not configured');
+
+        // Get all non-excluded accounts
+        const { data: allScanAccounts } = await supabaseClient
+          .from('bgc_scan_status')
+          .select('account_email, is_excluded')
+          .eq('is_excluded', false);
+
+        // Get accounts that have any email record (these have BGC results)
+        const { data: emailRecords } = await supabaseClient
+          .from('bgc_complete_emails')
+          .select('account_email');
+
+        const accountsWithEmails = new Set((emailRecords || []).map((e: any) => e.account_email));
+        const allEmails = (allScanAccounts || []).map((a: any) => a.account_email);
+
+        // BGC Bekliyor = accounts without any email record
+        const bgcBekliyorEmails = allEmails.filter((email: string) => !accountsWithEmails.has(email));
+
+        // Test account detection
+        const TEST_PATTERNS = [/^test/i, /test\d+/i, /demo/i, /fake/i, /dummy/i, /sample/i];
+        const testAccounts: string[] = [];
+        for (const email of bgcBekliyorEmails) {
+          const localPart = email.split('@')[0];
+          if (TEST_PATTERNS.some(p => p.test(localPart))) {
+            testAccounts.push(email);
+          }
+        }
+
+        // Duplicate/typo detection (Levenshtein)
+        function levenshtein(a: string, b: string): number {
+          const m = a.length, n = b.length;
+          const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+          for (let i = 0; i <= m; i++) dp[i][0] = i;
+          for (let j = 0; j <= n; j++) dp[0][j] = j;
+          for (let i = 1; i <= m; i++) {
+            for (let j = 1; j <= n; j++) {
+              dp[i][j] = Math.min(
+                dp[i - 1][j] + 1,
+                dp[i][j - 1] + 1,
+                dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+              );
+            }
+          }
+          return dp[m][n];
+        }
+
+        // Compare BGC Bekliyor local parts against ALL other accounts
+        const allLocalParts = allEmails.map((e: string) => ({ email: e, local: e.split('@')[0] }));
+        const duplicates: Array<{ email: string; similarTo: string; distance: number }> = [];
+
+        for (const bgcEmail of bgcBekliyorEmails) {
+          const bgcLocal = bgcEmail.split('@')[0];
+          // Skip very short names (too many false positives)
+          if (bgcLocal.length < 4) continue;
+
+          for (const other of allLocalParts) {
+            if (other.email === bgcEmail) continue;
+            // Only compare accounts not already in BGC Bekliyor (we want to find dupes of active accounts)
+            if (bgcBekliyorEmails.includes(other.email)) continue;
+            const dist = levenshtein(bgcLocal, other.local);
+            if (dist > 0 && dist <= 2) {
+              duplicates.push({ email: bgcEmail, similarTo: other.email, distance: dist });
+              break; // Only report first match per account
+            }
+          }
+        }
+
+        const totalSuspicious = new Set([...testAccounts, ...duplicates.map(d => d.email)]).size;
+        console.log(`[DETECT] Found ${testAccounts.length} test accounts, ${duplicates.length} duplicates. Total suspicious: ${totalSuspicious}`);
+
+        result = { testAccounts, duplicates, totalSuspicious };
         break;
       }
 
