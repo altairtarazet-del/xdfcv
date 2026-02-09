@@ -208,11 +208,16 @@ export default function BgcComplete() {
       const rows: AccountRow[] = [];
       for (const s of (scanRes.data || [])) {
         const d = emailMap.get(s.account_email);
-        // info_needed is only valid if there's no newer submitted/verified email after it
+        // info_needed is only valid if BGC process is still ongoing
         let infoNeededDate = d?.bgcInfoNeededDate || null;
-        if (infoNeededDate && d?.bgcSubmittedDate) {
-          if (new Date(d.bgcSubmittedDate) > new Date(infoNeededDate)) {
-            infoNeededDate = null; // resolved — newer Checkr email exists
+        if (infoNeededDate) {
+          // Process completed → info_needed is irrelevant
+          if (d?.bgcDate || d?.considerDate || d?.deactivatedDate || d?.firstPackageDate) {
+            infoNeededDate = null;
+          }
+          // Newer submitted/verified email → info was provided
+          else if (d?.bgcSubmittedDate && new Date(d.bgcSubmittedDate) > new Date(infoNeededDate)) {
+            infoNeededDate = null;
           }
         }
         rows.push({
