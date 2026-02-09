@@ -20,6 +20,7 @@ import {
   LayoutDashboard,
   CheckCircle,
 } from 'lucide-react';
+import { NotificationBell } from '@/components/NotificationBell';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -208,10 +209,18 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       )}
 
       {/* Main Content */}
-      <main className={`flex-1 p-4 lg:p-8 min-h-screen overflow-auto transition-all duration-300 ${
+      <main className={`flex-1 min-h-screen overflow-auto transition-all duration-300 ${
         sidebarCollapsed ? 'lg:ml-0' : ''
       }`}>
-        {children}
+        {/* Top Bar with Notification Bell */}
+        {canViewBgcComplete && (
+          <div className="flex justify-end items-center px-4 lg:px-8 pt-4">
+            <NotificationBell />
+          </div>
+        )}
+        <div className="p-4 lg:p-8 pt-2">
+          {children}
+        </div>
       </main>
     </div>
   );

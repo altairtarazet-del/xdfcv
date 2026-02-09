@@ -14,10 +14,25 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, CheckCircle, Clock, Search, Database, XCircle, Check, X, Package } from 'lucide-react';
+import {
+  Loader2,
+  CheckCircle,
+  Clock,
+  Search,
+  Database,
+  XCircle,
+  Check,
+  X,
+  Package,
+  AlertTriangle,
+  Brain,
+  Download,
+} from 'lucide-react';
 import { format } from 'date-fns';
 import { useAuth } from '@/hooks/useAuth';
+import { AccountTimeline } from '@/components/AccountTimeline';
 
 interface BgcEmail {
   id: string;
@@ -32,6 +47,9 @@ interface BgcEmail {
   email_date: string;
   scanned_at: string;
   email_type: string;
+  ai_classified?: boolean;
+  ai_confidence?: number;
+  extracted_data?: any;
 }
 
 interface ScanStats {
@@ -50,15 +68,27 @@ export default function BgcComplete() {
   const [recentFirstPackage, setRecentFirstPackage] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [firstPackageLoading, setFirstPackageLoading] = useState(false);
+  const [riskLoading, setRiskLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [scanStats, setScanStats] = useState<ScanStats>({ 
+  const [scanStats, setScanStats] = useState<ScanStats>({
     totalBgcInDb: 0,
     totalDeactivatedInDb: 0,
     totalFirstPackageInDb: 0
   });
   const [lastScan, setLastScan] = useState<Date | null>(null);
+
+  // Phase 5: Timeline drawer
+  const [selectedAccount, setSelectedAccount] = useState<string>('');
+  const [timelineOpen, setTimelineOpen] = useState(false);
+
+  // Phase 6: Risk scores
+  const [riskScores, setRiskScores] = useState<Map<string, number>>(new Map());
+
+  // Phase 6: Bulk selection
+  const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
+  const [selectAll, setSelectAll] = useState(false);
 
   // Check permission
   const canViewBgcComplete = isAdmin || profile?.permissions?.can_view_bgc_complete;
@@ -74,7 +104,7 @@ export default function BgcComplete() {
         .order('email_date', { ascending: false });
 
       if (bgcError) throw bgcError;
-      
+
       // Fetch deactivated emails to build the set (ordered by date for recent list)
       const { data: deactivatedData, error: deactivatedError } = await supabase
         .from('bgc_complete_emails')
@@ -96,9 +126,20 @@ export default function BgcComplete() {
       if (firstPackageError) {
         console.error('Error fetching first package emails:', firstPackageError);
       }
-      
+
+      // Fetch risk scores
+      const { data: riskData } = await supabase
+        .from('bgc_risk_scores')
+        .select('account_email, risk_score');
+
+      if (riskData) {
+        const riskMap = new Map<string, number>();
+        riskData.forEach((r: any) => riskMap.set(r.account_email, r.risk_score));
+        setRiskScores(riskMap);
+      }
+
       if (bgcData) {
-        setBgcEmails(bgcData);
+        setBgcEmails(bgcData as BgcEmail[]);
         // For BGC: deduplicate by account_email
         const uniqueBgcAccounts = new Set(bgcData.map(e => e.account_email));
         setScanStats(prev => ({ ...prev, totalBgcInDb: uniqueBgcAccounts.size }));
@@ -197,7 +238,7 @@ export default function BgcComplete() {
           ...prev,
           totalFirstPackageInDb: data.totalFirstPackageInDb || 0
         }));
-        
+
         // Refresh emails from database
         await fetchSavedEmails();
 
@@ -216,6 +257,53 @@ export default function BgcComplete() {
     } finally {
       setFirstPackageLoading(false);
     }
+  };
+
+  const handleCalculateRisk = async () => {
+    setRiskLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('smtp-api', {
+        body: { action: 'calculateRiskScores' }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: 'Risk Hesaplandı',
+        description: `${data?.calculated || 0} hesap: ${data?.highRisk || 0} yüksek, ${data?.mediumRisk || 0} orta, ${data?.lowRisk || 0} düşük risk.`,
+      });
+
+      // Refresh to get updated risk scores
+      await fetchSavedEmails();
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Hata',
+        description: error.message || 'Risk hesaplama sırasında hata oluştu',
+      });
+    } finally {
+      setRiskLoading(false);
+    }
+  };
+
+  // CSV Export
+  const exportToCSV = (emails: BgcEmail[]) => {
+    const headers = ['Hesap', 'BGC Durumu', 'İlk Paket', 'Risk', 'Tarih'];
+    const rows = emails.map(email => {
+      const status = deactivatedAccounts.has(email.account_email) ? 'Kapandı' : 'Clear';
+      const firstPkg = firstPackageAccounts.has(email.account_email) ? 'Evet' : 'Hayır';
+      const risk = riskScores.get(email.account_email) ?? '-';
+      return [email.account_email, status, firstPkg, risk, format(new Date(email.email_date), 'dd/MM/yyyy HH:mm')];
+    });
+
+    const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `bgc-complete-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   // Filter emails by time and search query, deduplicated by account_email
@@ -244,6 +332,53 @@ export default function BgcComplete() {
       return passesTimeFilter && passesSearchFilter;
     });
   }, [bgcEmails, activeTab, searchQuery]);
+
+  // Handle select all toggle
+  useEffect(() => {
+    if (selectAll) {
+      setSelectedEmails(new Set(filteredEmails.map(e => e.id)));
+    } else {
+      setSelectedEmails(new Set());
+    }
+  }, [selectAll, filteredEmails]);
+
+  const toggleEmailSelection = (emailId: string) => {
+    setSelectedEmails(prev => {
+      const next = new Set(prev);
+      if (next.has(emailId)) {
+        next.delete(emailId);
+      } else {
+        next.add(emailId);
+      }
+      return next;
+    });
+  };
+
+  const getRiskBadge = (email: string) => {
+    const score = riskScores.get(email);
+    if (score === undefined) return <span className="text-muted-foreground text-xs font-mono">-</span>;
+    if (score >= 50) {
+      return (
+        <Badge variant="destructive" className="font-mono text-xs gap-1">
+          <AlertTriangle size={10} />
+          {score}
+        </Badge>
+      );
+    }
+    if (score >= 25) {
+      return (
+        <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/50 font-mono text-xs gap-1">
+          <AlertTriangle size={10} />
+          {score}
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="outline" className="bg-emerald-500/20 text-emerald-400 border-emerald-500/50 font-mono text-xs gap-1">
+        {score}
+      </Badge>
+    );
+  };
 
   if (!canViewBgcComplete) {
     return (
@@ -286,9 +421,9 @@ export default function BgcComplete() {
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
-            <Button 
-              onClick={handleScan} 
-              disabled={loading || firstPackageLoading}
+            <Button
+              onClick={handleScan}
+              disabled={loading || firstPackageLoading || riskLoading}
               className="cyber-button"
             >
               {loading ? (
@@ -303,9 +438,9 @@ export default function BgcComplete() {
                 </>
               )}
             </Button>
-            <Button 
-              onClick={handleFirstPackageScan} 
-              disabled={loading || firstPackageLoading}
+            <Button
+              onClick={handleFirstPackageScan}
+              disabled={loading || firstPackageLoading || riskLoading}
               variant="outline"
               className="border-orange-500/50 text-orange-400 hover:bg-orange-500/10"
             >
@@ -318,6 +453,24 @@ export default function BgcComplete() {
                 <>
                   <Package className="mr-2 h-4 w-4" />
                   İlk Paket
+                </>
+              )}
+            </Button>
+            <Button
+              onClick={handleCalculateRisk}
+              disabled={loading || firstPackageLoading || riskLoading}
+              variant="outline"
+              className="border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/10"
+            >
+              {riskLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Hesaplanıyor...
+                </>
+              ) : (
+                <>
+                  <Brain className="mr-2 h-4 w-4" />
+                  Risk Hesapla
                 </>
               )}
             </Button>
@@ -337,7 +490,7 @@ export default function BgcComplete() {
               <div className="text-2xl font-bold text-primary">{scanStats.totalBgcInDb}</div>
             </CardContent>
           </Card>
-          
+
           <Card className="cyber-card">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-mono text-muted-foreground flex items-center gap-1">
@@ -351,7 +504,7 @@ export default function BgcComplete() {
               </div>
             </CardContent>
           </Card>
-          
+
           <Card className="cyber-card">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-mono text-muted-foreground flex items-center gap-1">
@@ -372,7 +525,7 @@ export default function BgcComplete() {
               )}
             </CardContent>
           </Card>
-          
+
           <Card className="cyber-card">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-mono text-muted-foreground flex items-center gap-1">
@@ -395,15 +548,16 @@ export default function BgcComplete() {
           </Card>
         </div>
 
-        {/* Last Scan Info */}
+        {/* Last Scan Info + Auto Scan Note */}
         {lastScan && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground font-mono">
             <Clock size={14} />
             Son tarama: {format(lastScan, 'dd/MM/yyyy HH:mm:ss')}
+            <span className="text-xs text-primary/60 ml-2">| Otomatik tarama: her 30 dakikada</span>
           </div>
         )}
 
-        {/* Search and Tabs */}
+        {/* Search, Tabs, and Export */}
         <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="cyber-card">
@@ -418,17 +572,54 @@ export default function BgcComplete() {
               </TabsTrigger>
             </TabsList>
           </Tabs>
-          
-          <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Hesap ara..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 font-mono bg-background/50 border-border/50"
-            />
+
+          <div className="flex gap-2 items-center">
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Hesap ara..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 font-mono bg-background/50 border-border/50"
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => exportToCSV(filteredEmails)}
+              disabled={filteredEmails.length === 0}
+              className="shrink-0"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              CSV
+            </Button>
           </div>
         </div>
+
+        {/* Bulk Action Bar */}
+        {selectedEmails.size > 0 && (
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-primary/10 border border-primary/20">
+            <span className="text-sm font-mono text-primary">{selectedEmails.size} seçili</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const selected = filteredEmails.filter(e => selectedEmails.has(e.id));
+                exportToCSV(selected);
+              }}
+            >
+              <Download className="mr-2 h-3 w-3" />
+              Seçilenleri İndir
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setSelectedEmails(new Set()); setSelectAll(false); }}
+            >
+              Seçimi Temizle
+            </Button>
+          </div>
+        )}
 
         {/* Results Table */}
         <Card className="cyber-card">
@@ -437,7 +628,7 @@ export default function BgcComplete() {
               <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                 <Database size={48} className="mb-4 opacity-50" />
                 <p className="font-mono text-sm">
-                  {bgcEmails.length === 0 
+                  {bgcEmails.length === 0
                     ? 'Henüz kayıtlı BGC verisi yok. "Yeni Tara" butonuna tıklayın.'
                     : 'Bu zaman aralığında BGC verisi bulunamadı.'
                   }
@@ -448,15 +639,35 @@ export default function BgcComplete() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={selectAll}
+                          onCheckedChange={(checked) => setSelectAll(!!checked)}
+                        />
+                      </TableHead>
                       <TableHead className="font-mono">Hesap</TableHead>
                       <TableHead className="font-mono">BGC Complete</TableHead>
                       <TableHead className="font-mono">İlk Paket</TableHead>
+                      <TableHead className="font-mono">Risk</TableHead>
                       <TableHead className="font-mono">Tarih</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredEmails.map((email) => (
-                      <TableRow key={email.id}>
+                      <TableRow
+                        key={email.id}
+                        className="cursor-pointer hover:bg-muted/50"
+                        onClick={() => {
+                          setSelectedAccount(email.account_email);
+                          setTimelineOpen(true);
+                        }}
+                      >
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={selectedEmails.has(email.id)}
+                            onCheckedChange={() => toggleEmailSelection(email.id)}
+                          />
+                        </TableCell>
                         <TableCell className="font-mono text-sm">
                           {email.account_email}
                         </TableCell>
@@ -485,6 +696,9 @@ export default function BgcComplete() {
                             <span className="text-muted-foreground text-xs font-mono">-</span>
                           )}
                         </TableCell>
+                        <TableCell>
+                          {getRiskBadge(email.account_email)}
+                        </TableCell>
                         <TableCell className="font-mono text-sm text-muted-foreground">
                           {format(new Date(email.email_date), 'dd/MM/yyyy HH:mm')}
                         </TableCell>
@@ -497,6 +711,13 @@ export default function BgcComplete() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Timeline Drawer */}
+      <AccountTimeline
+        accountEmail={selectedAccount}
+        open={timelineOpen}
+        onOpenChange={setTimelineOpen}
+      />
     </DashboardLayout>
   );
 }

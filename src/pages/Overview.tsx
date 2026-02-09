@@ -6,16 +6,17 @@ import { useAuth } from "@/hooks/useAuth";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { 
-  Users, 
-  Shield, 
-  Mail, 
-  Banknote, 
-  TrendingUp, 
+import {
+  Users,
+  Shield,
+  Mail,
+  Banknote,
+  TrendingUp,
   TrendingDown,
   Activity,
   DollarSign,
-  ArrowRight
+  ArrowRight,
+  CheckCircle
 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from "recharts";
 
@@ -39,14 +40,16 @@ const Overview = () => {
   const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [canViewCash, setCanViewCash] = useState(false);
+  const [canViewBgcComplete, setCanViewBgcComplete] = useState(false);
 
-  // Check cash permission
+  // Check permissions
   useEffect(() => {
-    const checkCashPermission = async () => {
+    const checkPermissions = async () => {
       if (!user) return;
-      
+
       if (isAdmin) {
         setCanViewCash(true);
+        setCanViewBgcComplete(true);
         return;
       }
 
@@ -54,7 +57,7 @@ const Overview = () => {
         .from("user_roles")
         .select(`
           custom_role_id,
-          role_permissions!inner(can_view_cash, can_manage_cash)
+          role_permissions!inner(can_view_cash, can_manage_cash, can_view_bgc_complete)
         `)
         .eq("user_id", user.id)
         .single();
@@ -62,10 +65,11 @@ const Overview = () => {
       if (data?.role_permissions) {
         const perms = data.role_permissions as any;
         setCanViewCash(perms.can_view_cash || perms.can_manage_cash || false);
+        setCanViewBgcComplete(perms.can_view_bgc_complete || false);
       }
     };
 
-    checkCashPermission();
+    checkPermissions();
   }, [user, isAdmin]);
 
   // Fetch email accounts stats
@@ -159,6 +163,60 @@ const Overview = () => {
     },
     enabled: isAdmin
   });
+
+  // Fetch BGC stats
+  const { data: bgcStats, isLoading: bgcLoading } = useQuery({
+    queryKey: ["bgc-stats"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("bgc_complete_emails")
+        .select("account_email, email_type, email_date");
+
+      if (error) throw error;
+
+      const now = new Date();
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+      // Unique accounts per type
+      const bgcAccounts = new Set<string>();
+      const deactAccounts = new Set<string>();
+      const fpAccounts = new Set<string>();
+      const weekDeact = new Set<string>();
+      const weekFp = new Set<string>();
+
+      data.forEach((row: any) => {
+        const emailDate = new Date(row.email_date);
+        if (row.email_type === 'bgc_complete') bgcAccounts.add(row.account_email);
+        if (row.email_type === 'deactivated') {
+          deactAccounts.add(row.account_email);
+          if (emailDate >= weekAgo) weekDeact.add(row.account_email);
+        }
+        if (row.email_type === 'first_package') {
+          fpAccounts.add(row.account_email);
+          if (emailDate >= weekAgo) weekFp.add(row.account_email);
+        }
+      });
+
+      const clearCount = [...bgcAccounts].filter(e => !deactAccounts.has(e)).length;
+
+      return {
+        totalClear: clearCount,
+        totalDeactivated: deactAccounts.size,
+        totalFirstPackage: fpAccounts.size,
+        weekDeactivated: weekDeact.size,
+        weekFirstPackage: weekFp.size,
+      };
+    },
+    enabled: canViewBgcComplete,
+    refetchInterval: 30000
+  });
+
+  // BGC pie chart data
+  const bgcPieData = bgcStats ? [
+    { name: 'Clear', value: bgcStats.totalClear, color: '#10b981' },
+    { name: 'Deaktive', value: bgcStats.totalDeactivated, color: '#ef4444' },
+    { name: 'İlk Paket', value: bgcStats.totalFirstPackage, color: '#f59e0b' },
+  ].filter(d => d.value > 0) : [];
 
   // Prepare pie chart data
   const pieChartData = accountStats?.byStatus 
@@ -390,6 +448,96 @@ const Overview = () => {
             </Card>
           )}
         </div>
+
+        {/* BGC Stats Section */}
+        {canViewBgcComplete && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* BGC Mini Stats */}
+            <Card className="bg-card/50 border-border/50 backdrop-blur">
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                  <CheckCircle className="h-5 w-5 text-emerald-500" />
+                  BGC İstatistikleri
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {bgcLoading ? (
+                  <div className="space-y-3">
+                    <Skeleton className="h-8 w-full" />
+                    <Skeleton className="h-8 w-full" />
+                  </div>
+                ) : bgcStats ? (
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-emerald-500">{bgcStats.totalClear}</div>
+                      <div className="text-xs text-muted-foreground">Clear</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-red-500">{bgcStats.weekDeactivated}</div>
+                      <div className="text-xs text-muted-foreground">Deaktive (hafta)</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-orange-500">{bgcStats.weekFirstPackage}</div>
+                      <div className="text-xs text-muted-foreground">İlk Paket (hafta)</div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center text-muted-foreground text-sm">Veri yok</div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* BGC Pie Chart */}
+            <Card className="bg-card/50 border-border/50 backdrop-blur">
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                  <CheckCircle className="h-5 w-5 text-primary" />
+                  BGC Dağılımı
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {bgcLoading ? (
+                  <div className="h-48 flex items-center justify-center">
+                    <Skeleton className="h-32 w-32 rounded-full" />
+                  </div>
+                ) : bgcPieData.length > 0 ? (
+                  <div className="h-48">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={bgcPieData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={40}
+                          outerRadius={60}
+                          paddingAngle={5}
+                          dataKey="value"
+                          label={({ name, value }) => `${name}: ${value}`}
+                        >
+                          {bgcPieData.map((entry, index) => (
+                            <Cell key={`bgc-cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: 'hsl(var(--card))',
+                            border: '1px solid hsl(var(--border))',
+                            borderRadius: '8px'
+                          }}
+                        />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="h-48 flex items-center justify-center text-muted-foreground text-sm">
+                    BGC verisi bulunamadı
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* Quick Access Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

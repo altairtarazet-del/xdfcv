@@ -12,6 +12,142 @@ const SMTP_API_URL = 'https://api.smtp.dev';
 // Batch size for parallel processing
 const ACCOUNT_BATCH_SIZE = 10;
 
+// --- AI Helper Functions ---
+
+async function classifyEmailWithAI(subject: string, bodyText: string): Promise<{ email_type: string; confidence: number }> {
+  const apiKey = Deno.env.get('SYNTHETIC_API_KEY');
+  const apiUrl = Deno.env.get('SYNTHETIC_API_URL') || 'https://api.openai.com/v1';
+
+  if (!apiKey) return { email_type: 'none', confidence: 0 };
+
+  try {
+    const response = await fetch(`${apiUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: [
+          {
+            role: 'system',
+            content: 'You classify DoorDash/Dasher emails. Return JSON only. Types: bgc_complete, deactivated, first_package, none. Fields: email_type, confidence (0-1).'
+          },
+          {
+            role: 'user',
+            content: `Subject: ${subject}\n\nBody: ${(bodyText || '').slice(0, 1000)}`
+          }
+        ],
+        temperature: 0,
+        max_tokens: 100
+      })
+    });
+
+    if (!response.ok) return { email_type: 'none', confidence: 0 };
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    const parsed = JSON.parse(content.replace(/```json?\n?/g, '').replace(/```/g, '').trim());
+    return { email_type: parsed.email_type || 'none', confidence: parsed.confidence || 0 };
+  } catch (e) {
+    console.error('[AI] Classification error:', e);
+    return { email_type: 'none', confidence: 0 };
+  }
+}
+
+async function extractEmailData(subject: string, bodyText: string, emailType: string): Promise<Record<string, any>> {
+  const apiKey = Deno.env.get('SYNTHETIC_API_KEY');
+  const apiUrl = Deno.env.get('SYNTHETIC_API_URL') || 'https://api.openai.com/v1';
+
+  if (!apiKey) return {};
+
+  try {
+    const response = await fetch(`${apiUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: [
+          {
+            role: 'system',
+            content: 'Extract structured data from DoorDash/Dasher email. Return JSON with fields: check_result, activation_date, dasher_region, reference_number, deactivation_reason, raw_summary. Use null for unavailable fields.'
+          },
+          {
+            role: 'user',
+            content: `Type: ${emailType}\nSubject: ${subject}\n\nBody: ${(bodyText || '').slice(0, 2000)}`
+          }
+        ],
+        temperature: 0,
+        max_tokens: 300
+      })
+    });
+
+    if (!response.ok) return {};
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    return JSON.parse(content.replace(/```json?\n?/g, '').replace(/```/g, '').trim());
+  } catch (e) {
+    console.error('[AI] Extraction error:', e);
+    return {};
+  }
+}
+
+async function fetchEmailBody(accountId: string, mailboxId: string, messageId: string, headers: Record<string, string>): Promise<string> {
+  try {
+    const response = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailboxId}/messages/${messageId}`, { headers });
+    if (!response.ok) return '';
+
+    const data = await response.json();
+    // SMTP.dev returns text and/or html body
+    return data.text || data.html?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || '';
+  } catch (e) {
+    console.error('[FETCH_BODY] Error:', e);
+    return '';
+  }
+}
+
+async function createNotifications(
+  supabaseClient: any,
+  type: string,
+  title: string,
+  message: string,
+  metadata: Record<string, any> = {}
+) {
+  try {
+    // Get all users with BGC permission (admins + users with can_view_bgc_complete)
+    const { data: adminRoles } = await supabaseClient
+      .from('user_roles')
+      .select('user_id')
+      .eq('role', 'admin');
+
+    const { data: bgcRoles } = await supabaseClient
+      .from('user_roles')
+      .select('user_id, role_permissions!inner(can_view_bgc_complete)')
+      .not('custom_role_id', 'is', null);
+
+    const userIds = new Set<string>();
+    (adminRoles || []).forEach((r: any) => userIds.add(r.user_id));
+    (bgcRoles || []).forEach((r: any) => {
+      if (r.role_permissions?.can_view_bgc_complete) userIds.add(r.user_id);
+    });
+
+    if (userIds.size === 0) return;
+
+    const notifications = Array.from(userIds).map(userId => ({
+      user_id: userId,
+      type,
+      title,
+      message,
+      metadata
+    }));
+
+    const { error } = await supabaseClient.from('notifications').insert(notifications);
+    if (error) console.error('[NOTIFY] Insert error:', error);
+    else console.log(`[NOTIFY] Created ${notifications.length} notifications of type ${type}`);
+  } catch (e) {
+    console.error('[NOTIFY] Error:', e);
+  }
+}
+
 // Helper: Scan a single account for BGC Complete and Deactivation patterns
 async function scanSingleAccountBgc(
   account: any,
@@ -826,19 +962,55 @@ serve(async (req) => {
         
         // 6. Insert new emails to database (both BGC complete and deactivated)
         const allNewEmails = [...newBgcEmails, ...newDeactivatedEmails];
-        
+
         if (allNewEmails.length > 0) {
-          const { error: insertError } = await supabaseClient
+          const { data: insertedEmails, error: insertError } = await supabaseClient
             .from('bgc_complete_emails')
             .upsert(allNewEmails, {
               onConflict: 'account_id,mailbox_id,message_id',
               ignoreDuplicates: true
-            });
+            })
+            .select('id, account_email, email_type, email_date');
 
           if (insertError) {
             console.error('[BGC] Error inserting emails:', insertError);
           } else {
             console.log(`[BGC] Inserted ${allNewEmails.length} new emails to database (${newBgcEmails.length} BGC, ${newDeactivatedEmails.length} deactivated)`);
+
+            // Create account_events for new emails
+            if (insertedEmails && insertedEmails.length > 0) {
+              const events = insertedEmails.map((e: any) => ({
+                account_email: e.account_email,
+                event_type: e.email_type === 'bgc_complete' ? 'bgc_complete' : 'deactivated',
+                event_date: e.email_date,
+                source_email_id: e.id
+              }));
+              const { error: eventError } = await supabaseClient.from('account_events').insert(events);
+              if (eventError) console.error('[BGC] Error inserting events:', eventError);
+            }
+          }
+
+          // Send notifications
+          if (newBgcEmails.length > 0) {
+            const emails = [...new Set(newBgcEmails.map(e => e.account_email))];
+            await createNotifications(
+              supabaseClient,
+              'new_bgc_complete',
+              `${newBgcEmails.length} Yeni BGC Complete`,
+              `Yeni BGC tamamlanan hesaplar: ${emails.slice(0, 3).map(e => e.split('@')[0]).join(', ')}${emails.length > 3 ? ` ve ${emails.length - 3} daha` : ''}`,
+              { count: newBgcEmails.length, emails: emails.slice(0, 10) }
+            );
+          }
+
+          if (newDeactivatedEmails.length > 0) {
+            const emails = [...new Set(newDeactivatedEmails.map(e => e.account_email))];
+            await createNotifications(
+              supabaseClient,
+              'new_deactivation',
+              `${newDeactivatedEmails.length} Yeni Deaktivasyon`,
+              `Deaktive edilen hesaplar: ${emails.slice(0, 3).map(e => e.split('@')[0]).join(', ')}${emails.length > 3 ? ` ve ${emails.length - 3} daha` : ''}`,
+              { count: newDeactivatedEmails.length, emails: emails.slice(0, 10) }
+            );
           }
         }
         
@@ -1022,6 +1194,165 @@ serve(async (req) => {
           scannedAccounts: clearAccounts.length,
           messagesScanned,
           elapsedMs
+        };
+        break;
+      }
+
+      case 'classifyAndExtract': {
+        // On-demand AI classification + data extraction for a single email
+        if (!supabaseClient) throw new Error('Supabase not configured');
+        const { emailId } = body;
+        if (!emailId) throw new Error('emailId required');
+
+        // Fetch email record
+        const { data: emailRecord, error: emailErr } = await supabaseClient
+          .from('bgc_complete_emails')
+          .select('*')
+          .eq('id', emailId)
+          .single();
+
+        if (emailErr || !emailRecord) throw new Error('Email not found');
+
+        // Fetch email body from SMTP.dev
+        const bodyText = await fetchEmailBody(
+          emailRecord.account_id,
+          emailRecord.mailbox_id,
+          emailRecord.message_id,
+          headers
+        );
+
+        // AI classification
+        const classification = await classifyEmailWithAI(emailRecord.subject, bodyText);
+
+        // AI extraction
+        const extracted = await extractEmailData(
+          emailRecord.subject,
+          bodyText,
+          classification.email_type !== 'none' ? classification.email_type : emailRecord.email_type
+        );
+
+        // Update the email record
+        const { error: updateErr } = await supabaseClient
+          .from('bgc_complete_emails')
+          .update({
+            ai_classified: true,
+            ai_confidence: classification.confidence,
+            extracted_data: extracted,
+            email_body_fetched: bodyText.length > 0
+          })
+          .eq('id', emailId);
+
+        if (updateErr) console.error('[AI] Update error:', updateErr);
+
+        result = {
+          classification,
+          extracted_data: extracted,
+          body_length: bodyText.length,
+          success: !updateErr
+        };
+        break;
+      }
+
+      case 'calculateRiskScores': {
+        if (!supabaseClient) throw new Error('Supabase not configured');
+
+        // Get all BGC complete accounts
+        const { data: bgcEmails } = await supabaseClient
+          .from('bgc_complete_emails')
+          .select('account_email, email_date, email_type')
+          .order('email_date', { ascending: true });
+
+        if (!bgcEmails || bgcEmails.length === 0) {
+          result = { calculated: 0 };
+          break;
+        }
+
+        // Build per-account data
+        const accountData = new Map<string, { bgcDate?: Date; deactDate?: Date; firstPkgDate?: Date }>();
+        for (const email of bgcEmails) {
+          if (!accountData.has(email.account_email)) {
+            accountData.set(email.account_email, {});
+          }
+          const acct = accountData.get(email.account_email)!;
+          const date = new Date(email.email_date);
+          if (email.email_type === 'bgc_complete' && (!acct.bgcDate || date < acct.bgcDate)) acct.bgcDate = date;
+          if (email.email_type === 'deactivated' && (!acct.deactDate || date < acct.deactDate)) acct.deactDate = date;
+          if (email.email_type === 'first_package' && (!acct.firstPkgDate || date < acct.firstPkgDate)) acct.firstPkgDate = date;
+        }
+
+        // Calculate average days-to-deactivation from historical data
+        const deactDays: number[] = [];
+        for (const [, data] of accountData) {
+          if (data.bgcDate && data.deactDate) {
+            deactDays.push((data.deactDate.getTime() - data.bgcDate.getTime()) / (1000 * 60 * 60 * 24));
+          }
+        }
+        const avgDeactDays = deactDays.length > 0 ? deactDays.reduce((a, b) => a + b, 0) / deactDays.length : 30;
+
+        // Calculate risk for Clear accounts only
+        const now = new Date();
+        const riskScores: { account_email: string; risk_score: number; risk_factors: any[] }[] = [];
+
+        for (const [email, data] of accountData) {
+          if (data.deactDate) continue; // Already deactivated, skip
+          if (!data.bgcDate) continue;
+
+          const daysSinceBgc = (now.getTime() - data.bgcDate.getTime()) / (1000 * 60 * 60 * 24);
+          const factors: string[] = [];
+          let score = 0;
+
+          // Time-based risk: how close to avg deactivation time
+          const timeRatio = daysSinceBgc / avgDeactDays;
+          if (timeRatio >= 1.0) {
+            score += 40;
+            factors.push(`BGC'den bu yana ${Math.round(daysSinceBgc)} gün (ortalama: ${Math.round(avgDeactDays)} gün)`);
+          } else if (timeRatio >= 0.7) {
+            score += 25;
+            factors.push(`BGC'den bu yana ${Math.round(daysSinceBgc)} gün (ortalamanın %${Math.round(timeRatio * 100)}'i)`);
+          } else if (timeRatio >= 0.4) {
+            score += 10;
+          }
+
+          // Missing first package after 14+ days
+          if (!data.firstPkgDate && daysSinceBgc >= 14) {
+            score += 25;
+            factors.push(`14+ gün olmasına rağmen ilk paket yok`);
+          }
+
+          // Very new account (< 3 days) - low risk
+          if (daysSinceBgc < 3) {
+            score = Math.max(0, score - 15);
+          }
+
+          riskScores.push({
+            account_email: email,
+            risk_score: Math.min(100, Math.max(0, score)),
+            risk_factors: factors
+          });
+        }
+
+        // Upsert risk scores
+        if (riskScores.length > 0) {
+          const upsertData = riskScores.map(rs => ({
+            account_email: rs.account_email,
+            risk_score: rs.risk_score,
+            risk_factors: rs.risk_factors,
+            last_calculated_at: new Date().toISOString()
+          }));
+
+          const { error: riskErr } = await supabaseClient
+            .from('bgc_risk_scores')
+            .upsert(upsertData, { onConflict: 'account_email' });
+
+          if (riskErr) console.error('[RISK] Upsert error:', riskErr);
+        }
+
+        result = {
+          calculated: riskScores.length,
+          avgDeactivationDays: Math.round(avgDeactDays),
+          highRisk: riskScores.filter(r => r.risk_score >= 50).length,
+          mediumRisk: riskScores.filter(r => r.risk_score >= 25 && r.risk_score < 50).length,
+          lowRisk: riskScores.filter(r => r.risk_score < 25).length
         };
         break;
       }
