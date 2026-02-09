@@ -1279,13 +1279,11 @@ async function scanSingleAccountBgcSubmitted(
               email_type: 'bgc_info_needed'
             });
             foundInfoNeeded = true;
-            // info_needed from Checkr also counts as submitted
-            if (!foundSubmitted) foundSubmitted = true;
             console.log(`[BGC_INFO_NEEDED] DETECTED: "${subject}" from=${senderAddress} account=${accountEmail}`);
           }
 
-          // Check submitted
-          if (!foundSubmitted && isBgcSubmittedSignal(subject, senderAddress) && !existingSubmittedIds.has(uniqueKey)) {
+          // Check submitted (skip if this same message was already flagged as info_needed)
+          if (!foundSubmitted && !isBgcInfoNeededSignal(subject, senderAddress) && isBgcSubmittedSignal(subject, senderAddress) && !existingSubmittedIds.has(uniqueKey)) {
             bgcSubmittedEmails.push({
               account_id: accountId,
               account_email: accountEmail,

@@ -195,6 +195,13 @@ export default function BgcComplete() {
       const rows: AccountRow[] = [];
       for (const s of (scanRes.data || [])) {
         const d = emailMap.get(s.account_email);
+        // info_needed is only valid if there's no newer submitted/verified email after it
+        let infoNeededDate = d?.bgcInfoNeededDate || null;
+        if (infoNeededDate && d?.bgcSubmittedDate) {
+          if (new Date(d.bgcSubmittedDate) > new Date(infoNeededDate)) {
+            infoNeededDate = null; // resolved — newer Checkr email exists
+          }
+        }
         rows.push({
           account_email: s.account_email,
           status: getStatus(!!d?.bgcDate, !!d?.considerDate, !!d?.deactivatedDate, !!d?.firstPackageDate, !!d?.bgcSubmittedDate),
@@ -203,7 +210,7 @@ export default function BgcComplete() {
           deactivatedDate: d?.deactivatedDate || null,
           firstPackageDate: d?.firstPackageDate || null,
           bgcSubmittedDate: d?.bgcSubmittedDate || null,
-          bgcInfoNeededDate: d?.bgcInfoNeededDate || null,
+          bgcInfoNeededDate: infoNeededDate,
         });
       }
 
