@@ -5,7 +5,7 @@
   "crons": [
     {
       "path": "/api/cron/bgc-scan",
-      "schedule": "0 */12 * * *"
+      "schedule": "0 6 * * *"
     }
   ]
 }

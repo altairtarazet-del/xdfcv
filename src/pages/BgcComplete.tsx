@@ -553,7 +553,7 @@ export default function BgcComplete() {
           <div className="flex items-center gap-2 text-sm text-muted-foreground font-mono">
             <Clock size={14} />
             Son tarama: {format(lastScan, 'dd/MM/yyyy HH:mm:ss')}
-            <span className="text-xs text-primary/60 ml-2">| Otomatik tarama: her 12 saatte</span>
+            <span className="text-xs text-primary/60 ml-2">| Otomatik tarama: her gün 06:00</span>
           </div>
         )}
 
