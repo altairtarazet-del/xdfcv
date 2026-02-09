@@ -24,26 +24,29 @@ import {
   Download,
   RefreshCw,
   Hourglass,
+  AlertTriangle,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { useAuth } from '@/hooks/useAuth';
 
 // Her hesabın TEK bir durumu var
-type AccountStatus = 'bgc_bekliyor' | 'clear' | 'aktif' | 'kapandi';
+type AccountStatus = 'bgc_bekliyor' | 'clear' | 'consider' | 'aktif' | 'kapandi';
 
 interface AccountRow {
   account_email: string;
   status: AccountStatus;
   bgcDate: string | null;
+  considerDate: string | null;
   deactivatedDate: string | null;
   firstPackageDate: string | null;
 }
 
-function getStatus(bgcDone: boolean, deactivated: boolean, firstPackage: boolean): AccountStatus {
+function getStatus(bgcClear: boolean, bgcConsider: boolean, deactivated: boolean, firstPackage: boolean): AccountStatus {
   if (deactivated) return 'kapandi';
   if (firstPackage) return 'aktif';
-  if (bgcDone) return 'clear';
+  if (bgcConsider) return 'consider';
+  if (bgcClear) return 'clear';
   return 'bgc_bekliyor';
 }
 
@@ -74,6 +77,15 @@ const STATUS_CONFIG: Record<AccountStatus, {
     icon: CheckCircle,
     tabColor: 'data-[state=active]:text-blue-400',
   },
+  consider: {
+    label: 'Consider',
+    description: 'BGC sonucu consider, inceleme gerekli',
+    color: 'text-orange-400',
+    bgColor: 'bg-orange-500/20',
+    borderColor: 'border-orange-500/50',
+    icon: AlertTriangle,
+    tabColor: 'data-[state=active]:text-orange-400',
+  },
   aktif: {
     label: 'Aktif',
     description: 'İlk paket atılmış, para alınabilir',
@@ -94,12 +106,13 @@ const STATUS_CONFIG: Record<AccountStatus, {
   },
 };
 
-const TAB_ORDER: AccountStatus[] = ['bgc_bekliyor', 'clear', 'aktif', 'kapandi'];
+const TAB_ORDER: AccountStatus[] = ['bgc_bekliyor', 'clear', 'consider', 'aktif', 'kapandi'];
 
 function getDisplayDate(account: AccountRow): string | null {
   switch (account.status) {
     case 'kapandi': return account.deactivatedDate;
     case 'aktif': return account.firstPackageDate;
+    case 'consider': return account.considerDate;
     default: return account.bgcDate;
   }
 }
@@ -108,6 +121,7 @@ function getDateLabel(status: AccountStatus): string {
   switch (status) {
     case 'kapandi': return 'Kapanma Tarihi';
     case 'aktif': return 'İlk Paket Tarihi';
+    case 'consider': return 'BGC Tarihi';
     case 'clear': return 'BGC Tarihi';
     case 'bgc_bekliyor': return 'Kayıt Tarihi';
   }
@@ -133,13 +147,14 @@ export default function BgcComplete() {
         supabase.from('bgc_complete_emails').select('account_email, email_type, email_date').order('email_date', { ascending: false }),
       ]);
 
-      const emailMap = new Map<string, { bgcDate: string | null; deactivatedDate: string | null; firstPackageDate: string | null }>();
+      const emailMap = new Map<string, { bgcDate: string | null; considerDate: string | null; deactivatedDate: string | null; firstPackageDate: string | null }>();
       for (const email of (emailRes.data || [])) {
         if (!emailMap.has(email.account_email)) {
-          emailMap.set(email.account_email, { bgcDate: null, deactivatedDate: null, firstPackageDate: null });
+          emailMap.set(email.account_email, { bgcDate: null, considerDate: null, deactivatedDate: null, firstPackageDate: null });
         }
         const entry = emailMap.get(email.account_email)!;
         if (email.email_type === 'bgc_complete' && !entry.bgcDate) entry.bgcDate = email.email_date;
+        if (email.email_type === 'bgc_consider' && !entry.considerDate) entry.considerDate = email.email_date;
         if (email.email_type === 'deactivated' && !entry.deactivatedDate) entry.deactivatedDate = email.email_date;
         if (email.email_type === 'first_package' && !entry.firstPackageDate) entry.firstPackageDate = email.email_date;
       }
@@ -148,8 +163,9 @@ export default function BgcComplete() {
         const d = emailMap.get(s.account_email);
         return {
           account_email: s.account_email,
-          status: getStatus(!!d?.bgcDate, !!d?.deactivatedDate, !!d?.firstPackageDate),
+          status: getStatus(!!d?.bgcDate, !!d?.considerDate, !!d?.deactivatedDate, !!d?.firstPackageDate),
           bgcDate: d?.bgcDate || null,
+          considerDate: d?.considerDate || null,
           deactivatedDate: d?.deactivatedDate || null,
           firstPackageDate: d?.firstPackageDate || null,
         };
@@ -187,11 +203,23 @@ export default function BgcComplete() {
       });
       if (fpError) throw fpError;
 
+      // Recheck existing BGC emails for consider status
+      const { data: recheckResult } = await supabase.functions.invoke('smtp-api', {
+        body: { action: 'recheckBgcConsider' },
+      });
+
       await fetchData();
+
+      const parts = [];
+      if (bgcResult?.newBgcFound) parts.push(`${bgcResult.newBgcFound} clear`);
+      if (bgcResult?.newConsiderFound) parts.push(`${bgcResult.newConsiderFound} consider`);
+      if (bgcResult?.newDeactivatedFound) parts.push(`${bgcResult.newDeactivatedFound} kapanma`);
+      if (fpResult?.newFirstPackageFound) parts.push(`${fpResult.newFirstPackageFound} ilk paket`);
+      if (recheckResult?.considersFound) parts.push(`${recheckResult.considersFound} consider tespit`);
 
       toast({
         title: 'Tarama Tamamlandı',
-        description: `${bgcResult?.newBgcFound || 0} yeni BGC, ${bgcResult?.newDeactivatedFound || 0} kapanma, ${fpResult?.newFirstPackageFound || 0} ilk paket.`,
+        description: parts.length > 0 ? parts.join(', ') + '.' : 'Yeni sonuç yok.',
       });
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Hata', description: error.message || 'Tarama hatası' });
@@ -205,6 +233,7 @@ export default function BgcComplete() {
     const result: Record<AccountStatus, AccountRow[]> = {
       bgc_bekliyor: [],
       clear: [],
+      consider: [],
       aktif: [],
       kapandi: [],
     };
@@ -225,6 +254,11 @@ export default function BgcComplete() {
       const db = b.bgcDate ? new Date(b.bgcDate).getTime() : 0;
       return db - da;
     });
+    result.consider.sort((a, b) => {
+      const da = a.considerDate ? new Date(a.considerDate).getTime() : 0;
+      const db = b.considerDate ? new Date(b.considerDate).getTime() : 0;
+      return db - da;
+    });
     result.aktif.sort((a, b) => {
       const da = a.firstPackageDate ? new Date(a.firstPackageDate).getTime() : 0;
       const db = b.firstPackageDate ? new Date(b.firstPackageDate).getTime() : 0;
@@ -240,7 +274,7 @@ export default function BgcComplete() {
   }, [accounts, searchQuery]);
 
   const stats = useMemo(() => {
-    const counts: Record<AccountStatus, number> = { bgc_bekliyor: 0, clear: 0, aktif: 0, kapandi: 0 };
+    const counts: Record<AccountStatus, number> = { bgc_bekliyor: 0, clear: 0, consider: 0, aktif: 0, kapandi: 0 };
     for (const a of accounts) counts[a.status]++;
     return counts;
   }, [accounts]);
@@ -316,7 +350,7 @@ export default function BgcComplete() {
         </div>
 
         {/* Stats — sadece bilgilendirici */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {(Object.entries(STATUS_CONFIG) as [AccountStatus, typeof STATUS_CONFIG[AccountStatus]][]).map(([key, cfg]) => {
             const Icon = cfg.icon;
             return (
@@ -357,7 +391,7 @@ export default function BgcComplete() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AccountStatus)}>
-          <TabsList className="w-full grid grid-cols-4 h-auto">
+          <TabsList className="w-full grid grid-cols-5 h-auto">
             {TAB_ORDER.map((key) => {
               const cfg = STATUS_CONFIG[key];
               const Icon = cfg.icon;

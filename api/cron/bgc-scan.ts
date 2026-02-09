@@ -43,11 +43,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const fpResult = await fpResponse.json();
 
+    // 3. Recheck existing BGC emails for consider status
+    const considerResponse = await fetch(edgeFunctionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${serviceRoleKey}`,
+      },
+      body: JSON.stringify({ action: 'recheckBgcConsider' }),
+    });
+
+    const considerResult = await considerResponse.json();
+
     return res.status(200).json({
       success: true,
       timestamp: new Date().toISOString(),
       bgcScan: bgcResult,
       firstPackageScan: fpResult,
+      considerRecheck: considerResult,
     });
   } catch (error: any) {
     console.error('Cron BGC scan error:', error);

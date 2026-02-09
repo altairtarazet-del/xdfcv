@@ -638,6 +638,66 @@ async function fetchEmailBody(accountId: string, mailboxId: string, messageId: s
   }
 }
 
+// Check if a BGC complete email's report contains "consider" result
+// Checks both the email body and the background_report attachment
+async function checkBgcReportForConsider(
+  accountId: string,
+  mailboxId: string,
+  messageId: string,
+  headers: Record<string, string>
+): Promise<boolean> {
+  try {
+    // Fetch full message to get body and attachments
+    const msgRes = await fetch(
+      `${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailboxId}/messages/${messageId}`,
+      { headers }
+    );
+    if (!msgRes.ok) return false;
+
+    const msgData = await msgRes.json();
+
+    // Check email body first
+    const bodyText = msgData.text || msgData.html?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || '';
+    if (/\bconsider\b/i.test(bodyText)) {
+      console.log(`[BGC_CONSIDER] "consider" found in email body`);
+      return true;
+    }
+
+    // Check attachments for background_report file
+    const attachments = msgData.attachments || [];
+    const bgReport = attachments.find((att: any) => {
+      const filename = (att.filename || att.name || '').toLowerCase();
+      return filename.includes('background') || filename.includes('report');
+    });
+
+    if (!bgReport) return false;
+
+    console.log(`[BGC_CONSIDER] Found report attachment: ${bgReport.filename || bgReport.name}, downloading...`);
+
+    // Download the attachment
+    const attRes = await fetch(
+      `${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailboxId}/messages/${messageId}/attachments/${bgReport.id}`,
+      { headers }
+    );
+    if (!attRes.ok) return false;
+
+    // Read raw content and search for "consider"
+    const arrayBuffer = await attRes.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    const textDecoder = new TextDecoder('utf-8', { fatal: false });
+    const rawText = textDecoder.decode(bytes);
+
+    const found = /\bconsider\b/i.test(rawText);
+    if (found) {
+      console.log(`[BGC_CONSIDER] "consider" found in attachment`);
+    }
+    return found;
+  } catch (e) {
+    console.error('[BGC_CONSIDER] Error checking report:', e);
+    return false;
+  }
+}
+
 async function createNotifications(
   supabaseClient: any,
   type: string,
@@ -764,7 +824,10 @@ async function scanSingleAccountBgc(
                 mbSkippedMessages++;
                 reachedOldMessagesForBgc = true;
               } else if (!existingBgcIds.has(uniqueKey)) {
-                mbBgcEmails.push({ ...baseEmailData, email_type: 'bgc_complete' });
+                // Check if BGC report result is "consider"
+                const isConsider = await checkBgcReportForConsider(account.id, mailbox.id, msg.id, headers);
+                console.log(`[BGC] ${account.address}: BGC complete, consider=${isConsider}`);
+                mbBgcEmails.push({ ...baseEmailData, email_type: isConsider ? 'bgc_consider' : 'bgc_complete' });
               }
             }
             
@@ -1394,7 +1457,7 @@ serve(async (req) => {
         const { data: existingBgcEmails } = await supabaseClient
           .from('bgc_complete_emails')
           .select('account_id, account_email, mailbox_id, message_id')
-          .eq('email_type', 'bgc_complete');
+          .in('email_type', ['bgc_complete', 'bgc_consider']);
         
         const existingBgcIds = new Set(
           (existingBgcEmails || []).map((e: any) => `${e.account_id}_${e.mailbox_id}_${e.message_id}`)
@@ -1589,7 +1652,7 @@ serve(async (req) => {
             if (insertedEmails && insertedEmails.length > 0) {
               const events = insertedEmails.map((e: any) => ({
                 account_email: e.account_email,
-                event_type: e.email_type === 'bgc_complete' ? 'bgc_complete' : 'deactivated',
+                event_type: e.email_type, // bgc_complete, bgc_consider, or deactivated
                 event_date: e.email_date,
                 source_email_id: e.id
               }));
@@ -1598,15 +1661,29 @@ serve(async (req) => {
             }
           }
 
-          // Send notifications
-          if (newBgcEmails.length > 0) {
-            const emails = [...new Set(newBgcEmails.map(e => e.account_email))];
+          // Send notifications — separate clear and consider
+          const newClearEmails = newBgcEmails.filter(e => e.email_type === 'bgc_complete');
+          const newConsiderEmails = newBgcEmails.filter(e => e.email_type === 'bgc_consider');
+
+          if (newClearEmails.length > 0) {
+            const emails = [...new Set(newClearEmails.map(e => e.account_email))];
             await createNotifications(
               supabaseClient,
               'new_bgc_complete',
-              `${newBgcEmails.length} Yeni BGC Complete`,
-              `Yeni BGC tamamlanan hesaplar: ${emails.slice(0, 3).map(e => e.split('@')[0]).join(', ')}${emails.length > 3 ? ` ve ${emails.length - 3} daha` : ''}`,
-              { count: newBgcEmails.length, emails: emails.slice(0, 10) }
+              `${newClearEmails.length} Yeni BGC Clear`,
+              `BGC Clear hesaplar: ${emails.slice(0, 3).map(e => e.split('@')[0]).join(', ')}${emails.length > 3 ? ` ve ${emails.length - 3} daha` : ''}`,
+              { count: newClearEmails.length, emails: emails.slice(0, 10) }
+            );
+          }
+
+          if (newConsiderEmails.length > 0) {
+            const emails = [...new Set(newConsiderEmails.map(e => e.account_email))];
+            await createNotifications(
+              supabaseClient,
+              'new_bgc_consider',
+              `⚠️ ${newConsiderEmails.length} BGC Consider`,
+              `Consider sonuçlu hesaplar: ${emails.slice(0, 3).map(e => e.split('@')[0]).join(', ')}${emails.length > 3 ? ` ve ${emails.length - 3} daha` : ''}`,
+              { count: newConsiderEmails.length, emails: emails.slice(0, 10) }
             );
           }
 
@@ -1628,21 +1705,106 @@ serve(async (req) => {
           .select('*', { count: 'exact', head: true })
           .eq('email_type', 'bgc_complete');
 
+        const { count: totalConsiderInDb } = await supabaseClient
+          .from('bgc_complete_emails')
+          .select('*', { count: 'exact', head: true })
+          .eq('email_type', 'bgc_consider');
+
         const { count: totalDeactivatedInDb } = await supabaseClient
           .from('bgc_complete_emails')
           .select('*', { count: 'exact', head: true })
           .eq('email_type', 'deactivated');
-        
-        console.log(`[BGC] Scan complete. New BGC: ${newBgcEmails.length}, New Deactivated: ${newDeactivatedEmails.length}, Total BGC: ${totalBgcInDb}, Total Deactivated: ${totalDeactivatedInDb}`);
-        
+
+        const newConsiderCount = newBgcEmails.filter(e => e.email_type === 'bgc_consider').length;
+        const newClearCount = newBgcEmails.filter(e => e.email_type === 'bgc_complete').length;
+        console.log(`[BGC] Scan complete. New Clear: ${newClearCount}, New Consider: ${newConsiderCount}, New Deactivated: ${newDeactivatedEmails.length}, Total BGC: ${totalBgcInDb}, Total Consider: ${totalConsiderInDb}, Total Deactivated: ${totalDeactivatedInDb}`);
+
         result = {
-          newBgcFound: newBgcEmails.length,
+          newBgcFound: newClearCount,
+          newConsiderFound: newConsiderCount,
           newDeactivatedFound: newDeactivatedEmails.length,
           totalBgcInDb: totalBgcInDb || 0,
+          totalConsiderInDb: totalConsiderInDb || 0,
           totalDeactivatedInDb: totalDeactivatedInDb || 0,
           elapsedMs,
           accountsScanned: allAccounts.length,
           messagesScanned
+        };
+        break;
+      }
+
+      case 'recheckBgcConsider': {
+        if (!supabaseClient) throw new Error('Supabase not configured');
+
+        console.log('[BGC_CONSIDER] Starting consider recheck for existing emails...');
+        const recheckStart = Date.now();
+        const RECHECK_TIMEOUT_MS = 50000;
+
+        // Get bgc_complete emails that haven't been checked for consider yet
+        const { data: uncheckedEmails } = await supabaseClient
+          .from('bgc_complete_emails')
+          .select('id, account_id, account_email, mailbox_id, message_id')
+          .eq('email_type', 'bgc_complete')
+          .is('extracted_data', null);
+
+        if (!uncheckedEmails || uncheckedEmails.length === 0) {
+          console.log('[BGC_CONSIDER] No unchecked emails found');
+          result = { checked: 0, considersFound: 0, remaining: 0 };
+          break;
+        }
+
+        console.log(`[BGC_CONSIDER] Found ${uncheckedEmails.length} unchecked BGC emails`);
+
+        let checked = 0;
+        let considersFound = 0;
+
+        for (const email of uncheckedEmails) {
+          if (Date.now() - recheckStart > RECHECK_TIMEOUT_MS) {
+            console.log(`[BGC_CONSIDER] Approaching timeout, stopping at ${checked}/${uncheckedEmails.length}`);
+            break;
+          }
+
+          const isConsider = await checkBgcReportForConsider(
+            email.account_id, email.mailbox_id, email.message_id, headers
+          );
+
+          const bgcResult = isConsider ? 'consider' : 'clear';
+
+          // Update email_type and mark as checked via extracted_data
+          await supabaseClient
+            .from('bgc_complete_emails')
+            .update({
+              email_type: isConsider ? 'bgc_consider' : 'bgc_complete',
+              extracted_data: { bgc_result: bgcResult }
+            })
+            .eq('id', email.id);
+
+          if (isConsider) {
+            console.log(`[BGC_CONSIDER] ${email.account_email}: CONSIDER found!`);
+            considersFound++;
+          }
+
+          checked++;
+        }
+
+        const recheckElapsed = Date.now() - recheckStart;
+        console.log(`[BGC_CONSIDER] Recheck complete in ${recheckElapsed}ms: ${checked} checked, ${considersFound} considers found`);
+
+        // Send notification if considers found
+        if (considersFound > 0) {
+          await createNotifications(
+            supabaseClient,
+            'new_bgc_consider',
+            `⚠️ ${considersFound} BGC Consider Tespit Edildi`,
+            `Mevcut hesaplardan ${considersFound} tanesi consider olarak güncellendi.`,
+            { count: considersFound }
+          );
+        }
+
+        result = {
+          checked,
+          considersFound,
+          remaining: uncheckedEmails.length - checked
         };
         break;
       }
