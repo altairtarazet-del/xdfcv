@@ -389,7 +389,7 @@ export default function BgcComplete() {
         <div className="flex items-center justify-center h-[60vh]">
           <Card className="cyber-card border-destructive/50">
             <CardContent className="pt-6">
-              <p className="text-muted-foreground font-mono">Bu sayfaya erisim yetkiniz bulunmuyor.</p>
+              <p className="text-muted-foreground">Bu sayfaya erisim yetkiniz bulunmuyor.</p>
             </CardContent>
           </Card>
         </div>
@@ -413,13 +413,13 @@ export default function BgcComplete() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-2xl font-bold font-mono text-foreground flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
               <CheckCircle className="text-primary" />
               BGC Takip
             </h1>
           </div>
           <div className="flex gap-2">
-            <Button onClick={handleScan} disabled={loading} className="cyber-button">
+            <Button onClick={handleScan} disabled={loading}>
               {loading ? (
                 <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Taraniyor...</>
               ) : (
@@ -439,12 +439,12 @@ export default function BgcComplete() {
             return (
               <Card key={key} className="cyber-card">
                 <CardContent className="pt-3 pb-3">
-                  <span className={`text-xs font-mono flex items-center gap-1 ${cfg.color}`}>
+                  <span className={`text-xs flex items-center gap-1 ${cfg.color}`}>
                     <Icon size={12} />
                     {cfg.label}
                   </span>
                   <div className={`text-2xl font-bold ${cfg.color} mt-1`}>{stats[key]}</div>
-                  <span className="text-[10px] font-mono text-muted-foreground">{cfg.description}</span>
+                  <span className="text-[10px] text-muted-foreground">{cfg.description}</span>
                 </CardContent>
               </Card>
             );
@@ -482,7 +482,7 @@ export default function BgcComplete() {
                 <TabsTrigger
                   key={key}
                   value={key}
-                  className={`font-mono text-xs gap-1.5 py-2 ${cfg.tabColor}`}
+                  className={`text-xs gap-1.5 py-2 ${cfg.tabColor}`}
                 >
                   <Icon size={14} />
                   <span className="hidden sm:inline">{cfg.label}</span>
@@ -504,7 +504,7 @@ export default function BgcComplete() {
                   <Card className="cyber-card border-amber-500/30">
                     <CardContent className="pt-4 pb-4 space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-mono text-amber-400 flex items-center gap-2">
+                        <span className="text-sm text-amber-400 flex items-center gap-2">
                           <ShieldAlert size={16} />
                           Hesap Temizligi
                         </span>
@@ -543,7 +543,7 @@ export default function BgcComplete() {
                         <div className="space-y-2">
                           {suspiciousResult.testAccounts.length > 0 && (
                             <div className="space-y-1">
-                              <span className="text-xs font-mono text-red-400">Test/Sahte Hesaplar ({suspiciousResult.testAccounts.length}):</span>
+                              <span className="text-xs text-red-400">Test/Sahte Hesaplar ({suspiciousResult.testAccounts.length}):</span>
                               {suspiciousResult.testAccounts.map(t => (
                                 <div key={t.email} className="flex items-center gap-2 pl-2 flex-wrap">
                                   <Checkbox
@@ -555,7 +555,7 @@ export default function BgcComplete() {
                                     {t.detectionMethod}
                                   </Badge>
                                   {t.reason && (
-                                    <span className="text-[10px] text-muted-foreground font-mono">{t.reason}</span>
+                                    <span className="text-[10px] text-muted-foreground">{t.reason}</span>
                                   )}
                                 </div>
                               ))}
@@ -563,7 +563,7 @@ export default function BgcComplete() {
                           )}
                           {suspiciousResult.duplicates.length > 0 && (
                             <div className="space-y-1">
-                              <span className="text-xs font-mono text-orange-400">Duplike/Benzer Hesaplar ({suspiciousResult.duplicates.length}):</span>
+                              <span className="text-xs text-orange-400">Duplike/Benzer Hesaplar ({suspiciousResult.duplicates.length}):</span>
                               {suspiciousResult.duplicates.map(dup => (
                                 <div key={`${dup.email}-${dup.similarTo}`} className="flex items-center gap-2 pl-2 flex-wrap">
                                   <Checkbox
@@ -589,14 +589,14 @@ export default function BgcComplete() {
                                       : `~ ${dup.similarTo.split('@')[0]} (d=${dup.distance})`
                                     }
                                   </Badge>
-                                  <span className="text-[10px] text-muted-foreground font-mono">{dup.detectionMethod}</span>
+                                  <span className="text-[10px] text-muted-foreground">{dup.detectionMethod}</span>
                                 </div>
                               ))}
                             </div>
                           )}
                           {suspiciousResult.suspicious && suspiciousResult.suspicious.length > 0 && (
                             <div className="space-y-1">
-                              <span className="text-xs font-mono text-purple-400">AI Tespit - Supheli ({suspiciousResult.suspicious.length}):</span>
+                              <span className="text-xs text-purple-400">AI Tespit - Supheli ({suspiciousResult.suspicious.length}):</span>
                               {suspiciousResult.suspicious.map(s => (
                                 <div key={s.email} className="flex items-center gap-2 pl-2 flex-wrap">
                                   <Checkbox
@@ -607,16 +607,16 @@ export default function BgcComplete() {
                                   <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/50 text-[10px]">
                                     {s.reason}
                                   </Badge>
-                                  <span className="text-[10px] text-muted-foreground font-mono">ai</span>
+                                  <span className="text-[10px] text-muted-foreground">ai</span>
                                 </div>
                               ))}
                             </div>
                           )}
                           {suspiciousResult.totalSuspicious === 0 ? (
-                            <p className="text-xs font-mono text-muted-foreground">Supheli hesap bulunamadi.</p>
+                            <p className="text-xs text-muted-foreground">Supheli hesap bulunamadi.</p>
                           ) : (
                             <div className="pt-2 border-t border-border/30">
-                              <span className="text-xs font-mono text-muted-foreground">
+                              <span className="text-xs text-muted-foreground">
                                 Toplam: {suspiciousResult.totalSuspicious} supheli
                                 {selectedForDeletion.size > 0 && ` | ${selectedForDeletion.size} secili`}
                               </span>
@@ -634,7 +634,7 @@ export default function BgcComplete() {
                     {tabAccounts.length === 0 ? (
                       <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
                         <cfg.icon size={40} className="mb-4 opacity-30" />
-                        <p className="font-mono text-sm">
+                        <p className="text-sm">
                           {accounts.length === 0
                             ? 'Henuz tarama yapilmamis. "Tara" butonuna tiklayin.'
                             : 'Bu durumda hesap yok.'}
@@ -645,8 +645,8 @@ export default function BgcComplete() {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead className="font-mono">Hesap</TableHead>
-                              <TableHead className="font-mono">{getDateLabel(key)}</TableHead>
+                              <TableHead>Hesap</TableHead>
+                              <TableHead>{getDateLabel(key)}</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>

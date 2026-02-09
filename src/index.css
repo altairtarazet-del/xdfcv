@@ -1,99 +1,51 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* DasherMail - Cybersecurity Theme Design System */
+/* DasherMail — Modern Premium Dashboard Theme */
 
 @layer base {
   :root {
-    /* Cybersecurity Dark Theme - Primary Mode */
-    --background: 222 47% 5%;
-    --foreground: 160 100% 75%;
+    --background: 224 30% 5%;
+    --foreground: 210 20% 90%;
 
-    --card: 222 47% 8%;
-    --card-foreground: 160 80% 70%;
+    --card: 224 25% 8%;
+    --card-foreground: 210 20% 88%;
 
-    --popover: 222 47% 10%;
-    --popover-foreground: 160 80% 70%;
+    --popover: 224 25% 9%;
+    --popover-foreground: 210 20% 88%;
 
-    --primary: 160 100% 40%;
-    --primary-foreground: 222 47% 5%;
+    --primary: 234 89% 74%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 195 100% 45%;
-    --secondary-foreground: 222 47% 5%;
+    --secondary: 199 89% 48%;
+    --secondary-foreground: 0 0% 100%;
 
-    --muted: 222 30% 15%;
-    --muted-foreground: 160 30% 50%;
+    --muted: 224 20% 14%;
+    --muted-foreground: 215 16% 56%;
 
-    --accent: 280 100% 60%;
+    --accent: 262 83% 68%;
     --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 85% 50%;
+    --destructive: 350 89% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 160 50% 20%;
-    --input: 222 30% 12%;
-    --ring: 160 100% 40%;
+    --border: 224 20% 14%;
+    --input: 224 20% 11%;
+    --ring: 234 89% 74%;
 
-    --radius: 0.5rem;
+    --radius: 0.75rem;
 
-    /* Cybersecurity custom colors */
-    --cyber-green: 160 100% 40%;
-    --cyber-cyan: 195 100% 50%;
-    --cyber-purple: 280 100% 60%;
-    --cyber-red: 0 100% 50%;
-    --cyber-yellow: 50 100% 50%;
-    --cyber-dark: 222 47% 5%;
-    --cyber-darker: 222 47% 3%;
-    --cyber-glow: 160 100% 50%;
-
-    --sidebar-background: 222 47% 6%;
-    --sidebar-foreground: 160 80% 70%;
-    --sidebar-primary: 160 100% 40%;
-    --sidebar-primary-foreground: 222 47% 5%;
-    --sidebar-accent: 222 30% 12%;
-    --sidebar-accent-foreground: 160 80% 70%;
-    --sidebar-border: 160 50% 15%;
-    --sidebar-ring: 160 100% 40%;
-  }
-
-  .dark {
-    --background: 222 47% 5%;
-    --foreground: 160 100% 75%;
-
-    --card: 222 47% 8%;
-    --card-foreground: 160 80% 70%;
-
-    --popover: 222 47% 10%;
-    --popover-foreground: 160 80% 70%;
-
-    --primary: 160 100% 40%;
-    --primary-foreground: 222 47% 5%;
-
-    --secondary: 195 100% 45%;
-    --secondary-foreground: 222 47% 5%;
-
-    --muted: 222 30% 15%;
-    --muted-foreground: 160 30% 50%;
-
-    --accent: 280 100% 60%;
-    --accent-foreground: 0 0% 100%;
-
-    --destructive: 0 85% 50%;
-    --destructive-foreground: 0 0% 100%;
-
-    --border: 160 50% 20%;
-    --input: 222 30% 12%;
-    --ring: 160 100% 40%;
-
-    --sidebar-background: 222 47% 6%;
-    --sidebar-foreground: 160 80% 70%;
-    --sidebar-primary: 160 100% 40%;
-    --sidebar-primary-foreground: 222 47% 5%;
-    --sidebar-accent: 222 30% 12%;
-    --sidebar-accent-foreground: 160 80% 70%;
-    --sidebar-border: 160 50% 15%;
-    --sidebar-ring: 160 100% 40%;
+    --sidebar-background: 224 28% 6%;
+    --sidebar-foreground: 210 20% 80%;
+    --sidebar-primary: 234 89% 74%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 224 20% 12%;
+    --sidebar-accent-foreground: 210 20% 88%;
+    --sidebar-border: 224 20% 12%;
+    --sidebar-ring: 234 89% 74%;
   }
 }
 
@@ -103,123 +55,122 @@
   }
 
   body {
-    @apply bg-background text-foreground;
-    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
 }
 
-/* Custom Cyber Effects */
+/* Modern Utility Classes */
 @layer utilities {
   .cyber-glow {
-    box-shadow: 
-      0 0 5px hsl(var(--cyber-green)),
-      0 0 10px hsl(var(--cyber-green) / 0.5),
-      0 0 20px hsl(var(--cyber-green) / 0.3);
+    box-shadow: 0 0 20px hsl(var(--primary) / 0.25);
+  }
+
+  .cyber-glow:hover {
+    box-shadow: 0 0 30px hsl(var(--primary) / 0.4);
   }
 
   .cyber-glow-text {
-    text-shadow: 
-      0 0 5px hsl(var(--cyber-green)),
-      0 0 10px hsl(var(--cyber-green) / 0.8);
+    /* no-op: keep class name for compatibility, no text glow in modern theme */
   }
 
   .cyber-border {
-    border: 1px solid hsl(var(--cyber-green) / 0.5);
-    box-shadow: 
-      inset 0 0 10px hsl(var(--cyber-green) / 0.1),
-      0 0 10px hsl(var(--cyber-green) / 0.2);
+    border: 1px solid hsl(var(--border));
   }
 
   .cyber-card {
-    background: linear-gradient(
-      135deg,
-      hsl(var(--card)) 0%,
-      hsl(222 47% 6%) 100%
-    );
-    border: 1px solid hsl(var(--cyber-green) / 0.3);
-    box-shadow: 
-      0 4px 20px hsl(var(--cyber-dark) / 0.8),
-      inset 0 0 30px hsl(var(--cyber-green) / 0.05);
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .cyber-card:hover {
+    border-color: hsl(var(--primary) / 0.3);
+    box-shadow: 0 4px 24px hsl(var(--primary) / 0.06);
   }
 
   .cyber-input {
     background: hsl(var(--input));
-    border: 1px solid hsl(var(--cyber-green) / 0.3);
-    transition: all 0.3s ease;
+    border: 1px solid hsl(var(--border));
+    border-radius: calc(var(--radius) - 2px);
+    transition: border-color 0.2s, box-shadow 0.2s;
   }
 
   .cyber-input:focus {
-    border-color: hsl(var(--cyber-green));
-    box-shadow: 
-      0 0 0 2px hsl(var(--cyber-green) / 0.2),
-      0 0 10px hsl(var(--cyber-green) / 0.3);
+    border-color: hsl(var(--primary));
+    box-shadow: 0 0 0 3px hsl(var(--primary) / 0.15);
   }
 
   .matrix-bg {
-    background: 
-      radial-gradient(ellipse at 50% 0%, hsl(var(--cyber-green) / 0.1) 0%, transparent 50%),
-      linear-gradient(180deg, hsl(var(--background)) 0%, hsl(222 47% 3%) 100%);
+    background: hsl(var(--background));
   }
 
-  .scanline {
-    position: relative;
-    overflow: hidden;
-  }
-
-  .scanline::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(
-      transparent 50%,
-      hsl(var(--cyber-green) / 0.02) 50%
-    );
-    background-size: 100% 4px;
-    pointer-events: none;
-  }
+  /* Scanline is now a no-op */
+  .scanline {}
+  .scanline::after { display: none; }
 
   .pulse-glow {
-    animation: pulse-glow 2s ease-in-out infinite;
+    animation: pulse-glow 3s ease-in-out infinite;
   }
 
   @keyframes pulse-glow {
     0%, 100% {
-      box-shadow: 0 0 5px hsl(var(--cyber-green) / 0.5);
+      opacity: 0.6;
     }
     50% {
-      box-shadow: 0 0 20px hsl(var(--cyber-green) / 0.8);
+      opacity: 1;
     }
   }
 
-  .typing-cursor::after {
-    content: '|';
-    animation: blink 1s step-end infinite;
+  /* Glass card variant */
+  .glass-card {
+    background: hsl(var(--card) / 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid hsl(var(--border) / 0.8);
+    border-radius: var(--radius);
   }
 
-  @keyframes blink {
-    0%, 50% { opacity: 1; }
-    51%, 100% { opacity: 0; }
+  /* Gradient text */
+  .gradient-text {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Subtle hover lift */
+  .hover-lift {
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .hover-lift:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 30px hsl(var(--background) / 0.5);
   }
 }
 
 /* Scrollbar styling */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: hsl(var(--background));
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: hsl(var(--cyber-green) / 0.3);
-  border-radius: 4px;
+  background: hsl(var(--muted-foreground) / 0.2);
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--cyber-green) / 0.5);
+  background: hsl(var(--muted-foreground) / 0.35);
+}
+
+/* Selection */
+::selection {
+  background: hsl(var(--primary) / 0.3);
+  color: hsl(var(--foreground));
 }

@@ -106,7 +106,7 @@ export function NotificationBell() {
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-5 w-5" />
           {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-mono">
+            <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">
               {unreadCount > 9 ? '9+' : unreadCount}
             </span>
           )}
@@ -114,7 +114,7 @@ export function NotificationBell() {
       </PopoverTrigger>
       <PopoverContent className="w-80 p-0" align="end">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h4 className="font-semibold font-mono text-sm">Bildirimler</h4>
+          <h4 className="font-semibold text-sm">Bildirimler</h4>
           {unreadCount > 0 && (
             <Button variant="ghost" size="sm" onClick={markAllRead} className="text-xs h-7">
               <Check className="h-3 w-3 mr-1" />
@@ -124,7 +124,7 @@ export function NotificationBell() {
         </div>
         <ScrollArea className="h-80">
           {notifications.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-muted-foreground text-sm font-mono py-8">
+            <div className="flex items-center justify-center h-full text-muted-foreground text-sm py-8">
               Bildirim yok
             </div>
           ) : (
@@ -142,11 +142,11 @@ export function NotificationBell() {
                     <div className="flex gap-3">
                       <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${color}`} />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium font-mono truncate">{notif.title}</p>
-                        <p className="text-xs text-muted-foreground font-mono mt-0.5 line-clamp-2">
+                        <p className="text-sm font-medium truncate">{notif.title}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
                           {notif.message}
                         </p>
-                        <p className="text-xs text-muted-foreground/60 font-mono mt-1">
+                        <p className="text-xs text-muted-foreground/60 mt-1">
                           {formatDistanceToNow(new Date(notif.created_at), {
                             addSuffix: true,
                             locale: tr,

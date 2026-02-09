@@ -195,11 +195,11 @@ function DraggablePermission({ permission, value, onChange, isActive }: Draggabl
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-primary">{permission.icon}</span>
-            <span className="font-mono text-sm font-medium text-foreground">
+            <span className="text-sm font-medium text-foreground">
               {permission.label}
             </span>
           </div>
-          <p className="text-xs text-muted-foreground font-mono mb-3">
+          <p className="text-xs text-muted-foreground mb-3">
             {permission.description}
           </p>
 
@@ -548,8 +548,8 @@ export default function RolesPage() {
         <div className="flex items-center justify-center h-full">
           <div className="text-center">
             <Shield size={48} className="mx-auto text-muted-foreground mb-4" />
-            <h2 className="text-xl font-mono text-foreground">Erişim Engellendi</h2>
-            <p className="text-muted-foreground font-mono text-sm">
+            <h2 className="text-xl font-semibold text-foreground">Erişim Engellendi</h2>
+            <p className="text-muted-foreground text-sm">
               Bu sayfayı görüntülemek için admin yetkisi gerekiyor
             </p>
           </div>
@@ -564,10 +564,10 @@ export default function RolesPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-mono font-bold text-foreground cyber-glow-text">
+            <h1 className="text-2xl font-bold text-foreground">
               Rol Yönetimi
             </h1>
-            <p className="text-muted-foreground font-mono text-sm">
+            <p className="text-muted-foreground text-sm">
               Özel roller ve izinleri yönetin - Sürükle bırak ile yetki atayın
             </p>
           </div>
@@ -577,14 +577,14 @@ export default function RolesPage() {
             if (!open) resetForm();
           }}>
             <DialogTrigger asChild>
-              <Button className="cyber-glow font-mono">
+              <Button>
                 <Plus size={18} className="mr-2" />
                 Yeni Rol
               </Button>
             </DialogTrigger>
             <DialogContent className="cyber-card border-primary/30 max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
               <DialogHeader>
-                <DialogTitle className="font-mono text-foreground">
+                <DialogTitle className="text-foreground">
                   {editingRole ? 'Rol Düzenle' : 'Yeni Rol Oluştur'}
                 </DialogTitle>
               </DialogHeader>
@@ -593,20 +593,20 @@ export default function RolesPage() {
                 {/* Basic Info */}
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label className="text-muted-foreground font-mono text-xs">ROL ADI</Label>
+                    <Label className="text-muted-foreground text-xs uppercase tracking-wide font-medium">ROL ADI</Label>
                     <Input
                       value={formName}
                       onChange={(e) => setFormName(e.target.value)}
-                      className="cyber-input font-mono"
+                      className="cyber-input"
                       placeholder="Developer, QA Tester, Viewer..."
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-muted-foreground font-mono text-xs">AÇIKLAMA</Label>
+                    <Label className="text-muted-foreground text-xs uppercase tracking-wide font-medium">AÇIKLAMA</Label>
                     <Textarea
                       value={formDescription}
                       onChange={(e) => setFormDescription(e.target.value)}
-                      className="cyber-input font-mono resize-none"
+                      className="cyber-input resize-none"
                       placeholder="Bu rol için açıklama..."
                       rows={2}
                     />
@@ -615,11 +615,11 @@ export default function RolesPage() {
 
                 {/* Permission Selection */}
                 <div className="border-t border-border/30 pt-4">
-                  <h3 className="text-sm font-mono text-foreground mb-3 flex items-center gap-2">
+                  <h3 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
                     <Shield size={16} className="text-primary" />
                     Mevcut Yetkiler
                   </h3>
-                  <p className="text-xs text-muted-foreground font-mono mb-4">
+                  <p className="text-xs text-muted-foreground mb-4">
                     Rol için eklemek istediğiniz yetkilere tıklayın
                   </p>
                   
@@ -628,7 +628,7 @@ export default function RolesPage() {
                       <button
                         key={perm.id}
                         onClick={() => togglePermission(perm.id)}
-                        className={`px-3 py-2 rounded-lg font-mono text-xs flex items-center gap-2 transition-all ${
+                        className={`px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-2 transition-all ${
                           activePermissions.includes(perm.id)
                             ? 'bg-primary text-primary-foreground'
                             : 'bg-muted/50 text-muted-foreground hover:bg-muted'
@@ -644,11 +644,11 @@ export default function RolesPage() {
                 {/* Active Permissions - Drag & Drop */}
                 {activePermissions.length > 0 && (
                   <div className="border-t border-border/30 pt-4">
-                    <h3 className="text-sm font-mono text-foreground mb-3 flex items-center gap-2">
+                    <h3 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
                       <GripVertical size={16} className="text-primary" />
                       Atanan Yetkiler
                     </h3>
-                    <p className="text-xs text-muted-foreground font-mono mb-4">
+                    <p className="text-xs text-muted-foreground mb-4">
                       Sürükleyerek sıralayın, değerleri ayarlayın
                     </p>
 
@@ -677,7 +677,7 @@ export default function RolesPage() {
                       <DragOverlay>
                         {draggedId ? (
                           <div className="cyber-card p-4 rounded-lg border border-primary shadow-lg opacity-90">
-                            <span className="font-mono text-sm">
+                            <span className="text-sm font-medium">
                               {availablePermissions.find(p => p.id === draggedId)?.label}
                             </span>
                           </div>
@@ -687,7 +687,7 @@ export default function RolesPage() {
                   </div>
                 )}
 
-                <Button onClick={handleSaveRole} className="w-full cyber-glow font-mono">
+                <Button onClick={handleSaveRole} className="w-full">
                   {editingRole ? 'Rolü Güncelle' : 'Rol Oluştur'}
                 </Button>
               </div>
@@ -700,17 +700,17 @@ export default function RolesPage() {
           <Table>
             <TableHeader>
               <TableRow className="border-b border-border/50">
-                <TableHead className="font-mono text-muted-foreground">ROL ADI</TableHead>
-                <TableHead className="font-mono text-muted-foreground">AÇIKLAMA</TableHead>
-                <TableHead className="font-mono text-muted-foreground">YETKİLER</TableHead>
-                <TableHead className="font-mono text-muted-foreground">İŞLEMLER</TableHead>
+                <TableHead className="text-muted-foreground text-xs uppercase tracking-wide font-medium">ROL ADI</TableHead>
+                <TableHead className="text-muted-foreground text-xs uppercase tracking-wide font-medium">AÇIKLAMA</TableHead>
+                <TableHead className="text-muted-foreground text-xs uppercase tracking-wide font-medium">YETKİLER</TableHead>
+                <TableHead className="text-muted-foreground text-xs uppercase tracking-wide font-medium">İŞLEMLER</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center py-8">
-                    <span className="text-muted-foreground font-mono animate-pulse">
+                    <span className="text-muted-foreground animate-pulse">
                       Yükleniyor...
                     </span>
                   </TableCell>
@@ -718,7 +718,7 @@ export default function RolesPage() {
               ) : roles.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center py-8">
-                    <span className="text-muted-foreground font-mono">
+                    <span className="text-muted-foreground">
                       Henüz rol oluşturulmamış
                     </span>
                   </TableCell>
@@ -726,38 +726,38 @@ export default function RolesPage() {
               ) : (
                 roles.map((role) => (
                   <TableRow key={role.id} className="border-b border-border/30">
-                    <TableCell className="font-mono text-sm">
-                      <span className="px-2 py-1 bg-primary/20 text-primary rounded">
+                    <TableCell className="text-sm">
+                      <span className="px-2 py-1 bg-primary/10 text-primary rounded font-medium">
                         {role.name}
                       </span>
                     </TableCell>
-                    <TableCell className="font-mono text-sm text-muted-foreground">
+                    <TableCell className="text-sm text-muted-foreground">
                       {role.description || '-'}
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
                         {role.permissions?.realtime_enabled && (
-                          <span className="px-2 py-0.5 bg-primary/20 text-primary rounded text-xs font-mono">
+                          <span className="px-2 py-0.5 bg-primary/10 text-primary rounded text-xs font-medium">
                             Canlı
                           </span>
                         )}
                         {role.permissions?.can_create_email && (
-                          <span className="px-2 py-0.5 bg-green-500/20 text-green-400 rounded text-xs font-mono">
+                          <span className="px-2 py-0.5 bg-green-500/10 text-green-600 dark:text-green-400 rounded text-xs font-medium">
                             Mail Oluştur
                           </span>
                         )}
                         {role.permissions?.can_change_password && (
-                          <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 rounded text-xs font-mono">
+                          <span className="px-2 py-0.5 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 rounded text-xs font-medium">
                             Şifre Değiştir
                           </span>
                         )}
                         {role.permissions?.time_filter_minutes && (
-                          <span className="px-2 py-0.5 bg-muted text-muted-foreground rounded text-xs font-mono">
+                          <span className="px-2 py-0.5 bg-muted text-muted-foreground rounded text-xs font-medium">
                             {role.permissions.time_filter_minutes}dk
                           </span>
                         )}
                         {role.permissions?.allowed_senders?.length ? (
-                          <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs font-mono">
+                          <span className="px-2 py-0.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded text-xs font-medium">
                             {role.permissions.allowed_senders.length} gönderici
                           </span>
                         ) : null}

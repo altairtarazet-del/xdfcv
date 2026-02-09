@@ -82,10 +82,10 @@ export default function Settings() {
     <DashboardLayout>
       <div className="max-w-2xl space-y-8">
         <div>
-          <h1 className="text-2xl font-mono font-bold text-foreground cyber-glow-text">
+          <h1 className="text-2xl font-bold text-foreground">
             Ayarlar
           </h1>
-          <p className="text-muted-foreground font-mono text-sm">
+          <p className="text-muted-foreground text-sm">
             Hesap ve profil ayarlarınızı yönetin
           </p>
         </div>
@@ -94,12 +94,12 @@ export default function Settings() {
         <div className="cyber-card rounded-lg p-6 space-y-4">
           <div className="flex items-center gap-3 mb-4">
             <User size={24} className="text-primary" />
-            <h2 className="font-mono font-bold text-foreground">Profil Bilgileri</h2>
+            <h2 className="font-bold text-foreground">Profil Bilgileri</h2>
           </div>
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label className="text-muted-foreground font-mono text-xs">E-POSTA</Label>
+              <Label className="text-muted-foreground text-xs">E-posta</Label>
               <Input
                 value={profile?.email || ''}
                 disabled
@@ -108,7 +108,7 @@ export default function Settings() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-muted-foreground font-mono text-xs">GÖRÜNEN AD</Label>
+              <Label className="text-muted-foreground text-xs">Görünen Ad</Label>
               <Input
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
@@ -120,7 +120,6 @@ export default function Settings() {
             <Button
               onClick={handleSaveProfile}
               disabled={isSaving}
-              className="cyber-glow font-mono"
             >
               <Save size={16} className="mr-2" />
               {isSaving ? 'Kaydediliyor...' : 'Kaydet'}
@@ -133,12 +132,12 @@ export default function Settings() {
         <div className="cyber-card rounded-lg p-6 space-y-4">
           <div className="flex items-center gap-3 mb-4">
             <Key size={24} className="text-primary" />
-            <h2 className="font-mono font-bold text-foreground">Şifre Değiştir</h2>
+            <h2 className="font-bold text-foreground">Şifre Değiştir</h2>
           </div>
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label className="text-muted-foreground font-mono text-xs">YENİ ŞİFRE</Label>
+              <Label className="text-muted-foreground text-xs">Yeni Şifre</Label>
               <Input
                 type="password"
                 value={newPassword}
@@ -151,7 +150,6 @@ export default function Settings() {
             <Button
               onClick={handleChangePassword}
               disabled={isChangingPassword}
-              className="cyber-glow font-mono"
             >
               <Key size={16} className="mr-2" />
               {isChangingPassword ? 'Değiştiriliyor...' : 'Şifre Değiştir'}

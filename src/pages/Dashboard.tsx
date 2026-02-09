@@ -400,7 +400,7 @@ export default function Dashboard() {
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <Server size={18} className="text-primary" />
-            <span className="font-mono text-sm text-muted-foreground">Hesap:</span>
+            <span className="text-sm text-muted-foreground">Hesap:</span>
           </div>
           <Popover open={accountSearchOpen} onOpenChange={setAccountSearchOpen}>
             <PopoverTrigger asChild>
@@ -408,7 +408,7 @@ export default function Dashboard() {
                 variant="outline"
                 role="combobox"
                 aria-expanded={accountSearchOpen}
-                className="w-80 justify-between cyber-input font-mono"
+                className="w-80 justify-between cyber-input"
               >
                 {selectedAccount
                   ? (selectedAccount.name || selectedAccount.address || selectedAccount.id)
@@ -418,9 +418,9 @@ export default function Dashboard() {
             </PopoverTrigger>
             <PopoverContent className="w-80 p-0">
               <Command>
-                <CommandInput placeholder="Hesap ara..." className="font-mono" />
+                <CommandInput placeholder="Hesap ara..." />
                 <CommandList>
-                  <CommandEmpty className="font-mono text-sm py-4 text-center">
+                  <CommandEmpty className="text-sm py-4 text-center">
                     Hesap bulunamadı.
                   </CommandEmpty>
                   <CommandGroup>
@@ -437,7 +437,6 @@ export default function Dashboard() {
                           setSelectedAccount(account);
                           setAccountSearchOpen(false);
                         }}
-                        className="font-mono"
                       >
                         <Check
                           className={cn(
@@ -473,7 +472,7 @@ export default function Dashboard() {
           <div className="w-full lg:w-80 flex-shrink-0">
             <div className="cyber-card rounded-lg p-4 h-full flex flex-col">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="font-mono font-bold text-foreground flex items-center gap-2">
+                <h2 className="font-semibold text-foreground flex items-center gap-2">
                   <Inbox size={18} className="text-primary" />
                   Posta Kutuları
                 </h2>
@@ -495,7 +494,7 @@ export default function Dashboard() {
                   placeholder="Posta kutusu ara..."
                   value={mailboxSearchQuery}
                   onChange={(e) => setMailboxSearchQuery(e.target.value)}
-                  className="cyber-input pl-9 font-mono text-sm"
+                  className="cyber-input pl-9 text-sm"
                 />
               </div>
 
@@ -503,20 +502,20 @@ export default function Dashboard() {
                 {!selectedAccount ? (
                   <div className="text-center py-8">
                     <Server size={32} className="mx-auto text-muted-foreground mb-2" />
-                    <p className="text-muted-foreground font-mono text-sm">
+                    <p className="text-muted-foreground text-sm">
                       Önce bir hesap seçin
                     </p>
                   </div>
                 ) : isLoadingMailboxes ? (
                   <div className="text-center py-8">
-                    <span className="text-muted-foreground font-mono animate-pulse">
+                    <span className="text-muted-foreground animate-pulse">
                       Yükleniyor...
                     </span>
                   </div>
                 ) : filteredMailboxes.length === 0 ? (
                   <div className="text-center py-8">
                     <Mail size={32} className="mx-auto text-muted-foreground mb-2" />
-                    <p className="text-muted-foreground font-mono text-sm">
+                    <p className="text-muted-foreground text-sm">
                       Posta kutusu bulunamadı
                     </p>
                   </div>
@@ -526,7 +525,7 @@ export default function Dashboard() {
                       <button
                         key={mailbox.id}
                         onClick={() => setSelectedMailbox(mailbox)}
-                        className={`w-full text-left p-3 rounded-lg transition-all font-mono text-sm ${
+                        className={`w-full text-left p-3 rounded-lg transition-all text-sm ${
                           selectedMailbox?.id === mailbox.id
                             ? 'bg-primary/20 border border-primary/30 text-primary'
                             : 'hover:bg-muted/50 text-foreground'
@@ -537,7 +536,7 @@ export default function Dashboard() {
                           <span className="truncate">{mailbox.name || mailbox.id}</span>
                         </div>
                         {mailbox.email && (
-                          <p className="text-xs text-muted-foreground truncate mt-1">
+                          <p className="text-xs text-muted-foreground truncate mt-1 font-mono">
                             {mailbox.email}
                           </p>
                         )}
@@ -553,7 +552,7 @@ export default function Dashboard() {
           <div className="flex-1 min-h-0">
             <div className="cyber-card rounded-lg p-4 h-full flex flex-col">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="font-mono font-bold text-foreground">
+                <h2 className="font-semibold text-foreground">
                   {selectedMailbox ? (
                     <span className="flex items-center gap-2">
                       <Mail size={18} className="text-primary" />
@@ -583,14 +582,14 @@ export default function Dashboard() {
                     placeholder="Mesaj ara (konu, gönderici)..."
                     value={messageSearchQuery}
                     onChange={(e) => setMessageSearchQuery(e.target.value)}
-                    className="cyber-input pl-9 font-mono text-sm"
+                    className="cyber-input pl-9 text-sm"
                   />
                 </div>
               )}
 
               {/* Permission Info */}
               {profile?.permissions && (
-                <div className="flex flex-wrap gap-2 mb-4 text-xs font-mono">
+                <div className="flex flex-wrap gap-2 mb-4 text-xs">
                   {profile.permissions.time_filter_minutes && (
                     <span className="px-2 py-1 bg-secondary/20 text-secondary rounded flex items-center gap-1">
                       <Clock size={12} />
@@ -609,20 +608,20 @@ export default function Dashboard() {
                 {!selectedMailbox ? (
                   <div className="text-center py-16">
                     <Inbox size={48} className="mx-auto text-muted-foreground mb-4" />
-                    <p className="text-muted-foreground font-mono">
+                    <p className="text-muted-foreground">
                       Bir posta kutusu seçin
                     </p>
                   </div>
                 ) : isLoadingMessages ? (
                   <div className="text-center py-8">
-                    <span className="text-muted-foreground font-mono animate-pulse">
+                    <span className="text-muted-foreground animate-pulse">
                       Mesajlar yükleniyor...
                     </span>
                   </div>
                 ) : filteredMessages.length === 0 ? (
                   <div className="text-center py-16">
                     <Mail size={48} className="mx-auto text-muted-foreground mb-4" />
-                    <p className="text-muted-foreground font-mono">
+                    <p className="text-muted-foreground">
                       Bu kriterlere uygun mesaj yok
                     </p>
                   </div>
@@ -642,10 +641,10 @@ export default function Dashboard() {
                                 {getFromDisplay(message.from)}
                               </span>
                             </div>
-                            <p className="font-mono text-sm font-medium text-foreground truncate">
+                            <p className="text-sm font-medium text-foreground truncate">
                               {message.subject || '(Konu yok)'}
                             </p>
-                            <p className="font-mono text-xs text-muted-foreground truncate mt-1">
+                            <p className="text-xs text-muted-foreground truncate mt-1">
                               {message.text?.substring(0, 100) || message.html?.substring(0, 100) || '...'}
                             </p>
                           </div>
@@ -675,7 +674,7 @@ export default function Dashboard() {
                         size="sm"
                         onClick={handlePrevPage}
                         disabled={currentPage <= 1 || isLoadingMessages}
-                        className="hover:bg-primary/10 font-mono text-xs"
+                        className="hover:bg-primary/10 text-xs"
                       >
                         <ChevronLeft size={16} className="mr-1" />
                         Önceki
@@ -688,7 +687,7 @@ export default function Dashboard() {
                         size="sm"
                         onClick={handleNextPage}
                         disabled={!paginationView?.next || isLoadingMessages}
-                        className="hover:bg-primary/10 font-mono text-xs"
+                        className="hover:bg-primary/10 text-xs"
                       >
                         Sonraki
                         <ChevronRight size={16} className="ml-1" />
@@ -705,23 +704,23 @@ export default function Dashboard() {
         <Dialog open={!!selectedMessage} onOpenChange={handleCloseMessageDialog}>
           <DialogContent className="cyber-card border-primary/30 max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
             <DialogHeader>
-              <DialogTitle className="font-mono text-foreground">
+              <DialogTitle className="text-foreground">
                 {selectedMessage?.subject || '(Konu yok)'}
               </DialogTitle>
             </DialogHeader>
             {selectedMessage && (
               <div className="flex-1 overflow-auto space-y-4">
-                <div className="grid grid-cols-2 gap-4 text-sm font-mono">
+                <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <span className="text-muted-foreground">Gönderen:</span>
-                    <p className="text-foreground">
+                    <p className="text-foreground font-mono">
                       {getFromDisplay(selectedMessage.from)}{' '}
                       <span className="text-primary">&lt;{getFromAddress(selectedMessage.from)}&gt;</span>
                     </p>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Alıcı:</span>
-                    <p className="text-foreground">
+                    <p className="text-foreground font-mono">
                       {Array.isArray(selectedMessage.to)
                         ? selectedMessage.to.map((t) => (typeof t === 'string' ? t : t.address)).join(', ')
                         : selectedMessage.to}
@@ -729,7 +728,7 @@ export default function Dashboard() {
                   </div>
                   <div>
                     <span className="text-muted-foreground">Tarih:</span>
-                    <p className="text-foreground">
+                    <p className="text-foreground font-mono">
                       {new Date(selectedMessage.date || selectedMessage.createdAt).toLocaleString('tr-TR')}
                     </p>
                   </div>
@@ -760,7 +759,7 @@ export default function Dashboard() {
                   {isLoadingFullMessage ? (
                     <div className="text-center py-8">
                       <RefreshCw size={24} className="mx-auto text-primary animate-spin mb-2" />
-                      <span className="text-muted-foreground font-mono text-sm">
+                      <span className="text-muted-foreground text-sm">
                         İçerik yükleniyor...
                       </span>
                     </div>
@@ -795,7 +794,7 @@ export default function Dashboard() {
                       {selectedMessage.text}
                     </pre>
                   ) : (
-                    <p className="text-muted-foreground font-mono text-sm text-center py-4">
+                    <p className="text-muted-foreground text-sm text-center py-4">
                       İçerik yok
                     </p>
                   )}

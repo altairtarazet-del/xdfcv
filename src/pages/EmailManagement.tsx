@@ -476,8 +476,8 @@ export default function EmailManagementPage() {
         <div className="flex items-center justify-center h-full">
           <div className="text-center">
             <Shield size={48} className="mx-auto text-muted-foreground mb-4" />
-            <h2 className="text-xl font-mono text-foreground">Erişim Engellendi</h2>
-            <p className="text-muted-foreground font-mono text-sm">
+            <h2 className="text-xl font-semibold text-foreground">Erişim Engellendi</h2>
+            <p className="text-muted-foreground text-sm">
               Bu sayfayı görüntülemek için yetkiniz yok
             </p>
           </div>
@@ -492,10 +492,10 @@ export default function EmailManagementPage() {
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-mono font-bold text-foreground cyber-glow-text">
+            <h1 className="text-2xl font-bold text-foreground">
               Email Yönetimi
             </h1>
-            <p className="text-muted-foreground font-mono text-sm">
+            <p className="text-muted-foreground text-sm">
               Email hesaplarını oluşturun ve yönetin
             </p>
           </div>
@@ -509,7 +509,7 @@ export default function EmailManagementPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Email veya isim ara..."
-                className="cyber-input font-mono pl-10 pr-10 text-sm"
+                className="cyber-input pl-10 pr-10 text-sm"
               />
               {searchQuery && (
                 <button
@@ -533,14 +533,14 @@ export default function EmailManagementPage() {
             {canCreateEmail && (
               <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
                 <DialogTrigger asChild>
-                  <Button className="cyber-glow font-mono">
+                  <Button>
                     <Plus size={18} className="mr-2" />
                     Yeni Email
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="cyber-card border-primary/30">
                   <DialogHeader>
-                    <DialogTitle className="font-mono text-foreground flex items-center gap-2">
+                    <DialogTitle className="text-foreground flex items-center gap-2">
                       <Mail size={20} className="text-primary" />
                       Yeni Email Hesabı
                     </DialogTitle>
@@ -548,18 +548,18 @@ export default function EmailManagementPage() {
                   <div className="space-y-4 mt-4">
                     {/* First Name */}
                     <div className="space-y-2">
-                      <Label className="text-muted-foreground font-mono text-xs">
+                      <Label className="text-muted-foreground text-xs">
                         AD (First Name) *
                       </Label>
                       <Input
                         type="text"
                         value={firstName}
                         onChange={(e) => handleNameChange(e.target.value, setFirstName, setFirstNameError, true)}
-                        className={`cyber-input font-mono ${firstNameError ? 'border-destructive' : ''}`}
+                        className={`cyber-input ${firstNameError ? 'border-destructive' : ''}`}
                         placeholder="AHMET"
                       />
                       {firstNameError && (
-                        <div className="flex items-center gap-2 text-destructive text-xs font-mono">
+                        <div className="flex items-center gap-2 text-destructive text-xs">
                           <AlertCircle size={12} />
                           {firstNameError}
                         </div>
@@ -568,18 +568,18 @@ export default function EmailManagementPage() {
 
                     {/* Middle Name */}
                     <div className="space-y-2">
-                      <Label className="text-muted-foreground font-mono text-xs">
+                      <Label className="text-muted-foreground text-xs">
                         İKİNCİ AD (Middle Name)
                       </Label>
                       <Input
                         type="text"
                         value={middleName}
                         onChange={(e) => handleNameChange(e.target.value, setMiddleName, setMiddleNameError, false)}
-                        className={`cyber-input font-mono ${middleNameError ? 'border-destructive' : ''}`}
+                        className={`cyber-input ${middleNameError ? 'border-destructive' : ''}`}
                         placeholder="ALI (opsiyonel)"
                       />
                       {middleNameError && (
-                        <div className="flex items-center gap-2 text-destructive text-xs font-mono">
+                        <div className="flex items-center gap-2 text-destructive text-xs">
                           <AlertCircle size={12} />
                           {middleNameError}
                         </div>
@@ -588,18 +588,18 @@ export default function EmailManagementPage() {
 
                     {/* Last Name */}
                     <div className="space-y-2">
-                      <Label className="text-muted-foreground font-mono text-xs">
+                      <Label className="text-muted-foreground text-xs">
                         SOYAD (Last Name) *
                       </Label>
                       <Input
                         type="text"
                         value={lastName}
                         onChange={(e) => handleNameChange(e.target.value, setLastName, setLastNameError, true)}
-                        className={`cyber-input font-mono ${lastNameError ? 'border-destructive' : ''}`}
+                        className={`cyber-input ${lastNameError ? 'border-destructive' : ''}`}
                         placeholder="YILMAZ"
                       />
                       {lastNameError && (
-                        <div className="flex items-center gap-2 text-destructive text-xs font-mono">
+                        <div className="flex items-center gap-2 text-destructive text-xs">
                           <AlertCircle size={12} />
                           {lastNameError}
                         </div>
@@ -607,32 +607,32 @@ export default function EmailManagementPage() {
                     </div>
 
                     <div className="p-3 bg-muted/30 rounded-lg space-y-1">
-                      <p className="text-xs text-muted-foreground font-mono flex items-center gap-2">
+                      <p className="text-xs text-muted-foreground flex items-center gap-2">
                         <AlertCircle size={12} className="text-yellow-500" />
                         <span className="text-yellow-500 font-medium">Önemli:</span>
                       </p>
-                      <ul className="text-xs text-muted-foreground font-mono list-disc list-inside space-y-1 ml-4">
+                      <ul className="text-xs text-muted-foreground list-disc list-inside space-y-1 ml-4">
                         <li>İsimler otomatik BÜYÜK HARFE çevrilir</li>
                         <li>Türkçe karakterler otomatik çevrilir (ş→s, ğ→g, ü→u, ö→o, ç→c, ı→i)</li>
                         <li>Email: ad + soyad (küçük harflerle)</li>
                       </ul>
-                      <p className="text-xs font-mono mt-2">
+                      <p className="text-xs mt-2">
                         <span className="text-muted-foreground">Örnek: </span>
                         <span className="text-foreground">AHMET YILMAZ</span>
                         <span className="text-muted-foreground"> → </span>
-                        <span className="text-primary">ahmetyilmaz@{EMAIL_DOMAIN}</span>
+                        <span className="text-primary font-mono">ahmetyilmaz@{EMAIL_DOMAIN}</span>
                       </p>
                     </div>
                     
                     {/* DOB Fields */}
                     <div className="space-y-2">
-                      <Label className="text-muted-foreground font-mono text-xs flex items-center gap-2">
+                      <Label className="text-muted-foreground text-xs flex items-center gap-2">
                         <Calendar size={12} />
                         DOĞUM TARİHİ
                       </Label>
                       <div className="grid grid-cols-3 gap-2">
                         <Select value={dobMonth} onValueChange={setDobMonth}>
-                          <SelectTrigger className="cyber-input font-mono">
+                          <SelectTrigger className="cyber-input">
                             <SelectValue placeholder="Ay" />
                           </SelectTrigger>
                           <SelectContent className="bg-background border-border z-50">
@@ -650,31 +650,31 @@ export default function EmailManagementPage() {
                               { value: '11', label: 'Kasım' },
                               { value: '12', label: 'Aralık' },
                             ].map((month) => (
-                              <SelectItem key={month.value} value={month.value} className="font-mono">
+                              <SelectItem key={month.value} value={month.value}>
                                 {month.label}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                         <Select value={dobDay} onValueChange={setDobDay}>
-                          <SelectTrigger className="cyber-input font-mono">
+                          <SelectTrigger className="cyber-input">
                             <SelectValue placeholder="Gün" />
                           </SelectTrigger>
                           <SelectContent className="bg-background border-border z-50">
                             {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
-                              <SelectItem key={day} value={String(day)} className="font-mono">
+                              <SelectItem key={day} value={String(day)}>
                                 {String(day).padStart(2, '0')}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                         <Select value={dobYear} onValueChange={setDobYear}>
-                          <SelectTrigger className="cyber-input font-mono">
+                          <SelectTrigger className="cyber-input">
                             <SelectValue placeholder="Yıl" />
                           </SelectTrigger>
                           <SelectContent className="bg-background border-border z-50 max-h-[200px]">
                             {Array.from({ length: 61 }, (_, i) => 2010 - i).map((year) => (
-                              <SelectItem key={year} value={String(year)} className="font-mono">
+                              <SelectItem key={year} value={String(year)}>
                                 {year}
                               </SelectItem>
                             ))}
@@ -685,14 +685,14 @@ export default function EmailManagementPage() {
 
                     {firstName && lastName && !firstNameError && !lastNameError && !middleNameError && dobDay && dobMonth && dobYear && (
                       <div className="p-3 bg-primary/10 rounded-lg border border-primary/30">
-                        <p className="text-xs text-muted-foreground font-mono">İsim:</p>
-                        <p className="font-mono text-foreground font-medium">
+                        <p className="text-xs text-muted-foreground">İsim:</p>
+                        <p className="text-foreground font-medium">
                           {firstName} {middleName ? middleName + ' ' : ''}{lastName}
                         </p>
-                        <p className="text-xs text-muted-foreground font-mono mt-2">Oluşturulacak email:</p>
+                        <p className="text-xs text-muted-foreground mt-2">Oluşturulacak email:</p>
                         <p className="font-mono text-primary font-medium">{generatedUsername}@{EMAIL_DOMAIN}</p>
-                        <p className="text-xs text-muted-foreground font-mono mt-1">
-                          DOB: {dobMonth.padStart(2, '0')}/{dobDay.padStart(2, '0')}/{dobYear}
+                        <p className="text-xs text-muted-foreground mt-1">
+                          DOB: <span className="font-mono">{dobMonth.padStart(2, '0')}/{dobDay.padStart(2, '0')}/{dobYear}</span>
                         </p>
                       </div>
                     )}
@@ -700,7 +700,7 @@ export default function EmailManagementPage() {
                     <Button
                       onClick={handleCreateEmail}
                       disabled={isSubmitting || !firstName || !lastName || !!firstNameError || !!lastNameError || !!middleNameError || !dobDay || !dobMonth || !dobYear}
-                      className="w-full cyber-glow font-mono"
+                      className="w-full"
                     >
                       {isSubmitting ? 'Oluşturuluyor...' : 'Email Oluştur'}
                     </Button>
@@ -716,26 +716,26 @@ export default function EmailManagementPage() {
           <Table>
             <TableHeader>
               <TableRow className="border-b border-border/50">
-                <TableHead className="font-mono text-muted-foreground">
+                <TableHead className="text-muted-foreground">
                   <div className="flex items-center gap-2">
                     <Server size={14} />
                     HESAP ID
                   </div>
                 </TableHead>
-                <TableHead className="font-mono text-muted-foreground">
+                <TableHead className="text-muted-foreground">
                   <div className="flex items-center gap-2">
                     <Mail size={14} />
                     EMAIL ADRESİ
                   </div>
                 </TableHead>
-                <TableHead className="font-mono text-muted-foreground">İŞLEMLER</TableHead>
+                <TableHead className="text-muted-foreground">İŞLEMLER</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
                   <TableCell colSpan={3} className="text-center py-8">
-                    <span className="text-muted-foreground font-mono animate-pulse">
+                    <span className="text-muted-foreground animate-pulse">
                       Yükleniyor...
                     </span>
                   </TableCell>
@@ -744,12 +744,11 @@ export default function EmailManagementPage() {
                 <TableRow>
                   <TableCell colSpan={3} className="text-center py-8">
                     <AlertCircle size={32} className="mx-auto text-destructive mb-2" />
-                    <p className="text-destructive font-mono text-sm mb-2">{apiError}</p>
+                    <p className="text-destructive text-sm mb-2">{apiError}</p>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => fetchAccounts(currentPage)}
-                      className="font-mono"
                     >
                       <RefreshCw size={14} className="mr-2" />
                       Tekrar Dene
@@ -760,7 +759,7 @@ export default function EmailManagementPage() {
                 <TableRow>
                   <TableCell colSpan={3} className="text-center py-8">
                     <Mail size={32} className="mx-auto text-muted-foreground mb-2" />
-                    <span className="text-muted-foreground font-mono">
+                    <span className="text-muted-foreground">
                       {searchQuery ? 'Arama sonucu bulunamadı' : 'Henüz email hesabı yok'}
                     </span>
                   </TableCell>
@@ -784,7 +783,7 @@ export default function EmailManagementPage() {
                             size="sm"
                             onClick={() => openPasswordDialog(account)}
                             disabled={isSubmitting}
-                            className="hover:bg-primary/10 hover:text-primary font-mono text-xs"
+                            className="hover:bg-primary/10 hover:text-primary text-xs"
                           >
                             <Key size={14} className="mr-1" />
                             Şifre
@@ -796,7 +795,7 @@ export default function EmailManagementPage() {
                             size="sm"
                             onClick={() => handleDeleteAllEmails(account)}
                             disabled={isSubmitting}
-                            className="hover:bg-orange-500/10 hover:text-orange-500 font-mono text-xs"
+                            className="hover:bg-orange-500/10 hover:text-orange-500 text-xs"
                           >
                             <Trash2 size={14} className="mr-1" />
                             Mailler
@@ -808,7 +807,7 @@ export default function EmailManagementPage() {
                             size="sm"
                             onClick={() => handleDeleteAccount(account)}
                             disabled={isSubmitting}
-                            className="hover:bg-destructive/10 hover:text-destructive font-mono text-xs"
+                            className="hover:bg-destructive/10 hover:text-destructive text-xs"
                           >
                             <Trash2 size={14} className="mr-1" />
                             Hesap
@@ -825,8 +824,8 @@ export default function EmailManagementPage() {
           {/* Pagination Controls */}
           {totalAccounts > 0 && (
             <div className="flex items-center justify-between p-4 border-t border-border/30">
-              <span className="font-mono text-xs text-muted-foreground">
-                {searchQuery 
+              <span className="text-xs text-muted-foreground">
+                {searchQuery
                   ? `${filteredAccounts.length} / ${totalAccounts} hesap gösteriliyor`
                   : `Toplam: ${totalAccounts} hesap`
                 }
@@ -837,12 +836,12 @@ export default function EmailManagementPage() {
                   size="sm"
                   onClick={handlePrevPage}
                   disabled={currentPage <= 1 || isLoading}
-                  className="hover:bg-primary/10 font-mono text-xs"
+                  className="hover:bg-primary/10 text-xs"
                 >
                   <ChevronLeft size={16} className="mr-1" />
                   Önceki
                 </Button>
-                <span className="font-mono text-sm text-foreground px-2">
+                <span className="text-sm text-foreground px-2">
                   {currentPage} / {totalPages || 1}
                 </span>
                 <Button
@@ -850,7 +849,7 @@ export default function EmailManagementPage() {
                   size="sm"
                   onClick={handleNextPage}
                   disabled={!paginationView?.next || isLoading}
-                  className="hover:bg-primary/10 font-mono text-xs"
+                  className="hover:bg-primary/10 text-xs"
                 >
                   Sonraki
                   <ChevronRight size={16} className="ml-1" />
@@ -864,26 +863,26 @@ export default function EmailManagementPage() {
         <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
           <DialogContent className="cyber-card border-primary/30">
             <DialogHeader>
-              <DialogTitle className="font-mono text-foreground flex items-center gap-2">
+              <DialogTitle className="text-foreground flex items-center gap-2">
                 <Key size={20} className="text-primary" />
                 Şifre Değiştir
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-4 mt-4">
               <div className="p-3 bg-muted/30 rounded-lg">
-                <p className="text-xs text-muted-foreground font-mono">Hesap:</p>
+                <p className="text-xs text-muted-foreground">Hesap:</p>
                 <p className="font-mono text-sm text-primary">
                   {selectedAccount?.address || selectedAccount?.name || selectedAccount?.id}
                 </p>
               </div>
               <div className="space-y-2">
-                <Label className="text-muted-foreground font-mono text-xs">YENİ ŞİFRE</Label>
+                <Label className="text-muted-foreground text-xs">YENİ ŞİFRE</Label>
                 <div className="relative">
                   <Input
                     type={showPassword ? 'text' : 'password'}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    className="cyber-input font-mono pr-10"
+                    className="cyber-input pr-10"
                     placeholder="Yeni şifre"
                   />
                   <button
@@ -896,19 +895,19 @@ export default function EmailManagementPage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label className="text-muted-foreground font-mono text-xs">ŞİFRE TEKRAR</Label>
+                <Label className="text-muted-foreground text-xs">ŞİFRE TEKRAR</Label>
                 <Input
                   type={showPassword ? 'text' : 'password'}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="cyber-input font-mono"
+                  className="cyber-input"
                   placeholder="Şifreyi tekrar girin"
                 />
               </div>
               <Button
                 onClick={handleChangePassword}
                 disabled={isSubmitting}
-                className="w-full cyber-glow font-mono"
+                className="w-full"
               >
                 {isSubmitting ? 'Değiştiriliyor...' : 'Şifreyi Değiştir'}
               </Button>

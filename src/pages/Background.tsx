@@ -522,8 +522,8 @@ export default function BackgroundPage() {
         <div className="flex items-center justify-center h-full">
           <div className="text-center">
             <Shield size={48} className="mx-auto text-muted-foreground mb-4" />
-            <h2 className="text-xl font-mono text-foreground">Erişim Engellendi</h2>
-            <p className="text-muted-foreground font-mono text-sm">
+            <h2 className="text-xl font-semibold text-foreground">Erişim Engellendi</h2>
+            <p className="text-muted-foreground text-sm">
               Bu sayfayı görüntülemek için yetkiniz yok
             </p>
           </div>
@@ -538,10 +538,10 @@ export default function BackgroundPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-mono font-bold text-foreground cyber-glow-text">
+            <h1 className="text-2xl font-bold text-foreground">
               Background Kontrol
             </h1>
-            <p className="text-muted-foreground font-mono text-sm">
+            <p className="text-muted-foreground text-sm">
               Email hesaplarının background check bilgilerini yönetin
             </p>
           </div>
@@ -565,7 +565,7 @@ export default function BackgroundPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Email, isim veya doğum tarihine göre ara..."
-              className="cyber-input font-mono pl-10 pr-10"
+              className="cyber-input pl-10 pr-10"
             />
             {searchQuery && (
               <button
@@ -578,14 +578,14 @@ export default function BackgroundPage() {
           </div>
           
           <Select value={filterStatus} onValueChange={(value) => setFilterStatus(value as AccountStatus | 'all')}>
-            <SelectTrigger className="w-full sm:w-48 cyber-input font-mono">
+            <SelectTrigger className="w-full sm:w-48 cyber-input">
               <Filter size={14} className="mr-2 text-muted-foreground" />
               <SelectValue placeholder="Tüm Durumlar" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all" className="font-mono">Tüm Durumlar</SelectItem>
+              <SelectItem value="all">Tüm Durumlar</SelectItem>
               {Object.entries(statusConfig).map(([key, config]) => (
-                <SelectItem key={key} value={key} className="font-mono">
+                <SelectItem key={key} value={key}>
                   <span className={config.color}>{config.label}</span>
                 </SelectItem>
               ))}
@@ -598,35 +598,35 @@ export default function BackgroundPage() {
           <Table>
             <TableHeader>
               <TableRow className="border-b border-border/50">
-                <TableHead className="font-mono text-muted-foreground">
+                <TableHead className="text-muted-foreground">
                   <div className="flex items-center gap-2">
                     <User size={14} />
                     FIRST NAME
                   </div>
                 </TableHead>
-                <TableHead className="font-mono text-muted-foreground">MIDDLE NAME</TableHead>
-                <TableHead className="font-mono text-muted-foreground">LAST NAME</TableHead>
-                <TableHead className="font-mono text-muted-foreground">
+                <TableHead className="text-muted-foreground">MIDDLE NAME</TableHead>
+                <TableHead className="text-muted-foreground">LAST NAME</TableHead>
+                <TableHead className="text-muted-foreground">
                   <div className="flex items-center gap-2">
                     <Mail size={14} />
                     EMAIL
                   </div>
                 </TableHead>
-                <TableHead className="font-mono text-muted-foreground">
+                <TableHead className="text-muted-foreground">
                   <div className="flex items-center gap-2">
                     <Calendar size={14} />
                     DOĞUM TARİHİ
                   </div>
                 </TableHead>
-                <TableHead className="font-mono text-muted-foreground">DURUM</TableHead>
-                <TableHead className="font-mono text-muted-foreground">İŞLEMLER</TableHead>
+                <TableHead className="text-muted-foreground">DURUM</TableHead>
+                <TableHead className="text-muted-foreground">İŞLEMLER</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-8">
-                    <span className="text-muted-foreground font-mono animate-pulse">
+                    <span className="text-muted-foreground animate-pulse">
                       Yükleniyor...
                     </span>
                   </TableCell>
@@ -635,11 +635,11 @@ export default function BackgroundPage() {
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-8">
                     <FileSearch size={32} className="mx-auto text-muted-foreground mb-2" />
-                    <span className="text-muted-foreground font-mono">
+                    <span className="text-muted-foreground">
                       {searchQuery ? 'Arama sonucu bulunamadı' : 'Henüz kayıtlı email hesabı yok'}
                     </span>
                     {!searchQuery && (
-                      <p className="text-muted-foreground font-mono text-xs mt-1">
+                      <p className="text-muted-foreground text-xs mt-1">
                         Email oluşturma sayfasından yeni hesap ekleyebilirsiniz
                       </p>
                     )}
@@ -651,7 +651,7 @@ export default function BackgroundPage() {
                   const dob = formatDateOfBirth(account.date_of_birth);
                   return (
                     <TableRow key={account.id} className="border-b border-border/30">
-                      <TableCell className="font-mono text-sm">
+                      <TableCell className="text-sm">
                         <button
                           onClick={() => copyToClipboard(nameParts.first, 'First Name')}
                           className="px-2 py-1 bg-secondary/50 text-foreground rounded hover:bg-secondary transition-colors cursor-pointer flex items-center gap-1 group"
@@ -661,7 +661,7 @@ export default function BackgroundPage() {
                           <Copy size={12} className="opacity-0 group-hover:opacity-50 transition-opacity" />
                         </button>
                       </TableCell>
-                      <TableCell className="font-mono text-sm">
+                      <TableCell className="text-sm">
                         {nameParts.middle ? (
                           <button
                             onClick={() => copyToClipboard(nameParts.middle, 'Middle Name')}
@@ -675,7 +675,7 @@ export default function BackgroundPage() {
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
-                      <TableCell className="font-mono text-sm">
+                      <TableCell className="text-sm">
                         {nameParts.last ? (
                           <button
                             onClick={() => copyToClipboard(nameParts.last, 'Last Name')}
@@ -709,7 +709,7 @@ export default function BackgroundPage() {
                           <Copy size={12} className="opacity-0 group-hover:opacity-50 transition-opacity" />
                         </button>
                       </TableCell>
-                      <TableCell className="font-mono text-sm">
+                      <TableCell className="text-sm">
                         {(() => {
                           const status = account.status || 'acildi';
                           const config = statusConfig[status];
@@ -727,7 +727,7 @@ export default function BackgroundPage() {
                               variant="outline"
                               size="sm"
                               onClick={() => openEditDialog(account)}
-                              className="hover:bg-primary/10 hover:text-primary hover:border-primary font-mono text-xs"
+                              className="hover:bg-primary/10 hover:text-primary hover:border-primary text-xs"
                             >
                               <Edit size={14} className="mr-1" />
                               Düzenle
@@ -745,8 +745,8 @@ export default function BackgroundPage() {
           {/* Total Count */}
           {accounts.length > 0 && (
             <div className="flex items-center justify-between p-4 border-t border-border/30">
-              <span className="font-mono text-xs text-muted-foreground">
-                {searchQuery 
+              <span className="text-xs text-muted-foreground">
+                {searchQuery
                   ? `${filteredAccounts.length} / ${accounts.length} hesap gösteriliyor`
                   : `Toplam: ${accounts.length} hesap`
                 }
@@ -760,7 +760,7 @@ export default function BackgroundPage() {
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="cyber-card border-primary/30">
           <DialogHeader>
-            <DialogTitle className="font-mono text-foreground flex items-center gap-2">
+            <DialogTitle className="text-foreground flex items-center gap-2">
               <Edit size={20} className="text-primary" />
               Hesap Bilgilerini Düzenle
             </DialogTitle>
@@ -768,7 +768,7 @@ export default function BackgroundPage() {
           <div className="space-y-4 mt-4">
             {/* Email (read-only) */}
             <div className="space-y-2">
-              <Label className="text-muted-foreground font-mono text-xs">EMAIL</Label>
+              <Label className="text-muted-foreground text-xs">EMAIL</Label>
               <Input
                 value={editingAccount?.email || ''}
                 disabled
@@ -778,46 +778,46 @@ export default function BackgroundPage() {
 
             {/* First Name */}
             <div className="space-y-2">
-              <Label className="text-muted-foreground font-mono text-xs">FIRST NAME *</Label>
+              <Label className="text-muted-foreground text-xs">FIRST NAME *</Label>
               <Input
                 value={editFirstName}
                 onChange={(e) => setEditFirstName(e.target.value.toUpperCase())}
-                className="cyber-input font-mono"
+                className="cyber-input"
                 placeholder="JOHN"
               />
             </div>
 
             {/* Middle Name */}
             <div className="space-y-2">
-              <Label className="text-muted-foreground font-mono text-xs">MIDDLE NAME</Label>
+              <Label className="text-muted-foreground text-xs">MIDDLE NAME</Label>
               <Input
                 value={editMiddleName}
                 onChange={(e) => setEditMiddleName(e.target.value.toUpperCase())}
-                className="cyber-input font-mono"
+                className="cyber-input"
                 placeholder="WILLIAM"
               />
             </div>
 
             {/* Last Name */}
             <div className="space-y-2">
-              <Label className="text-muted-foreground font-mono text-xs">LAST NAME *</Label>
+              <Label className="text-muted-foreground text-xs">LAST NAME *</Label>
               <Input
                 value={editLastName}
                 onChange={(e) => setEditLastName(e.target.value.toUpperCase())}
-                className="cyber-input font-mono"
+                className="cyber-input"
                 placeholder="DOE"
               />
             </div>
 
             {/* DOB */}
             <div className="space-y-2">
-              <Label className="text-muted-foreground font-mono text-xs flex items-center gap-2">
+              <Label className="text-muted-foreground text-xs flex items-center gap-2">
                 <Calendar size={14} />
                 DOĞUM TARİHİ (AY/GÜN/YIL) *
               </Label>
               <div className="grid grid-cols-3 gap-2">
                 <Select value={editDobMonth} onValueChange={setEditDobMonth}>
-                  <SelectTrigger className="cyber-input font-mono">
+                  <SelectTrigger className="cyber-input">
                     <SelectValue placeholder="Ay" />
                   </SelectTrigger>
                   <SelectContent>
@@ -830,7 +830,7 @@ export default function BackgroundPage() {
                 </Select>
 
                 <Select value={editDobDay} onValueChange={setEditDobDay}>
-                  <SelectTrigger className="cyber-input font-mono">
+                  <SelectTrigger className="cyber-input">
                     <SelectValue placeholder="Gün" />
                   </SelectTrigger>
                   <SelectContent>
@@ -843,7 +843,7 @@ export default function BackgroundPage() {
                 </Select>
 
                 <Select value={editDobYear} onValueChange={setEditDobYear}>
-                  <SelectTrigger className="cyber-input font-mono">
+                  <SelectTrigger className="cyber-input">
                     <SelectValue placeholder="Yıl" />
                   </SelectTrigger>
                   <SelectContent>
@@ -859,14 +859,14 @@ export default function BackgroundPage() {
 
             {/* Status */}
             <div className="space-y-2">
-              <Label className="text-muted-foreground font-mono text-xs">DURUM</Label>
+              <Label className="text-muted-foreground text-xs">DURUM</Label>
               <Select value={editStatus} onValueChange={(value) => setEditStatus(value as AccountStatus)}>
-                <SelectTrigger className="cyber-input font-mono">
+                <SelectTrigger className="cyber-input">
                   <SelectValue placeholder="Durum seçin" />
                 </SelectTrigger>
                 <SelectContent>
                   {Object.entries(statusConfig).map(([key, config]) => (
-                    <SelectItem key={key} value={key} className="font-mono">
+                    <SelectItem key={key} value={key}>
                       <span className={config.color}>{config.label}</span>
                     </SelectItem>
                   ))}
@@ -877,7 +877,7 @@ export default function BackgroundPage() {
             <Button
               onClick={handleSaveEdit}
               disabled={isSubmitting}
-              className="w-full cyber-glow font-mono"
+              className="w-full"
             >
               {isSubmitting ? 'Kaydediliyor...' : 'Kaydet'}
             </Button>

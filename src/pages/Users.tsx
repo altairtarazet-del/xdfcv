@@ -196,8 +196,8 @@ export default function UsersPage() {
         <div className="flex items-center justify-center h-full">
           <div className="text-center">
             <Shield size={48} className="mx-auto text-muted-foreground mb-4" />
-            <h2 className="text-xl font-mono text-foreground">Erişim Engellendi</h2>
-            <p className="text-muted-foreground font-mono text-sm">
+            <h2 className="text-xl font-semibold text-foreground">Erişim Engellendi</h2>
+            <p className="text-muted-foreground text-sm">
               Bu sayfayı görüntülemek için admin yetkisi gerekiyor
             </p>
           </div>
@@ -212,10 +212,10 @@ export default function UsersPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-mono font-bold text-foreground cyber-glow-text">
+            <h1 className="text-2xl font-bold text-foreground">
               Kullanıcı Yönetimi
             </h1>
-            <p className="text-muted-foreground font-mono text-sm">
+            <p className="text-muted-foreground text-sm">
               Sistem kullanıcılarını yönetin ve rol atayın
             </p>
           </div>
@@ -225,20 +225,20 @@ export default function UsersPage() {
             if (!open) resetForm();
           }}>
             <DialogTrigger asChild>
-              <Button className="cyber-glow font-mono">
+              <Button>
                 <UserPlus size={18} className="mr-2" />
                 Yeni Kullanıcı
               </Button>
             </DialogTrigger>
             <DialogContent className="cyber-card border-primary/30">
               <DialogHeader>
-                <DialogTitle className="font-mono text-foreground">
+                <DialogTitle className="text-foreground">
                   Yeni Kullanıcı Oluştur
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-4 mt-4">
                 <div className="space-y-2">
-                  <Label className="text-muted-foreground font-mono text-xs">E-POSTA</Label>
+                  <Label className="text-muted-foreground text-xs">E-POSTA</Label>
                   <Input
                     type="email"
                     value={formEmail}
@@ -248,41 +248,41 @@ export default function UsersPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-muted-foreground font-mono text-xs">ŞİFRE</Label>
+                  <Label className="text-muted-foreground text-xs">ŞİFRE</Label>
                   <Input
                     type="password"
                     value={formPassword}
                     onChange={(e) => setFormPassword(e.target.value)}
-                    className="cyber-input font-mono"
+                    className="cyber-input"
                     placeholder="••••••••"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-muted-foreground font-mono text-xs">GÖRÜNEN AD</Label>
+                  <Label className="text-muted-foreground text-xs">GÖRÜNEN AD</Label>
                   <Input
                     type="text"
                     value={formDisplayName}
                     onChange={(e) => setFormDisplayName(e.target.value)}
-                    className="cyber-input font-mono"
+                    className="cyber-input"
                     placeholder="John Doe"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-muted-foreground font-mono text-xs">ROL</Label>
+                  <Label className="text-muted-foreground text-xs">ROL</Label>
                   <Select value={formRoleId} onValueChange={setFormRoleId}>
-                    <SelectTrigger className="cyber-input font-mono">
+                    <SelectTrigger className="cyber-input">
                       <SelectValue placeholder="Rol seçin..." />
                     </SelectTrigger>
                     <SelectContent>
                       {roles.map((role) => (
-                        <SelectItem key={role.id} value={role.id} className="font-mono">
+                        <SelectItem key={role.id} value={role.id}>
                           {role.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-                <Button onClick={handleCreateUser} className="w-full cyber-glow font-mono">
+                <Button onClick={handleCreateUser} className="w-full">
                   Kullanıcı Oluştur
                 </Button>
               </div>
@@ -295,18 +295,18 @@ export default function UsersPage() {
           <Table>
             <TableHeader>
               <TableRow className="border-b border-border/50">
-                <TableHead className="font-mono text-muted-foreground">E-POSTA</TableHead>
-                <TableHead className="font-mono text-muted-foreground">İSİM</TableHead>
-                <TableHead className="font-mono text-muted-foreground">ROL</TableHead>
-                <TableHead className="font-mono text-muted-foreground">KAYIT TARİHİ</TableHead>
-                <TableHead className="font-mono text-muted-foreground">İŞLEMLER</TableHead>
+                <TableHead className="text-muted-foreground">E-POSTA</TableHead>
+                <TableHead className="text-muted-foreground">İSİM</TableHead>
+                <TableHead className="text-muted-foreground">ROL</TableHead>
+                <TableHead className="text-muted-foreground">KAYIT TARİHİ</TableHead>
+                <TableHead className="text-muted-foreground">İŞLEMLER</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center py-8">
-                    <span className="text-muted-foreground font-mono animate-pulse">
+                    <span className="text-muted-foreground animate-pulse">
                       Yükleniyor...
                     </span>
                   </TableCell>
@@ -314,7 +314,7 @@ export default function UsersPage() {
               ) : users.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center py-8">
-                    <span className="text-muted-foreground font-mono">
+                    <span className="text-muted-foreground">
                       Henüz kullanıcı yok
                     </span>
                   </TableCell>
@@ -323,7 +323,7 @@ export default function UsersPage() {
                 users.map((user) => (
                   <TableRow key={user.id} className="border-b border-border/30">
                     <TableCell className="font-mono text-sm">{user.email}</TableCell>
-                    <TableCell className="font-mono text-sm">
+                    <TableCell className="text-sm">
                       {user.display_name || '-'}
                     </TableCell>
                     <TableCell>
@@ -332,12 +332,12 @@ export default function UsersPage() {
                         onValueChange={(value) => handleUpdateUserRole(user.user_id, value || null)}
                         disabled={user.role === 'admin'}
                       >
-                        <SelectTrigger className="w-40 cyber-input font-mono text-xs">
+                        <SelectTrigger className="w-40 cyber-input text-xs">
                           <SelectValue placeholder={user.role === 'admin' ? 'Admin' : 'Rol seç...'} />
                         </SelectTrigger>
                         <SelectContent>
                           {roles.map((role) => (
-                            <SelectItem key={role.id} value={role.id} className="font-mono text-xs">
+                            <SelectItem key={role.id} value={role.id} className="text-xs">
                               {role.name}
                             </SelectItem>
                           ))}

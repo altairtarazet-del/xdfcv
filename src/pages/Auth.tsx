@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, EyeOff, Lock, Mail, Terminal } from 'lucide-react';
+import { Eye, EyeOff, Lock, Mail, ArrowRight } from 'lucide-react';
 import { z } from 'zod';
 import { Checkbox } from '@/components/ui/checkbox';
 
@@ -21,11 +21,10 @@ export default function Auth() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [terminalText, setTerminalText] = useState('');
   const [rememberMe, setRememberMe] = useState(() => {
     return localStorage.getItem('rememberMe') === 'true';
   });
-  
+
   const { signIn, user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -35,23 +34,6 @@ export default function Auth() {
       navigate('/dashboard');
     }
   }, [user, navigate]);
-
-  useEffect(() => {
-    const text = '> Güvenli bağlantı kuruluyor...\n> Kimlik doğrulama modülü aktif\n> Erişim için yetkilendirme bekleniyor...';
-    
-    let i = 0;
-    setTerminalText('');
-    const interval = setInterval(() => {
-      if (i < text.length) {
-        setTerminalText(prev => prev + text[i]);
-        i++;
-      } else {
-        clearInterval(interval);
-      }
-    }, 30);
-
-    return () => clearInterval(interval);
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,22 +51,21 @@ export default function Auth() {
         return;
       }
 
-      // Store remember me preference
       localStorage.setItem('rememberMe', rememberMe.toString());
-      
+
       const { error } = await signIn(email, password);
       if (error) {
         toast({
           variant: 'destructive',
           title: 'Giriş Başarısız',
-          description: error.message === 'Invalid login credentials' 
-            ? 'E-posta veya şifre hatalı' 
+          description: error.message === 'Invalid login credentials'
+            ? 'E-posta veya şifre hatalı'
             : error.message,
         });
       } else {
         toast({
           title: 'Giriş Başarılı',
-          description: 'Sisteme hoş geldiniz!',
+          description: 'Hoş geldiniz!',
         });
       }
     } finally {
@@ -93,78 +74,66 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen matrix-bg flex items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden">
       <CyberBackground />
-      
-      <div className="w-full max-w-md relative z-10 animate-fade-in">
+
+      <div className="w-full max-w-sm relative z-10 animate-fade-in">
         {/* Logo */}
-        <div className="text-center mb-8">
-          <CyberLogo size="lg" />
-          <p className="text-muted-foreground mt-2 font-mono text-sm">
-            Secure Mail Testing Platform
+        <div className="text-center mb-10">
+          <div className="flex justify-center mb-4">
+            <CyberLogo size="lg" />
+          </div>
+          <p className="text-muted-foreground text-sm">
+            Hesap yönetim paneline giriş yapın
           </p>
         </div>
 
-        {/* Terminal Preview */}
-        <div className="cyber-card rounded-lg p-4 mb-6 font-mono text-sm">
-          <div className="flex items-center gap-2 mb-2 text-muted-foreground">
-            <Terminal size={14} />
-            <span>terminal</span>
-          </div>
-          <div className="text-primary whitespace-pre-wrap min-h-[50px]">
-            {terminalText}
-            <span className="typing-cursor" />
-          </div>
-        </div>
-
-        {/* Auth Form */}
-        <div className="cyber-card rounded-lg p-6">
-          <div className="mb-6 pb-2 border-b border-primary/30">
-            <h2 className="font-mono text-lg text-primary cyber-glow-text text-center">
-              SİSTEM GİRİŞİ
-            </h2>
-          </div>
+        {/* Login Card */}
+        <div className="rounded-xl bg-card border border-border p-6 shadow-xl shadow-black/20">
+          <h2 className="text-lg font-semibold text-foreground mb-6">
+            Giriş Yap
+          </h2>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-muted-foreground font-mono text-xs">
-                E-POSTA
+              <Label htmlFor="email" className="text-sm text-muted-foreground">
+                E-posta
               </Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
                 <Input
                   id="email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="cyber-input pl-10 font-mono"
-                  placeholder="user@dashermail.com"
+                  className="pl-9 bg-input border-border focus:border-primary focus:ring-1 focus:ring-primary/30"
+                  placeholder="email@dashermail.com"
                   required
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-muted-foreground font-mono text-xs">
-                ŞİFRE
+              <Label htmlFor="password" className="text-sm text-muted-foreground">
+                Şifre
               </Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
                 <Input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="cyber-input pl-10 pr-10 font-mono"
+                  className="pl-9 pr-9 bg-input border-border focus:border-primary focus:ring-1 focus:ring-primary/30"
                   placeholder="••••••••"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
             </div>
@@ -174,40 +143,43 @@ export default function Auth() {
                 id="rememberMe"
                 checked={rememberMe}
                 onCheckedChange={(checked) => setRememberMe(checked === true)}
-                className="border-primary/50 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                className="border-border data-[state=checked]:bg-primary data-[state=checked]:border-primary"
               />
-              <Label 
-                htmlFor="rememberMe" 
-                className="text-muted-foreground font-mono text-xs cursor-pointer"
+              <Label
+                htmlFor="rememberMe"
+                className="text-sm text-muted-foreground cursor-pointer"
               >
-                Beni Hatırla
+                Beni hatırla
               </Label>
             </div>
 
             <Button
               type="submit"
-              className="w-full cyber-glow font-mono"
+              className="w-full h-10 font-medium"
               disabled={isLoading}
             >
               {isLoading ? (
                 <span className="flex items-center gap-2">
-                  <span className="animate-spin">⟳</span>
-                  DOĞRULANIYOR...
+                  <span className="h-4 w-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                  Giriş yapılıyor...
                 </span>
               ) : (
-                'SİSTEME GİRİŞ'
+                <span className="flex items-center gap-2">
+                  Giriş Yap
+                  <ArrowRight size={16} />
+                </span>
               )}
             </Button>
           </form>
 
-          <p className="text-center text-muted-foreground text-xs mt-4 font-mono">
-            Hesap için sistem yöneticinize başvurun
+          <p className="text-center text-muted-foreground text-xs mt-5">
+            Hesap için yöneticinize başvurun
           </p>
         </div>
 
         {/* Footer */}
-        <p className="text-center text-muted-foreground text-xs mt-6 font-mono">
-          © 2025 DasherMail • Tüm hakları saklıdır
+        <p className="text-center text-muted-foreground/50 text-xs mt-8">
+          DasherMail &copy; {new Date().getFullYear()}
         </p>
       </div>
     </div>

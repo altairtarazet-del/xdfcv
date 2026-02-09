@@ -1,4 +1,4 @@
-import { Mail, Shield } from 'lucide-react';
+import { Zap } from 'lucide-react';
 
 interface CyberLogoProps {
   size?: 'sm' | 'md' | 'lg';
@@ -6,32 +6,31 @@ interface CyberLogoProps {
 
 export function CyberLogo({ size = 'md' }: CyberLogoProps) {
   const sizeClasses = {
-    sm: 'text-xl',
-    md: 'text-3xl',
-    lg: 'text-5xl',
+    sm: 'text-lg',
+    md: 'text-2xl',
+    lg: 'text-4xl',
   };
 
   const iconSizes = {
-    sm: 20,
-    md: 32,
-    lg: 48,
+    sm: 18,
+    md: 28,
+    lg: 40,
   };
 
   return (
-    <div className="flex items-center gap-3">
-      <div className="relative">
-        <Shield
-          size={iconSizes[size]}
-          className="text-primary cyber-glow-text"
-        />
-        <Mail
-          size={iconSizes[size] * 0.5}
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-secondary"
-        />
+    <div className="flex items-center gap-2.5">
+      <div className="relative flex items-center justify-center">
+        <div className={`rounded-xl bg-primary/15 p-1.5 ${size === 'lg' ? 'p-2.5' : size === 'md' ? 'p-2' : 'p-1.5'}`}>
+          <Zap
+            size={iconSizes[size]}
+            className="text-primary"
+            fill="currentColor"
+          />
+        </div>
       </div>
-      <div className={`font-mono font-bold ${sizeClasses[size]}`}>
-        <span className="text-primary cyber-glow-text">Dasher</span>
-        <span className="text-secondary">Mail</span>
+      <div className={`font-semibold tracking-tight ${sizeClasses[size]}`}>
+        <span className="text-foreground">Dasher</span>
+        <span className="text-primary">Mail</span>
       </div>
     </div>
   );
