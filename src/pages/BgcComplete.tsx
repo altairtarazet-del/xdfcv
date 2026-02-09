@@ -29,13 +29,14 @@ import {
   AlertTriangle,
   ShieldAlert,
   Trash2,
+  Info,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { useAuth } from '@/hooks/useAuth';
 
 // Her hesabın TEK bir durumu var
-type AccountStatus = 'bgc_bekliyor' | 'bgc_process' | 'clear' | 'consider' | 'aktif' | 'kapandi';
+type AccountStatus = 'bgc_bekliyor' | 'bgc_process' | 'bilgi_bekliyor' | 'clear' | 'consider' | 'aktif' | 'kapandi';
 
 interface AccountRow {
   account_email: string;
@@ -55,11 +56,12 @@ interface SuspiciousResult {
   totalSuspicious: number;
 }
 
-function getStatus(bgcClear: boolean, bgcConsider: boolean, deactivated: boolean, firstPackage: boolean, bgcSubmitted: boolean): AccountStatus {
+function getStatus(bgcClear: boolean, bgcConsider: boolean, deactivated: boolean, firstPackage: boolean, bgcSubmitted: boolean, bgcInfoNeeded: boolean): AccountStatus {
   if (deactivated) return 'kapandi';
   if (firstPackage) return 'aktif';
   if (bgcConsider) return 'consider';
   if (bgcClear) return 'clear';
+  if (bgcInfoNeeded) return 'bilgi_bekliyor';
   if (bgcSubmitted) return 'bgc_process';
   return 'bgc_bekliyor';
 }
@@ -90,6 +92,15 @@ const STATUS_CONFIG: Record<AccountStatus, {
     borderColor: 'border-cyan-500/50',
     icon: Clock,
     tabColor: 'data-[state=active]:text-cyan-400',
+  },
+  bilgi_bekliyor: {
+    label: 'Bilgi Bekliyor',
+    description: 'Checkr ekstra bilgi/belge istiyor',
+    color: 'text-yellow-400',
+    bgColor: 'bg-yellow-500/20',
+    borderColor: 'border-yellow-500/50',
+    icon: Info,
+    tabColor: 'data-[state=active]:text-yellow-400',
   },
   clear: {
     label: 'Clear',
@@ -129,13 +140,14 @@ const STATUS_CONFIG: Record<AccountStatus, {
   },
 };
 
-const TAB_ORDER: AccountStatus[] = ['bgc_bekliyor', 'bgc_process', 'clear', 'consider', 'aktif', 'kapandi'];
+const TAB_ORDER: AccountStatus[] = ['bgc_bekliyor', 'bgc_process', 'bilgi_bekliyor', 'clear', 'consider', 'aktif', 'kapandi'];
 
 function getDisplayDate(account: AccountRow): string | null {
   switch (account.status) {
     case 'kapandi': return account.deactivatedDate;
     case 'aktif': return account.firstPackageDate;
     case 'consider': return account.considerDate;
+    case 'bilgi_bekliyor': return account.bgcInfoNeededDate;
     case 'bgc_process': return account.bgcSubmittedDate;
     default: return account.bgcDate;
   }
@@ -147,6 +159,7 @@ function getDateLabel(status: AccountStatus): string {
     case 'aktif': return 'İlk Paket Tarihi';
     case 'consider': return 'BGC Tarihi';
     case 'clear': return 'BGC Tarihi';
+    case 'bilgi_bekliyor': return 'Tespit Tarihi';
     case 'bgc_process': return 'Basvuru Tarihi';
     case 'bgc_bekliyor': return 'Kayit Tarihi';
   }
@@ -204,7 +217,7 @@ export default function BgcComplete() {
         }
         rows.push({
           account_email: s.account_email,
-          status: getStatus(!!d?.bgcDate, !!d?.considerDate, !!d?.deactivatedDate, !!d?.firstPackageDate, !!d?.bgcSubmittedDate),
+          status: getStatus(!!d?.bgcDate, !!d?.considerDate, !!d?.deactivatedDate, !!d?.firstPackageDate, !!d?.bgcSubmittedDate, !!infoNeededDate),
           bgcDate: d?.bgcDate || null,
           considerDate: d?.considerDate || null,
           deactivatedDate: d?.deactivatedDate || null,
@@ -348,6 +361,7 @@ export default function BgcComplete() {
     const result: Record<AccountStatus, AccountRow[]> = {
       bgc_bekliyor: [],
       bgc_process: [],
+      bilgi_bekliyor: [],
       clear: [],
       consider: [],
       aktif: [],
@@ -366,12 +380,13 @@ export default function BgcComplete() {
       return db - da;
     });
     result.bgc_process.sort((a, b) => {
-      // Info needed accounts come first
-      const aInfo = a.bgcInfoNeededDate ? 1 : 0;
-      const bInfo = b.bgcInfoNeededDate ? 1 : 0;
-      if (aInfo !== bInfo) return bInfo - aInfo;
       const da = a.bgcSubmittedDate ? new Date(a.bgcSubmittedDate).getTime() : 0;
       const db = b.bgcSubmittedDate ? new Date(b.bgcSubmittedDate).getTime() : 0;
+      return db - da;
+    });
+    result.bilgi_bekliyor.sort((a, b) => {
+      const da = a.bgcInfoNeededDate ? new Date(a.bgcInfoNeededDate).getTime() : 0;
+      const db = b.bgcInfoNeededDate ? new Date(b.bgcInfoNeededDate).getTime() : 0;
       return db - da;
     });
     result.clear.sort((a, b) => {
@@ -399,7 +414,7 @@ export default function BgcComplete() {
   }, [accounts, searchQuery]);
 
   const stats = useMemo(() => {
-    const counts: Record<AccountStatus, number> = { bgc_bekliyor: 0, bgc_process: 0, clear: 0, consider: 0, aktif: 0, kapandi: 0 };
+    const counts: Record<AccountStatus, number> = { bgc_bekliyor: 0, bgc_process: 0, bilgi_bekliyor: 0, clear: 0, consider: 0, aktif: 0, kapandi: 0 };
     for (const a of accounts) counts[a.status]++;
     return counts;
   }, [accounts]);
@@ -477,7 +492,7 @@ export default function BgcComplete() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
           {(Object.entries(STATUS_CONFIG) as [AccountStatus, typeof STATUS_CONFIG[AccountStatus]][]).map(([key, cfg]) => {
             const Icon = cfg.icon;
             return (
@@ -518,11 +533,10 @@ export default function BgcComplete() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AccountStatus)}>
-          <TabsList className="w-full grid grid-cols-6 h-auto">
+          <TabsList className="w-full grid grid-cols-7 h-auto">
             {TAB_ORDER.map((key) => {
               const cfg = STATUS_CONFIG[key];
               const Icon = cfg.icon;
-              const infoNeededCount = key === 'bgc_process' ? grouped[key].filter(a => a.bgcInfoNeededDate).length : 0;
               return (
                 <TabsTrigger
                   key={key}
@@ -534,11 +548,6 @@ export default function BgcComplete() {
                   <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full ${cfg.bgColor}`}>
                     {grouped[key].length}
                   </span>
-                  {infoNeededCount > 0 && (
-                    <span className="ml-0.5 text-[10px] px-1 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
-                      ⚠{infoNeededCount}
-                    </span>
-                  )}
                 </TabsTrigger>
               );
             })}
@@ -704,14 +713,7 @@ export default function BgcComplete() {
                               const displayDate = getDisplayDate(account);
                               return (
                                 <TableRow key={account.account_email}>
-                                  <TableCell className="font-mono text-sm">
-                                    {account.account_email}
-                                    {account.bgcInfoNeededDate && (
-                                      <Badge className="ml-2 bg-amber-500/20 text-amber-400 border-amber-500/50 text-[10px]">
-                                        Bilgi Bekliyor
-                                      </Badge>
-                                    )}
-                                  </TableCell>
+                                  <TableCell className="font-mono text-sm">{account.account_email}</TableCell>
                                   <TableCell className="font-mono text-xs text-muted-foreground">
                                     {displayDate ? format(new Date(displayDate), 'dd/MM/yyyy') : '-'}
                                   </TableCell>

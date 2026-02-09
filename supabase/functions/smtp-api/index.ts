@@ -1180,22 +1180,28 @@ function isBgcSubmittedSignal(subject: string, senderAddress: string): boolean {
 // ============================================================
 
 const BGC_INFO_NEEDED_SUBJECT_PATTERNS: RegExp[] = [
+  // Direct "info needed" signals
   /additional (information|info|documents?) (needed|required|requested)/i,
   /more information (needed|required)/i,
+  /information needed to complete/i,
   /provide.*(additional|more) (information|info|documents?)/i,
   /action required/i,
   /action needed/i,
   /your response (is )?(needed|required)/i,
   /submit.*(missing|additional|required) (documents?|information|info)/i,
   /documents? (needed|required|missing|requested)/i,
+  // Identity verification issues
   /verify your identity/i,
   /identity verification (needed|required|failed|incomplete)/i,
   /unable to verify/i,
   /could not verify/i,
+  // General requests
   /we need.*(information|documents?|verify)/i,
   /please (provide|submit|upload|verify|complete)/i,
   /incomplete.*(application|submission|information|check)/i,
+  // BGC stalled/paused states
   /background check.*(hold|paused|waiting|delayed|incomplete)/i,
+  /unresolved exceptions/i,
 ];
 
 function isBgcInfoNeededSignal(subject: string, senderAddress: string): boolean {
@@ -1204,8 +1210,12 @@ function isBgcInfoNeededSignal(subject: string, senderAddress: string): boolean 
   if (!isFromCheckr) return false;
 
   const subjectLower = (subject || '').toLowerCase();
+  // Exclude: already-handled or resolution emails
   if (subjectLower.includes('your background check is complete')) return false;
   if (subjectLower.includes('deactivated')) return false;
+  if (subjectLower.includes('success')) return false;
+  if (subjectLower.includes('is running')) return false;
+  if (subjectLower.includes('taking longer')) return false;
 
   for (const p of BGC_INFO_NEEDED_SUBJECT_PATTERNS) {
     if (p.test(subjectLower)) return true;
@@ -2547,6 +2557,30 @@ serve(async (req) => {
 
       case 'scanBgcSubmitted': {
         if (!supabaseClient) throw new Error('Supabase not configured');
+
+        // Reclassify old misclassified bgc_submitted records that are actually bgc_info_needed
+        const { data: misclassifiedRecords } = await supabaseClient
+          .from('bgc_complete_emails')
+          .select('account_id, mailbox_id, message_id, subject, from_address')
+          .eq('email_type', 'bgc_submitted')
+          .ilike('from_address', '%checkr%');
+
+        if (misclassifiedRecords && misclassifiedRecords.length > 0) {
+          const toReclassify = misclassifiedRecords.filter((r: any) =>
+            isBgcInfoNeededSignal(r.subject || '', r.from_address || '')
+          );
+          for (const rec of toReclassify) {
+            await supabaseClient
+              .from('bgc_complete_emails')
+              .update({ email_type: 'bgc_info_needed' })
+              .eq('account_id', rec.account_id)
+              .eq('mailbox_id', rec.mailbox_id)
+              .eq('message_id', rec.message_id);
+          }
+          if (toReclassify.length > 0) {
+            console.log(`[BGC_SUBMITTED] Reclassified ${toReclassify.length} records from bgc_submitted → bgc_info_needed`);
+          }
+        }
 
         const SCAN_FOLDERS_SUB = ['INBOX', 'Trash', 'Junk', 'Spam'];
 
