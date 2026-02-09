@@ -1,7 +1,26 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 import { create, verify as jwtVerify, getNumericDate } from "https://deno.land/x/djwt@v3.0.2/mod.ts";
+
+// Password hashing using Web Crypto API (no Worker dependency)
+async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const saltHex = [...salt].map(b => b.toString(16).padStart(2, '0')).join('');
+  const data = new TextEncoder().encode(saltHex + password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashHex = [...new Uint8Array(hashBuffer)].map(b => b.toString(16).padStart(2, '0')).join('');
+  return `sha256:${saltHex}:${hashHex}`;
+}
+
+async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  const parts = stored.split(':');
+  if (parts.length !== 3 || parts[0] !== 'sha256') return false;
+  const salt = parts[1];
+  const data = new TextEncoder().encode(salt + password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashHex = [...new Uint8Array(hashBuffer)].map(b => b.toString(16).padStart(2, '0')).join('');
+  return hashHex === parts[2];
+}
 
 const ALLOWED_ORIGIN = Deno.env.get('ALLOWED_ORIGIN') || '*';
 const corsHeaders = {
@@ -3464,14 +3483,44 @@ serve(async (req) => {
           });
         }
 
+        // Auto-sync smtp_account_id if missing
         if (!account.smtp_account_id) {
-          return new Response(JSON.stringify({ error: 'SMTP hesap eslesmesi yapilmamis' }), {
-            status: 401,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          console.log('[Portal] Auto-syncing smtp_account_id for', email);
+          let foundId: string | null = null;
+          let syncPage = 1;
+          let syncHasMore = true;
+          while (syncHasMore && syncPage <= 50) {
+            const syncResp = await fetch(
+              `${SMTP_API_URL}/accounts?page=${syncPage}`,
+              { headers }
+            );
+            if (!syncResp.ok) break;
+            const syncData = await syncResp.json();
+            const syncAccounts = syncData.member || syncData.data || [];
+            const match = syncAccounts.find((a: any) => a.address === email);
+            if (match) {
+              foundId = match.id;
+              break;
+            }
+            syncHasMore = !!syncData.view?.next;
+            syncPage++;
+          }
+          if (foundId) {
+            await supabaseClient
+              .from('email_accounts')
+              .update({ smtp_account_id: foundId })
+              .eq('email', email);
+            account.smtp_account_id = foundId;
+            console.log('[Portal] Synced smtp_account_id:', foundId);
+          } else {
+            return new Response(JSON.stringify({ error: 'SMTP hesap eslesmesi yapilamadi' }), {
+              status: 401,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
         }
 
-        const passwordValid = await bcrypt.compare(body.password, account.portal_password);
+        const passwordValid = await verifyPassword(body.password, account.portal_password);
         if (!passwordValid) {
           return new Response(JSON.stringify({ error: 'Sifre hatali' }), {
             status: 401,
@@ -3556,7 +3605,7 @@ serve(async (req) => {
         if (!email) throw new Error('Email gerekli');
         if (!newPassword || newPassword.length < 6) throw new Error('Sifre en az 6 karakter olmali');
 
-        const hash = await bcrypt.hash(newPassword);
+        const hash = await hashPassword(newPassword);
 
         const { error: updateError } = await supabaseClient
           .from('email_accounts')
