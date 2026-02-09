@@ -638,8 +638,20 @@ async function fetchEmailBody(accountId: string, mailboxId: string, messageId: s
   }
 }
 
-// Check if a BGC complete email's report contains "consider" result
-// Checks both the email body and the background_report attachment
+// Detect "consider" BGC result from Checkr email body text.
+//
+// Checkr sends the same subject "Your background check is complete" for both outcomes:
+//   CLEAR:    "Our part is done. We've sent your report to DoorDash."
+//   CONSIDER: "Information is being reported that could potentially impact your employment"
+//
+// We check the email body for Checkr's pre-adverse action language.
+const CONSIDER_BODY_PATTERNS = [
+  /could potentially impact/i,
+  /information is being reported/i,
+  /negatively impact your employment/i,
+  /important that you review your report/i,
+];
+
 async function checkBgcReportForConsider(
   accountId: string,
   mailboxId: string,
@@ -647,7 +659,6 @@ async function checkBgcReportForConsider(
   headers: Record<string, string>
 ): Promise<boolean> {
   try {
-    // Fetch full message to get body and attachments
     const msgRes = await fetch(
       `${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailboxId}/messages/${messageId}`,
       { headers }
@@ -656,44 +667,25 @@ async function checkBgcReportForConsider(
 
     const msgData = await msgRes.json();
 
-    // Check email body first
-    const bodyText = msgData.text || msgData.html?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || '';
-    if (/\bconsider\b/i.test(bodyText)) {
-      console.log(`[BGC_CONSIDER] "consider" found in email body`);
-      return true;
+    // Get email body text (plain text preferred, fallback to stripped HTML)
+    let bodyText = msgData.text || '';
+    if (Array.isArray(bodyText)) bodyText = bodyText.join(' ');
+    if (!bodyText && msgData.html) {
+      const html = Array.isArray(msgData.html) ? msgData.html.join(' ') : msgData.html;
+      bodyText = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
     }
 
-    // Check attachments for background_report file
-    const attachments = msgData.attachments || [];
-    const bgReport = attachments.find((att: any) => {
-      const filename = (att.filename || att.name || '').toLowerCase();
-      return filename.includes('background') || filename.includes('report');
-    });
-
-    if (!bgReport) return false;
-
-    console.log(`[BGC_CONSIDER] Found report attachment: ${bgReport.filename || bgReport.name}, downloading...`);
-
-    // Download the attachment
-    const attRes = await fetch(
-      `${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailboxId}/messages/${messageId}/attachments/${bgReport.id}`,
-      { headers }
-    );
-    if (!attRes.ok) return false;
-
-    // Read raw content and search for "consider"
-    const arrayBuffer = await attRes.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
-    const textDecoder = new TextDecoder('utf-8', { fatal: false });
-    const rawText = textDecoder.decode(bytes);
-
-    const found = /\bconsider\b/i.test(rawText);
-    if (found) {
-      console.log(`[BGC_CONSIDER] "consider" found in attachment`);
+    // Check for Checkr's consider/pre-adverse action language
+    for (const pattern of CONSIDER_BODY_PATTERNS) {
+      if (pattern.test(bodyText)) {
+        console.log(`[BGC_CONSIDER] Consider detected — matched: ${pattern}`);
+        return true;
+      }
     }
-    return found;
+
+    return false;
   } catch (e) {
-    console.error('[BGC_CONSIDER] Error checking report:', e);
+    console.error('[BGC_CONSIDER] Error checking email body:', e);
     return false;
   }
 }
