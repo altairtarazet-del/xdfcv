@@ -38,7 +38,7 @@ class SmtpDevClient:
         all_accounts = []
         page = 1
         while True:
-            data = await self._request("GET", "/accounts", params={"page": page})
+            data = await self._request("GET", "/accounts", params={"page": page, "per_page": 100})
             members = data.get("member", []) if isinstance(data, dict) else data
             for acc in members:
                 # Normalize: add 'email' from 'address', extract mailbox IDs
