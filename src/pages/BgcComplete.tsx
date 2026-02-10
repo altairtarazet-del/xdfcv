@@ -304,7 +304,14 @@ export default function BgcComplete() {
       const { data, error } = await supabase.functions.invoke('smtp-api', {
         body: { action },
       });
-      if (error) throw new Error(data?.error || error.message || 'Bilinmeyen hata');
+      if (error) {
+        let msg = error.message || 'Bilinmeyen hata';
+        try {
+          const body = await (error as any).context?.json();
+          if (body?.error) msg = body.error;
+        } catch {}
+        throw new Error(msg);
+      }
       return data;
     };
 

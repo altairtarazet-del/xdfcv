@@ -646,9 +646,28 @@ async function extractEmailData(subject: string, bodyText: string, emailType: st
   }
 }
 
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  maxRetries = 2
+): Promise<Response> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const res = await fetch(url, options);
+    if (res.ok) return res;
+    if ((res.status === 429 || res.status >= 500) && attempt < maxRetries) {
+      const wait = (attempt + 1) * 2000;
+      console.log(`[RETRY] ${url} returned ${res.status}, retrying in ${wait}ms (attempt ${attempt + 1}/${maxRetries})`);
+      await new Promise(r => setTimeout(r, wait));
+      continue;
+    }
+    return res;
+  }
+  return fetch(url, options);
+}
+
 async function fetchEmailBody(accountId: string, mailboxId: string, messageId: string, headers: Record<string, string>): Promise<string> {
   try {
-    const response = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailboxId}/messages/${messageId}`, { headers });
+    const response = await fetchWithRetry(`${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailboxId}/messages/${messageId}`, { headers });
     if (!response.ok) return '';
 
     const data = await response.json();
@@ -742,7 +761,7 @@ async function accountHasClearOverride(
   SCAN_FOLDERS: string[]
 ): Promise<boolean> {
   try {
-    const mbRes = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes`, { headers });
+    const mbRes = await fetchWithRetry(`${SMTP_API_URL}/accounts/${accountId}/mailboxes`, { headers });
     if (!mbRes.ok) return false;
 
     const mbData = await mbRes.json();
@@ -755,7 +774,7 @@ async function accountHasClearOverride(
       let hasMore = true;
 
       while (hasMore) {
-        const msgRes = await fetch(
+        const msgRes = await fetchWithRetry(
           `${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailbox.id}/messages?page=${msgPage}`,
           { headers }
         );
@@ -854,7 +873,7 @@ async function scanSingleAccountBgc(
     const cutoffDate = lastScan?.last_scanned_at ? new Date(lastScan.last_scanned_at) : null;
     
     // Get mailboxes for this account
-    const mbRes = await fetch(`${SMTP_API_URL}/accounts/${account.id}/mailboxes`, { headers });
+    const mbRes = await fetchWithRetry(`${SMTP_API_URL}/accounts/${account.id}/mailboxes`, { headers });
     if (!mbRes.ok) {
       console.error(`[BGC] Failed to fetch mailboxes for account ${account.id}`);
       return { bgcEmails, deactivatedEmails, messagesScanned, scannedMailboxes, skippedMessages };
@@ -882,7 +901,7 @@ async function scanSingleAccountBgc(
         while (hasMoreMsgs) {
           const msgUrl = `${SMTP_API_URL}/accounts/${account.id}/mailboxes/${mailbox.id}/messages?page=${msgPage}`;
 
-          const msgRes = await fetch(msgUrl, { headers });
+          const msgRes = await fetchWithRetry(msgUrl, { headers });
           if (!msgRes.ok) break;
 
           const msgData = await msgRes.json();
@@ -1072,7 +1091,7 @@ async function scanSingleAccountFirstPackage(
   let messagesScanned = 0;
 
   try {
-    const mbRes = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes`, { headers });
+    const mbRes = await fetchWithRetry(`${SMTP_API_URL}/accounts/${accountId}/mailboxes`, { headers });
     if (!mbRes.ok) {
       console.error(`[FIRST_PACKAGE] Failed to fetch mailboxes for account ${accountId}`);
       return { firstPackageEmails, messagesScanned };
@@ -1095,7 +1114,7 @@ async function scanSingleAccountFirstPackage(
       while (hasMoreMsgs && !foundFirstPackage) {
         const msgUrl = `${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailbox.id}/messages?page=${msgPage}`;
 
-        const msgRes = await fetch(msgUrl, { headers });
+        const msgRes = await fetchWithRetry(msgUrl, { headers });
         if (!msgRes.ok) break;
 
         const msgData = await msgRes.json();
@@ -1259,7 +1278,7 @@ async function scanSingleAccountBgcSubmitted(
   let messagesScanned = 0;
 
   try {
-    const mbRes = await fetch(`${SMTP_API_URL}/accounts/${accountId}/mailboxes`, { headers });
+    const mbRes = await fetchWithRetry(`${SMTP_API_URL}/accounts/${accountId}/mailboxes`, { headers });
     if (!mbRes.ok) {
       console.error(`[BGC_SUBMITTED] Failed to fetch mailboxes for account ${accountId}`);
       return { bgcSubmittedEmails, bgcInfoNeededEmails, messagesScanned };
@@ -1283,7 +1302,7 @@ async function scanSingleAccountBgcSubmitted(
       while (hasMoreMsgs && !(foundSubmitted && foundInfoNeeded)) {
         const msgUrl = `${SMTP_API_URL}/accounts/${accountId}/mailboxes/${mailbox.id}/messages?page=${msgPage}`;
 
-        const msgRes = await fetch(msgUrl, { headers });
+        const msgRes = await fetchWithRetry(msgUrl, { headers });
         if (!msgRes.ok) break;
 
         const msgData = await msgRes.json();
@@ -2054,8 +2073,8 @@ serve(async (req) => {
         while (hasMorePages) {
           const accountsUrl = `${SMTP_API_URL}/accounts?page=${currentPage}`;
           console.log('[BGC] Fetching accounts page:', currentPage);
-          
-          const res = await fetch(accountsUrl, { headers });
+
+          const res = await fetchWithRetry(accountsUrl, { headers });
           if (!res.ok) {
             const text = await res.text();
             console.error('[BGC] Failed to fetch accounts:', text);
@@ -2102,10 +2121,10 @@ serve(async (req) => {
           const bgcAccountIdsBeforeBatch = new Set(bgcAccountIds);
 
           // Process batch in parallel
-          const batchResults = await Promise.all(
+          const batchSettled = await Promise.allSettled(
             batch.map(account => {
               const shouldScanDeactivation = bgcAccountIds.has(account.id) && !alreadyDeactivatedEmails.has(account.address);
-              
+
               return scanSingleAccountBgc(
                 account,
                 headers,
@@ -2121,7 +2140,13 @@ serve(async (req) => {
               );
             })
           );
-          
+          const batchResults = batchSettled
+            .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
+            .map(r => r.value);
+          for (const r of batchSettled) {
+            if (r.status === 'rejected') console.error('[BGC] Account scan failed:', r.reason?.message);
+          }
+
           // Aggregate batch results
           for (const accountResult of batchResults) {
             newBgcEmails.push(...accountResult.bgcEmails);
@@ -2154,7 +2179,7 @@ serve(async (req) => {
 
             if (accountsToRescan.length > 0) {
               console.log(`[BGC] Re-scanning ${accountsToRescan.length} newly discovered BGC accounts for deactivation`);
-              const deactResults = await Promise.all(
+              const deactSettled = await Promise.allSettled(
                 accountsToRescan.map(account =>
                   scanSingleAccountBgc(
                     account, headers, statusMap,
@@ -2165,6 +2190,12 @@ serve(async (req) => {
                   )
                 )
               );
+              const deactResults = deactSettled
+                .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
+                .map(r => r.value);
+              for (const r of deactSettled) {
+                if (r.status === 'rejected') console.error('[BGC] Deactivation re-scan failed:', r.reason?.message);
+              }
               for (const deactResult of deactResults) {
                 newDeactivatedEmails.push(...deactResult.deactivatedEmails);
                 for (const deactEmail of deactResult.deactivatedEmails) {
@@ -2523,7 +2554,7 @@ serve(async (req) => {
           // Process batch in parallel
           // No cutoff date — scan ALL messages for first package signals
           // Accounts that already have first_package are already filtered out above
-          const batchResults = await Promise.all(
+          const batchSettled = await Promise.allSettled(
             batch.map(account => {
               return scanSingleAccountFirstPackage(
                 account.id,
@@ -2536,7 +2567,13 @@ serve(async (req) => {
               );
             })
           );
-          
+          const batchResults = batchSettled
+            .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
+            .map(r => r.value);
+          for (const r of batchSettled) {
+            if (r.status === 'rejected') console.error('[FIRST_PACKAGE] Account scan failed:', r.reason?.message);
+          }
+
           // Aggregate batch results
           for (const accountResult of batchResults) {
             newFirstPackageEmails.push(...accountResult.firstPackageEmails);
@@ -2685,7 +2722,7 @@ serve(async (req) => {
             break;
           }
 
-          const batchResults = await Promise.all(
+          const batchSettled = await Promise.allSettled(
             batch.map(account =>
               scanSingleAccountBgcSubmitted(
                 account.id,
@@ -2697,6 +2734,12 @@ serve(async (req) => {
               )
             )
           );
+          const batchResults = batchSettled
+            .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
+            .map(r => r.value);
+          for (const r of batchSettled) {
+            if (r.status === 'rejected') console.error('[BGC_SUBMITTED] Account scan failed:', r.reason?.message);
+          }
 
           for (const accountResult of batchResults) {
             newBgcSubmittedEmails.push(...accountResult.bgcSubmittedEmails);
@@ -2949,7 +2992,7 @@ serve(async (req) => {
         let hasMorePages = true;
 
         while (hasMorePages) {
-          const res = await fetch(`${SMTP_API_URL}/accounts?page=${currentPage}`, { headers });
+          const res = await fetchWithRetry(`${SMTP_API_URL}/accounts?page=${currentPage}`, { headers });
           if (!res.ok) throw new Error(`Failed to fetch accounts: ${res.status}`);
           const data = await res.json();
           allAccounts = [...allAccounts, ...(data.member || [])];
@@ -3039,7 +3082,7 @@ serve(async (req) => {
             console.log(`[INTELLIGENCE] Analyzing ${account.address}...`);
 
             // Fetch mailboxes
-            const mbRes = await fetch(`${SMTP_API_URL}/accounts/${account.id}/mailboxes`, { headers });
+            const mbRes = await fetchWithRetry(`${SMTP_API_URL}/accounts/${account.id}/mailboxes`, { headers });
             if (!mbRes.ok) continue;
             const mbData = await mbRes.json();
             const mailboxes = (mbData.member || []).filter((mb: any) =>
