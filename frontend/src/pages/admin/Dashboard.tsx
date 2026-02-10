@@ -1,20 +1,23 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../../api/client";
+import { useTranslation } from "../../i18n/LanguageContext";
+import { LanguageSelector } from "../../components/LanguageSelector";
+import type { TranslationKey } from "../../i18n/translations";
 
 interface StageInfo {
-  label: string;
+  labelKey: TranslationKey;
   color: string;
 }
 
 const STAGE_MAP: Record<string, StageInfo> = {
-  REGISTERED: { label: "Registered", color: "bg-gray-100 text-gray-700" },
-  IDENTITY_VERIFIED: { label: "ID Verified", color: "bg-blue-100 text-blue-700" },
-  BGC_PENDING: { label: "BGC Pending", color: "bg-yellow-100 text-yellow-700" },
-  BGC_CLEAR: { label: "BGC Clear", color: "bg-green-100 text-green-700" },
-  BGC_CONSIDER: { label: "BGC Consider", color: "bg-orange-100 text-orange-700" },
-  ACTIVE: { label: "Active", color: "bg-emerald-100 text-emerald-700" },
-  DEACTIVATED: { label: "Deactivated", color: "bg-red-100 text-red-700" },
+  REGISTERED: { labelKey: "stageRegistered", color: "bg-gray-100 text-gray-700" },
+  IDENTITY_VERIFIED: { labelKey: "stageIdVerified", color: "bg-blue-100 text-blue-700" },
+  BGC_PENDING: { labelKey: "stageBgcPending", color: "bg-yellow-100 text-yellow-700" },
+  BGC_CLEAR: { labelKey: "stageBgcClear", color: "bg-green-100 text-green-700" },
+  BGC_CONSIDER: { labelKey: "stageBgcConsider", color: "bg-orange-100 text-orange-700" },
+  ACTIVE: { labelKey: "stageActive", color: "bg-emerald-100 text-emerald-700" },
+  DEACTIVATED: { labelKey: "stageDeactivated", color: "bg-red-100 text-red-700" },
 };
 
 const STAGES = Object.keys(STAGE_MAP);
@@ -51,6 +54,7 @@ export default function Dashboard() {
   const [scanStatus, setScanStatus] = useState("");
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const stage = searchParams.get("stage") || "";
   const search = searchParams.get("search") || "";
@@ -75,7 +79,7 @@ export default function Dashboard() {
 
   async function startScan() {
     setScanning(true);
-    setScanStatus("Starting scan...");
+    setScanStatus(t("startingScan"));
     try {
       const data = await api.post<{ scan_id: number }>("/api/scan");
       const scanId = data.scan_id;
@@ -84,7 +88,7 @@ export default function Dashboard() {
         const s = await api.get<{ status: string; scanned: number; errors: number; transitions: number }>(
           `/api/scan/${scanId}`
         );
-        setScanStatus(`${s.status} — ${s.scanned} scanned, ${s.transitions} transitions, ${s.errors} errors`);
+        setScanStatus(`${s.status} — ${s.scanned} ${t("scanned")}, ${s.transitions} ${t("transitions")}, ${s.errors} ${t("errors")}`);
         if (s.status !== "running") {
           clearInterval(poll);
           setScanning(false);
@@ -94,7 +98,7 @@ export default function Dashboard() {
       }, 2000);
     } catch {
       setScanning(false);
-      setScanStatus("Scan failed to start");
+      setScanStatus(t("scanFailed"));
     }
   }
 
@@ -116,13 +120,14 @@ export default function Dashboard() {
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-xl font-bold text-gray-800">DasherHelp Admin</h1>
+          <h1 className="text-xl font-bold text-gray-800">{t("adminTitle")}</h1>
           <div className="flex items-center gap-4">
+            <LanguageSelector />
             <Link to="/portal-users" className="text-sm text-blue-600 hover:underline">
-              Portal Users
+              {t("portalUsers")}
             </Link>
             <button onClick={logout} className="text-sm text-gray-500 hover:text-gray-700">
-              Logout
+              {t("logout")}
             </button>
           </div>
         </div>
@@ -141,7 +146,7 @@ export default function Dashboard() {
                 } ${STAGE_MAP[s].color}`}
               >
                 <div className="text-2xl font-bold">{stats.stage_counts[s] || 0}</div>
-                <div className="text-xs font-medium mt-1">{STAGE_MAP[s].label}</div>
+                <div className="text-xs font-medium mt-1">{t(STAGE_MAP[s].labelKey)}</div>
               </button>
             ))}
           </div>
@@ -152,11 +157,11 @@ export default function Dashboard() {
           <div className="text-sm text-gray-600">
             {stats?.last_scan ? (
               <>
-                Last scan: {new Date(stats.last_scan.started_at).toLocaleString()} —{" "}
-                {stats.last_scan.status} ({stats.last_scan.scanned} scanned, {stats.last_scan.transitions} transitions)
+                {t("lastScan")}: {new Date(stats.last_scan.started_at).toLocaleString()} —{" "}
+                {stats.last_scan.status} ({stats.last_scan.scanned} {t("scanned")}, {stats.last_scan.transitions} {t("transitions")})
               </>
             ) : (
-              "No scans yet"
+              t("noScansYet")
             )}
           </div>
           <div className="flex items-center gap-3">
@@ -166,7 +171,7 @@ export default function Dashboard() {
               disabled={scanning}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm transition"
             >
-              {scanning ? "Scanning..." : "Scan All"}
+              {scanning ? t("scanning") : t("scanAll")}
             </button>
           </div>
         </div>
@@ -175,7 +180,7 @@ export default function Dashboard() {
         <div className="flex gap-3">
           <input
             type="text"
-            placeholder="Search email..."
+            placeholder={t("searchEmail")}
             defaultValue={search}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
@@ -188,7 +193,7 @@ export default function Dashboard() {
             }}
             className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
           />
-          <span className="self-center text-sm text-gray-500">{total} accounts</span>
+          <span className="self-center text-sm text-gray-500">{total} {t("accounts")}</span>
         </div>
 
         {/* Accounts Table */}
@@ -196,11 +201,11 @@ export default function Dashboard() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Stage</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Stage Updated</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Last Scanned</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Error</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t("emailHeader")}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t("stageHeader")}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t("stageUpdated")}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t("lastScanned")}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t("errorHeader")}</th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -213,14 +218,14 @@ export default function Dashboard() {
                   </td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${STAGE_MAP[acc.stage]?.color || ""}`}>
-                      {STAGE_MAP[acc.stage]?.label || acc.stage}
+                      {STAGE_MAP[acc.stage] ? t(STAGE_MAP[acc.stage].labelKey) : acc.stage}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-gray-500">
-                    {acc.stage_updated_at ? new Date(acc.stage_updated_at).toLocaleString() : "—"}
+                    {acc.stage_updated_at ? new Date(acc.stage_updated_at).toLocaleString() : "\u2014"}
                   </td>
                   <td className="px-4 py-3 text-gray-500">
-                    {acc.last_scanned_at ? new Date(acc.last_scanned_at).toLocaleString() : "—"}
+                    {acc.last_scanned_at ? new Date(acc.last_scanned_at).toLocaleString() : "\u2014"}
                   </td>
                   <td className="px-4 py-3 text-red-500 text-xs max-w-xs truncate">
                     {acc.scan_error || ""}
@@ -230,7 +235,7 @@ export default function Dashboard() {
               {accounts.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
-                    No accounts found
+                    {t("noAccountsFound")}
                   </td>
                 </tr>
               )}

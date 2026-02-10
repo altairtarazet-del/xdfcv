@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../api/client";
+import { useTranslation } from "../../i18n/LanguageContext";
+import { LanguageSelector } from "../../components/LanguageSelector";
 
 interface PortalUser {
   id: string;
@@ -17,6 +19,7 @@ export default function PortalUsersPage() {
   const [displayName, setDisplayName] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  const { t } = useTranslation();
 
   async function loadUsers() {
     const data = await api.get<{ users: PortalUser[] }>("/api/portal-users");
@@ -45,7 +48,7 @@ export default function PortalUsersPage() {
   }
 
   async function deleteUser(userEmail: string) {
-    if (!confirm(`Delete portal user ${userEmail}?`)) return;
+    if (!confirm(`${t("deleteConfirm")} ${userEmail}?`)) return;
     await api.delete(`/api/portal-users/${encodeURIComponent(userEmail)}`);
     loadUsers();
   }
@@ -58,20 +61,23 @@ export default function PortalUsersPage() {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-4">
-          <Link to="/" className="text-blue-600 hover:underline text-sm">&larr; Dashboard</Link>
-          <h1 className="text-lg font-bold text-gray-800">Portal Users</h1>
+          <Link to="/" className="text-blue-600 hover:underline text-sm">&larr; {t("dashboard")}</Link>
+          <h1 className="text-lg font-bold text-gray-800">{t("portalUsers")}</h1>
+          <div className="ml-auto">
+            <LanguageSelector />
+          </div>
         </div>
       </header>
 
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
         {/* Create Form */}
         <div className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-sm font-semibold text-gray-500 mb-4">CREATE PORTAL USER</h2>
+          <h2 className="text-sm font-semibold text-gray-500 mb-4">{t("createPortalUser")}</h2>
           {error && <div className="bg-red-50 text-red-600 p-3 rounded text-sm mb-4">{error}</div>}
           <form onSubmit={createUser} className="flex gap-3 flex-wrap">
             <input
               type="email"
-              placeholder="Email"
+              placeholder={t("email")}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -79,7 +85,7 @@ export default function PortalUsersPage() {
             />
             <input
               type="password"
-              placeholder="Password"
+              placeholder={t("password")}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -87,7 +93,7 @@ export default function PortalUsersPage() {
             />
             <input
               type="text"
-              placeholder="Display Name"
+              placeholder={t("displayName")}
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               className="px-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
@@ -97,7 +103,7 @@ export default function PortalUsersPage() {
               disabled={creating}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
             >
-              {creating ? "Creating..." : "Create"}
+              {creating ? t("creating") : t("create")}
             </button>
           </form>
         </div>
@@ -107,10 +113,10 @@ export default function PortalUsersPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Display Name</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Last Login</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Created</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t("emailHeader")}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t("displayName")}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t("lastLogin")}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t("created")}</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
@@ -118,9 +124,9 @@ export default function PortalUsersPage() {
               {users.map((u) => (
                 <tr key={u.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">{u.email}</td>
-                  <td className="px-4 py-3 text-gray-500">{u.display_name || "—"}</td>
+                  <td className="px-4 py-3 text-gray-500">{u.display_name || "\u2014"}</td>
                   <td className="px-4 py-3 text-gray-500">
-                    {u.last_login_at ? new Date(u.last_login_at).toLocaleString() : "Never"}
+                    {u.last_login_at ? new Date(u.last_login_at).toLocaleString() : t("never")}
                   </td>
                   <td className="px-4 py-3 text-gray-500">{new Date(u.created_at).toLocaleString()}</td>
                   <td className="px-4 py-3 text-right">
@@ -128,7 +134,7 @@ export default function PortalUsersPage() {
                       onClick={() => deleteUser(u.email)}
                       className="text-red-500 hover:text-red-700 text-xs"
                     >
-                      Delete
+                      {t("delete")}
                     </button>
                   </td>
                 </tr>
@@ -136,7 +142,7 @@ export default function PortalUsersPage() {
               {users.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
-                    No portal users yet
+                    {t("noPortalUsers")}
                   </td>
                 </tr>
               )}
