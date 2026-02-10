@@ -24,7 +24,6 @@ import {
 import {
   Loader2,
   Shield,
-  Brain,
   Lightbulb,
   Activity,
   Search,
@@ -34,6 +33,7 @@ import {
   Package,
   Calendar,
   Clock,
+  Mail,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
@@ -212,10 +212,10 @@ export default function Intelligence() {
         {/* Header */}
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <Brain className="text-purple-400" />
+            <Shield className="text-purple-400" />
             Istihbarat Merkezi
           </h1>
-          <p className="text-sm text-muted-foreground">Risk analizi, AI siniflandirma, hesap onerileri ve olay akisi</p>
+          <p className="text-sm text-muted-foreground">Risk analizi, email kayitlari, hesap onerileri ve olay akisi</p>
         </div>
 
         {/* Stats */}
@@ -273,7 +273,7 @@ export default function Intelligence() {
               <Badge variant="outline" className="ml-1 text-[10px]">{riskStats.total}</Badge>
             </TabsTrigger>
             <TabsTrigger value="classification" className="text-xs gap-1.5 py-2">
-              <Brain size={14} />AI Siniflandirma
+              <Mail size={14} />Email Kayitlari
               <Badge variant="outline" className="ml-1 text-[10px]">{classifications.length}</Badge>
             </TabsTrigger>
             <TabsTrigger value="insights" className="text-xs gap-1.5 py-2">
@@ -372,7 +372,6 @@ export default function Intelligence() {
                       <TableRow>
                         <TableHead>Hesap</TableHead>
                         <TableHead>Tip</TableHead>
-                        <TableHead>AI</TableHead>
                         <TableHead>Konu</TableHead>
                         <TableHead>Tarih</TableHead>
                       </TableRow>
@@ -380,7 +379,7 @@ export default function Intelligence() {
                     <TableBody>
                       {filteredClassifications.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                          <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
                             Siniflandirma bulunamadi.
                           </TableCell>
                         </TableRow>
@@ -397,15 +396,6 @@ export default function Intelligence() {
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline" className="text-[10px]">{cls.email_type}</Badge>
-                            </TableCell>
-                            <TableCell>
-                              {cls.ai_classified ? (
-                                <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/50 text-[10px]">
-                                  {Math.round((cls.ai_confidence || 0) * 100)}%
-                                </Badge>
-                              ) : (
-                                <span className="text-[10px] text-muted-foreground">-</span>
-                              )}
                             </TableCell>
                             <TableCell className="max-w-xs truncate text-xs text-muted-foreground">{cls.subject}</TableCell>
                             <TableCell className="text-xs text-muted-foreground font-mono">

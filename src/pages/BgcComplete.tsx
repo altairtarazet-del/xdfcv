@@ -39,8 +39,6 @@ import {
   Trash2,
   Info,
   Eye,
-  Brain,
-  Calculator,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
@@ -650,13 +648,6 @@ export default function BgcComplete() {
                 <><RefreshCw className="mr-2 h-4 w-4" />Tara</>
               )}
             </Button>
-            <Button variant="outline" size="sm" onClick={handleCalculateRisk} disabled={calculatingRisk}>
-              {calculatingRisk ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Hesaplaniyor...</>
-              ) : (
-                <><Calculator className="mr-2 h-4 w-4" />Risk Skorlari</>
-              )}
-            </Button>
             <Button variant="outline" size="sm" onClick={exportToCSV} disabled={grouped[activeTab].length === 0}>
               <Download className="mr-2 h-4 w-4" />CSV
             </Button>
@@ -852,7 +843,7 @@ export default function BgcComplete() {
                           )}
                           {suspiciousResult.suspicious && suspiciousResult.suspicious.length > 0 && (
                             <div className="space-y-1">
-                              <span className="text-xs text-purple-400">AI Tespit - Supheli ({suspiciousResult.suspicious.length}):</span>
+                              <span className="text-xs text-purple-400">Supheli Hesaplar ({suspiciousResult.suspicious.length}):</span>
                               {suspiciousResult.suspicious.map(s => (
                                 <div key={s.email} className="flex items-center gap-2 pl-2 flex-wrap">
                                   <Checkbox
@@ -888,13 +879,6 @@ export default function BgcComplete() {
                 {selectedAccounts.size > 0 && (
                   <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20">
                     <span className="text-xs text-muted-foreground font-mono">{selectedAccounts.size} secili</span>
-                    <Button variant="outline" size="sm" onClick={handleDeepAnalyze} disabled={analyzingDeep}>
-                      {analyzingDeep ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Brain className="mr-1 h-3 w-3" />}
-                      Derin Analiz
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={handleCalculateRisk} disabled={calculatingRisk}>
-                      <Calculator className="mr-1 h-3 w-3" />Risk Hesapla
-                    </Button>
                     <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
                       <Trash2 className="mr-1 h-3 w-3" />Sil
                     </Button>

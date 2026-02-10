@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +13,6 @@ import {
   XCircle,
   Package,
   Calendar,
-  Brain,
   AlertTriangle,
   Clock,
   Mail,
@@ -22,7 +20,6 @@ import {
   Lightbulb,
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { tr } from 'date-fns/locale';
 
 interface AccountEvent {
   id: string;
@@ -71,14 +68,12 @@ export default function AccountDetail() {
   const decodedEmail = decodeURIComponent(email || '');
   const navigate = useNavigate();
   const { isAdmin, profile } = useAuth();
-  const { toast } = useToast();
 
   const [events, setEvents] = useState<AccountEvent[]>([]);
   const [riskScore, setRiskScore] = useState<RiskScore | null>(null);
   const [emails, setEmails] = useState<any[]>([]);
   const [insights, setInsights] = useState<AccountInsight[]>([]);
   const [loading, setLoading] = useState(true);
-  const [aiLoading, setAiLoading] = useState(false);
 
   const canViewBgcComplete = isAdmin || profile?.permissions?.can_view_bgc_complete;
 
@@ -126,25 +121,6 @@ export default function AccountDetail() {
       fetchData();
     }
   }, [canViewBgcComplete, decodedEmail, fetchData]);
-
-  const handleAiAnalyze = async (emailId: string) => {
-    setAiLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('smtp-api', {
-        body: { action: 'classifyAndExtract', emailId }
-      });
-      if (error) throw error;
-      toast({
-        title: 'AI Analizi Tamamlandi',
-        description: `Sinif: ${data?.classification?.email_type || 'bilinmiyor'}, Guven: ${Math.round((data?.classification?.confidence || 0) * 100)}%`,
-      });
-      await fetchData();
-    } catch (error: any) {
-      toast({ variant: 'destructive', title: 'AI Hatasi', description: error.message || 'Analiz sirasinda hata olustu' });
-    } finally {
-      setAiLoading(false);
-    }
-  };
 
   const getDaysBetween = (dateA: string, dateB: string) => {
     const diff = Math.abs(new Date(dateB).getTime() - new Date(dateA).getTime());
@@ -269,28 +245,11 @@ export default function AccountDetail() {
                     <div key={email.id} className="p-3 rounded-lg bg-muted/50 text-sm font-mono space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant="outline" className="text-[10px] px-1.5 py-0">{email.email_type}</Badge>
-                        {email.ai_classified && (
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-purple-500/20 text-purple-400 border-purple-500/50">
-                            AI {Math.round((email.ai_confidence || 0) * 100)}%
-                          </Badge>
-                        )}
                         <span className="text-xs text-muted-foreground ml-auto">
                           {format(new Date(email.email_date), 'dd/MM/yyyy HH:mm')}
                         </span>
                       </div>
                       <p className="text-muted-foreground text-xs truncate">{email.subject}</p>
-                      {!email.ai_classified && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 text-xs mt-1"
-                          onClick={() => handleAiAnalyze(email.id)}
-                          disabled={aiLoading}
-                        >
-                          {aiLoading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Brain className="mr-1 h-3 w-3" />}
-                          AI Analiz
-                        </Button>
-                      )}
                     </div>
                   ))
                 )}
@@ -373,34 +332,6 @@ export default function AccountDetail() {
               </CardContent>
             </Card>
 
-            {/* AI Extracted Data */}
-            {emails.some(e => e.extracted_data) && (
-              <Card className="cyber-card">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base font-mono flex items-center gap-2">
-                    <Brain className="h-4 w-4 text-purple-400" />
-                    AI Cikarilan Veriler
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {emails
-                    .filter(e => e.extracted_data)
-                    .slice(0, 1)
-                    .map(email => (
-                      <div key={email.id} className="space-y-1 text-xs font-mono">
-                        {Object.entries(email.extracted_data as Record<string, any>).map(([key, val]) => (
-                          val && (
-                            <div key={key} className="flex gap-2">
-                              <span className="text-muted-foreground">{key}:</span>
-                              <span className="text-foreground">{String(val)}</span>
-                            </div>
-                          )
-                        ))}
-                      </div>
-                    ))}
-                </CardContent>
-              </Card>
-            )}
           </div>
         </div>
       </div>

@@ -7,10 +7,8 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Loader2, CheckCircle, XCircle, Package, Brain, Calendar } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, Package, Calendar } from 'lucide-react';
 import { format } from 'date-fns';
-import { useToast } from '@/hooks/use-toast';
 
 interface AccountTimelineProps {
   accountEmail: string;
@@ -39,13 +37,10 @@ const EVENT_CONFIG: Record<string, { icon: typeof CheckCircle; color: string; bg
 };
 
 export function AccountTimeline({ accountEmail, open, onOpenChange }: AccountTimelineProps) {
-  const { toast } = useToast();
   const [events, setEvents] = useState<AccountEvent[]>([]);
   const [riskScore, setRiskScore] = useState<RiskScore | null>(null);
   const [emails, setEmails] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
-
   useEffect(() => {
     if (open && accountEmail) {
       fetchData();
@@ -80,33 +75,6 @@ export function AccountTimeline({ accountEmail, open, onOpenChange }: AccountTim
       console.error('Error fetching timeline data:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleAiAnalyze = async (emailId: string) => {
-    setAiLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('smtp-api', {
-        body: { action: 'classifyAndExtract', emailId }
-      });
-
-      if (error) throw error;
-
-      toast({
-        title: 'AI Analizi Tamamlandı',
-        description: `Sınıf: ${data?.classification?.email_type || 'bilinmiyor'}, Güven: ${Math.round((data?.classification?.confidence || 0) * 100)}%`,
-      });
-
-      // Refresh data
-      await fetchData();
-    } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: 'AI Hatası',
-        description: error.message || 'Analiz sırasında hata oluştu',
-      });
-    } finally {
-      setAiLoading(false);
     }
   };
 
@@ -201,46 +169,6 @@ export function AccountTimeline({ accountEmail, open, onOpenChange }: AccountTim
               </div>
             )}
 
-            {/* AI Extracted Data */}
-            {emails.some(e => e.extracted_data) && (
-              <div>
-                <h3 className="text-sm font-semibold font-mono mb-2">AI Çıkarılan Veriler</h3>
-                {emails
-                  .filter(e => e.extracted_data)
-                  .slice(0, 1)
-                  .map(email => (
-                    <div key={email.id} className="space-y-1 text-xs font-mono">
-                      {Object.entries(email.extracted_data as Record<string, any>).map(([key, val]) => (
-                        val && (
-                          <div key={key} className="flex gap-2">
-                            <span className="text-muted-foreground">{key}:</span>
-                            <span className="text-foreground">{String(val)}</span>
-                          </div>
-                        )
-                      ))}
-                    </div>
-                  ))}
-              </div>
-            )}
-
-            {/* AI Analyze Button */}
-            {emails.length > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full font-mono"
-                onClick={() => handleAiAnalyze(emails[0].id)}
-                disabled={aiLoading}
-              >
-                {aiLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Brain className="mr-2 h-4 w-4" />
-                )}
-                AI ile Analiz Et
-              </Button>
-            )}
-
             {/* Email List */}
             <div>
               <h3 className="text-sm font-semibold font-mono mb-2">Email Kayıtları ({emails.length})</h3>
@@ -251,11 +179,6 @@ export function AccountTimeline({ accountEmail, open, onOpenChange }: AccountTim
                       <Badge variant="outline" className="text-[10px] px-1.5 py-0">
                         {email.email_type}
                       </Badge>
-                      {email.ai_classified && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-purple-500/20 text-purple-400 border-purple-500/50">
-                          AI {Math.round((email.ai_confidence || 0) * 100)}%
-                        </Badge>
-                      )}
                     </div>
                     <p className="truncate text-muted-foreground">{email.subject}</p>
                     <p className="text-muted-foreground/60 mt-0.5">
