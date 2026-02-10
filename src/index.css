@@ -4,7 +4,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* DasherMail — Modern Premium Dashboard Theme */
+/* XDFCV — Modern Premium Dashboard Theme */
 
 @layer base {
   :root {
@@ -46,6 +46,45 @@
     --sidebar-accent-foreground: 210 20% 88%;
     --sidebar-border: 224 20% 12%;
     --sidebar-ring: 234 89% 74%;
+  }
+
+  .light {
+    --background: 0 0% 98%;
+    --foreground: 224 30% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 224 25% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 25% 15%;
+
+    --primary: 234 89% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 199 89% 42%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 220 14% 92%;
+    --muted-foreground: 215 16% 44%;
+
+    --accent: 262 83% 58%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 350 89% 52%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 14% 86%;
+    --input: 220 14% 94%;
+    --ring: 234 89% 60%;
+
+    --sidebar-background: 0 0% 97%;
+    --sidebar-foreground: 224 25% 25%;
+    --sidebar-primary: 234 89% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 14% 94%;
+    --sidebar-accent-foreground: 224 25% 15%;
+    --sidebar-border: 220 14% 88%;
+    --sidebar-ring: 234 89% 60%;
   }
 }
 
@@ -147,6 +186,19 @@
   .hover-lift:hover {
     transform: translateY(-1px);
     box-shadow: 0 8px 30px hsl(var(--background) / 0.5);
+  }
+
+  /* Mail utilities */
+  .mail-row-unread {
+    @apply font-semibold bg-primary/[0.03];
+  }
+
+  .mail-row-selected {
+    @apply bg-primary/5 border-l-2 border-l-primary;
+  }
+
+  .compose-shadow {
+    box-shadow: 0 -4px 40px hsl(var(--background) / 0.6), 0 0 0 1px hsl(var(--border));
   }
 }
 

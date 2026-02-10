@@ -55,7 +55,7 @@ const convertTurkishToEnglish = (str: string): string => {
   return str.split('').map(char => turkishMap[char] || char).join('');
 };
 
-const EMAIL_DOMAIN = 'dasherhelp.com';
+const EMAIL_DOMAIN = 'xdfcv.com';
 
 interface Account {
   id: string;

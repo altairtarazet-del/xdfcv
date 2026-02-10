@@ -107,7 +107,7 @@ export default function Auth() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="pl-9 bg-input border-border focus:border-primary focus:ring-1 focus:ring-primary/30"
-                  placeholder="email@dashermail.com"
+                  placeholder="email@xdfcv.com"
                   required
                 />
               </div>
@@ -179,7 +179,7 @@ export default function Auth() {
 
         {/* Footer */}
         <p className="text-center text-muted-foreground/50 text-xs mt-8">
-          DasherMail &copy; {new Date().getFullYear()}
+          XDFCV &copy; {new Date().getFullYear()}
         </p>
       </div>
     </div>

@@ -66,7 +66,7 @@ export default function PortalLogin() {
             <CyberLogo size="lg" />
           </div>
           <p className="text-muted-foreground text-sm">
-            Musteri Posta Portali
+            XDFCV Portal
           </p>
         </div>
 
@@ -89,7 +89,7 @@ export default function PortalLogin() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="pl-9 bg-input border-border focus:border-primary focus:ring-1 focus:ring-primary/30"
-                  placeholder="email@dasherhelp.com"
+                  placeholder="email@xdfcv.com"
                   required
                 />
               </div>
@@ -143,18 +143,27 @@ export default function PortalLogin() {
             Sifreniz icin yoneticinize basvurun
           </p>
 
-          <Link
-            to="/portal"
-            className="flex items-center justify-center gap-1.5 text-sm text-primary hover:text-primary/80 mt-4 transition-colors"
-          >
-            <ShoppingBag size={14} />
-            Markete Don
-          </Link>
+          <div className="space-y-2 mt-4">
+            <Button
+              variant="outline"
+              className="w-full text-sm gap-1.5"
+              onClick={() => navigate('/portal/market')}
+            >
+              <ShoppingBag size={14} />
+              Markete Goz At
+            </Button>
+            <Link
+              to="/portal"
+              className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors"
+            >
+              Portal Ana Sayfa
+            </Link>
+          </div>
         </div>
 
         {/* Footer */}
         <p className="text-center text-muted-foreground/50 text-xs mt-8">
-          DasherMail &copy; {new Date().getFullYear()}
+          XDFCV &copy; {new Date().getFullYear()}
         </p>
       </div>
     </div>

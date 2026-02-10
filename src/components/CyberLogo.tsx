@@ -29,8 +29,8 @@ export function CyberLogo({ size = 'md' }: CyberLogoProps) {
         </div>
       </div>
       <div className={`font-semibold tracking-tight ${sizeClasses[size]}`}>
-        <span className="text-foreground">Dasher</span>
-        <span className="text-primary">Mail</span>
+        <span className="text-foreground">XDF</span>
+        <span className="text-primary">CV</span>
       </div>
     </div>
   );
