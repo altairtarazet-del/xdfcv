@@ -236,6 +236,7 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
+            <Link to="/all-emails" className="text-sm text-blue-600 hover:underline">All Emails</Link>
             <Link to="/analytics" className="text-sm text-blue-600 hover:underline">Analytics</Link>
             <Link to="/team" className="text-sm text-blue-600 hover:underline">Team</Link>
             <Link to="/portal-users" className="text-sm text-blue-600 hover:underline">Customers</Link>

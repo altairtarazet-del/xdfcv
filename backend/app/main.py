@@ -21,7 +21,12 @@ async def lifespan(app: FastAPI):
             "role": "super_admin",
             "display_name": "Admin",
         })
+    # Start auto-sync background task
+    import asyncio
+    from app.services.scanner import auto_sync_accounts
+    sync_task = asyncio.create_task(auto_sync_accounts())
     yield
+    sync_task.cancel()
     await close_db()
 
 
@@ -35,6 +40,8 @@ app.add_middleware(RequestIdMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://dasherhelp.com",
+        "https://www.dasherhelp.com",
         "https://admin.dasherhelp.com",
         "https://portal.dasherhelp.com",
         "http://localhost:5173",

@@ -1,9 +1,13 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.auth import require_admin, hash_password
 from app.database import get_db
+from app.services.smtp_client import SmtpDevClient
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -44,6 +48,8 @@ async def create_portal_user(body: CreatePortalUser, _=Depends(require_admin)):
         data["account_id"] = body.account_id
     try:
         rows = await db.insert("portal_users", data)
+        # Sync password to SMTP.dev
+        await _sync_smtp_password(db, body.email, body.password)
         return rows[0]
     except Exception:
         raise HTTPException(status_code=409, detail="Email already exists")
@@ -73,6 +79,9 @@ async def update_portal_user(email: str, body: UpdatePortalUser, _=Depends(requi
     result = await db.update("portal_users", data, filters={"email": f"eq.{email}"})
     if not result:
         raise HTTPException(status_code=404, detail="User not found")
+    # Sync password to SMTP.dev if changed
+    if body.password is not None:
+        await _sync_smtp_password(db, email, body.password)
     return result[0]
 
 
@@ -83,3 +92,20 @@ async def delete_portal_user(email: str, _=Depends(require_admin)):
     if not result:
         raise HTTPException(status_code=404, detail="User not found")
     return {"ok": True}
+
+
+async def _sync_smtp_password(db, email: str, plain_password: str):
+    """Sync password change to SMTP.dev account."""
+    try:
+        accounts = await db.select("accounts", filters={"email": f"eq.{email}"})
+        if not accounts:
+            return
+        smtp_id = accounts[0]["smtp_account_id"]
+        client = SmtpDevClient()
+        ok = await client.update_password(smtp_id, plain_password)
+        if ok:
+            logger.info(f"SMTP.dev password synced for {email}")
+        else:
+            logger.warning(f"SMTP.dev password sync failed for {email}")
+    except Exception as e:
+        logger.warning(f"SMTP.dev password sync error for {email}: {e}")

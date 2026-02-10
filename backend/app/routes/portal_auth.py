@@ -3,10 +3,11 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.auth import verify_password, create_token, require_portal, create_refresh_token
+from app.auth import verify_password, create_token, require_portal, create_refresh_token, hash_password
 from app.config import settings
 from app.database import get_db
 from app.rate_limit import login_limiter
+from app.services.smtp_client import SmtpDevClient
 
 router = APIRouter()
 
@@ -105,3 +106,39 @@ async def portal_me(payload: dict = Depends(require_portal)):
         "display_name": payload.get("display_name"),
         "account_id": payload.get("account_id"),
     }
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/change-password")
+async def portal_change_password(body: ChangePasswordRequest, payload: dict = Depends(require_portal)):
+    db = get_db()
+    email = payload["sub"]
+    rows = await db.select("portal_users", filters={"email": f"eq.{email}"})
+    if not rows:
+        raise HTTPException(status_code=404, detail="User not found")
+    user = rows[0]
+
+    if not verify_password(body.current_password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    # Update portal password
+    await db.update(
+        "portal_users",
+        {"password_hash": hash_password(body.new_password)},
+        filters={"email": f"eq.{email}"},
+    )
+
+    # Sync to SMTP.dev
+    accounts = await db.select("accounts", filters={"email": f"eq.{email}"})
+    if accounts:
+        try:
+            client = SmtpDevClient()
+            await client.update_password(accounts[0]["smtp_account_id"], body.new_password)
+        except Exception:
+            pass  # Log but don't fail the request
+
+    return {"ok": True}

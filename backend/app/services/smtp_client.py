@@ -111,14 +111,27 @@ class SmtpDevClient:
         self._cache.set("all_accounts", all_accounts)
         return all_accounts
 
-    async def create_account(self, email: str) -> dict:
+    async def create_account(self, email: str, password: str | None = None) -> dict:
         """Create a new SMTP.dev account."""
-        data = await self._request("POST", "/accounts", json={"address": email})
+        payload = {"address": email}
+        if password:
+            payload["password"] = password
+        data = await self._request("POST", "/accounts", json=payload)
         if data:
             data["email"] = data.get("address", email)
         # Invalidate accounts cache
         self._cache.invalidate("all_accounts")
         return data
+
+    async def update_password(self, account_id: str, password: str) -> bool:
+        """Update SMTP.dev account password."""
+        client = _get_http_client()
+        resp = await client.patch(
+            f"{BASE_URL}/accounts/{account_id}",
+            headers={**self._headers(), "Content-Type": "application/merge-patch+json"},
+            json={"password": password},
+        )
+        return resp.status_code < 300
 
     async def find_account_by_email(self, email: str) -> dict | None:
         """Find an SMTP.dev account by email address."""

@@ -6,6 +6,7 @@ import PortalUsersPage from "./pages/admin/PortalUsers";
 import TeamManagement from "./pages/admin/TeamManagement";
 import CustomerEmails from "./pages/admin/CustomerEmails";
 import Analytics from "./pages/admin/Analytics";
+import AllEmails from "./pages/admin/AllEmails";
 import PortalLogin from "./pages/portal/Login";
 import Inbox from "./pages/portal/Inbox";
 
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="/portal-users" element={<ProtectedRoute type="admin"><PortalUsersPage /></ProtectedRoute>} />
         <Route path="/team" element={<ProtectedRoute type="admin"><TeamManagement /></ProtectedRoute>} />
         <Route path="/emails/:email" element={<ProtectedRoute type="admin"><CustomerEmails /></ProtectedRoute>} />
+        <Route path="/all-emails" element={<ProtectedRoute type="admin"><AllEmails /></ProtectedRoute>} />
         <Route path="/analytics" element={<ProtectedRoute type="admin"><Analytics /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

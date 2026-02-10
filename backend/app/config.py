@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     synthetic_api_key: str = ""
     synthetic_api_base: str = "https://api.synthicai.com/v1"
     synthetic_model: str = "glm-4-7b"
+    default_portal_password: str = "Charles.2121"
+    sync_interval_seconds: int = 300  # 5 minutes
 
     model_config = {"env_file": ".env"}
 

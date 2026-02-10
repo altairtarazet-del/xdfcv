@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from app.auth import require_admin
 from app.database import get_db
-from app.services.scanner import scan_all_accounts
+from app.services.scanner import scan_all_accounts, _ensure_portal_user
 from app.services.smtp_client import SmtpDevClient
 
 router = APIRouter()
@@ -40,7 +40,8 @@ async def sync_accounts(_=Depends(require_admin)):
     for acc in accounts:
         existing = await db.select("accounts", filters={"smtp_account_id": f"eq.{acc['id']}"})
         if not existing:
-            await db.insert("accounts", {"smtp_account_id": acc["id"], "email": acc["email"]})
+            rows = await db.insert("accounts", {"smtp_account_id": acc["id"], "email": acc["email"]})
+            await _ensure_portal_user(db, acc["email"], rows[0]["id"])
             created += 1
     return {"total_fetched": len(accounts), "newly_created": created}
 

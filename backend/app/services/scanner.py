@@ -1,12 +1,17 @@
 import asyncio
 import json
+import logging
 import traceback
 from datetime import datetime, timezone
 
 from app.database import get_db
+from app.auth import hash_password
+from app.config import settings
 from app.services.smtp_client import SmtpDevClient
 from app.services.stage_detector import detect_stage_from_messages, check_bgc_body, STAGE_PRIORITY
 from app.services.email_classifier import classify_with_threshold
+
+logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 10
 
@@ -27,15 +32,17 @@ async def scan_all_accounts(scan_id: int):
     transitions = 0
 
     try:
-        # 1. Fetch all SMTP.dev accounts and sync to DB
+        # 1. Fetch all SMTP.dev accounts and sync to DB + create portal users
         smtp_accounts = await client.get_all_accounts()
         for acc in smtp_accounts:
             existing = await db.select("accounts", filters={"smtp_account_id": f"eq.{acc['id']}"})
             if not existing:
-                await db.insert("accounts", {
+                rows = await db.insert("accounts", {
                     "smtp_account_id": acc["id"],
                     "email": acc["email"],
                 })
+                # Auto-create portal user for new account
+                await _ensure_portal_user(db, acc["email"], rows[0]["id"])
 
         await db.update(
             "scan_logs",
@@ -252,3 +259,51 @@ async def _classify_recent_emails(db, account: dict, messages: list[dict]):
                 "title": f"{account['email']}: {result.summary}",
                 "message": subject,
             })
+
+
+async def _ensure_portal_user(db, email: str, account_id: str):
+    """Create portal user for an account if not exists. Also syncs SMTP.dev password."""
+    existing = await db.select("portal_users", filters={"email": f"eq.{email}"})
+    if existing:
+        return
+    try:
+        password = settings.default_portal_password
+        await db.insert("portal_users", {
+            "email": email,
+            "password_hash": hash_password(password),
+            "display_name": email.split("@")[0],
+            "account_id": account_id,
+            "is_active": True,
+        })
+        # Sync password to SMTP.dev
+        accounts = await db.select("accounts", filters={"email": f"eq.{email}"})
+        if accounts:
+            smtp_client = SmtpDevClient()
+            await smtp_client.update_password(accounts[0]["smtp_account_id"], password)
+        logger.info(f"Auto-created portal user for {email}")
+    except Exception as e:
+        logger.warning(f"Failed to create portal user for {email}: {e}")
+
+
+async def auto_sync_accounts():
+    """Periodically sync SMTP.dev accounts to DB and create portal users."""
+    while True:
+        try:
+            await asyncio.sleep(settings.sync_interval_seconds)
+            db = get_db()
+            client = SmtpDevClient()
+            smtp_accounts = await client.get_all_accounts()
+            created = 0
+            for acc in smtp_accounts:
+                existing = await db.select("accounts", filters={"smtp_account_id": f"eq.{acc['id']}"})
+                if not existing:
+                    rows = await db.insert("accounts", {
+                        "smtp_account_id": acc["id"],
+                        "email": acc["email"],
+                    })
+                    await _ensure_portal_user(db, acc["email"], rows[0]["id"])
+                    created += 1
+            if created:
+                logger.info(f"Auto-sync: {created} new accounts provisioned")
+        except Exception as e:
+            logger.error(f"Auto-sync error: {e}")
