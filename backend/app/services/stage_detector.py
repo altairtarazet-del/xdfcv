@@ -54,7 +54,7 @@ def detect_stage_from_messages(messages: list[dict], get_body_fn=None) -> tuple[
 
         # DEACTIVATED — highest priority
         if "dasher account has been deactivated" in subject:
-            return "DEACTIVATED", msg.get("subject"), msg.get("date", msg.get("created_at"))
+            return "DEACTIVATED", msg.get("subject"), msg.get("date", msg.get("created_at")), []
 
         # ACTIVE — earnings/delivery/payment emails
         if _is_active_signal(subject, sender):
