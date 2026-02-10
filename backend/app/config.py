@@ -2,7 +2,8 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    database_url: str  # postgresql://user:pass@host:port/db
+    supabase_url: str  # https://bnwrxaljswtfubyhfotn.supabase.co
+    supabase_service_key: str  # service_role JWT
     jwt_secret: str
     smtp_dev_api_key: str
     admin_seed_username: str = "admin"

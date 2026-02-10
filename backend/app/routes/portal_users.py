@@ -2,18 +2,20 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.auth import require_admin, hash_password
-from app.database import get_pool
+from app.database import get_db
 
 router = APIRouter()
 
 
 @router.get("/")
 async def list_portal_users(_=Depends(require_admin)):
-    pool = get_pool()
-    rows = await pool.fetch(
-        "SELECT id, email, display_name, last_login_at, created_at FROM portal_users ORDER BY created_at DESC"
+    db = get_db()
+    rows = await db.select(
+        "portal_users",
+        columns="id,email,display_name,last_login_at,created_at",
+        order="created_at.desc",
     )
-    return {"users": [dict(r) for r in rows]}
+    return {"users": rows}
 
 
 class CreatePortalUser(BaseModel):
@@ -24,22 +26,22 @@ class CreatePortalUser(BaseModel):
 
 @router.post("/")
 async def create_portal_user(body: CreatePortalUser, _=Depends(require_admin)):
-    pool = get_pool()
+    db = get_db()
     try:
-        row = await pool.fetchrow(
-            """INSERT INTO portal_users (email, password_hash, display_name)
-               VALUES ($1, $2, $3) RETURNING id, email, display_name, created_at""",
-            body.email, hash_password(body.password), body.display_name,
-        )
+        rows = await db.insert("portal_users", {
+            "email": body.email,
+            "password_hash": hash_password(body.password),
+            "display_name": body.display_name,
+        })
+        return rows[0]
     except Exception:
         raise HTTPException(status_code=409, detail="Email already exists")
-    return dict(row)
 
 
 @router.delete("/{email}")
 async def delete_portal_user(email: str, _=Depends(require_admin)):
-    pool = get_pool()
-    result = await pool.execute("DELETE FROM portal_users WHERE email = $1", email)
-    if result == "DELETE 0":
+    db = get_db()
+    result = await db.delete("portal_users", filters={"email": f"eq.{email}"})
+    if not result:
         raise HTTPException(status_code=404, detail="User not found")
     return {"ok": True}
