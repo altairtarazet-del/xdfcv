@@ -81,26 +81,26 @@ export default function CustomerEmails() {
     }
   }
 
-  useEffect(() => {
-    loadMailboxes();
-  }, [email]);
+  useEffect(() => { loadMailboxes(); }, [email]);
+  useEffect(() => { if (activeMailbox) loadMessages(activeMailbox); }, [activeMailbox]);
 
-  useEffect(() => {
-    if (activeMailbox) loadMessages(activeMailbox);
-  }, [activeMailbox]);
-
-  if (error) return <div className="p-8 text-red-600">{error}</div>;
+  if (error) {
+    return (
+      <div className="p-8">
+        <div className="bg-dd-red-lighter text-dd-red-active rounded-dd p-4 text-sm">{error}</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
-      <header className="bg-white shadow-sm border-b flex-shrink-0">
-        <div className="px-4 py-3 flex items-center gap-4">
-          <Link to={`/accounts/${encodeURIComponent(email!)}`} className="text-blue-600 hover:underline text-sm">
-            &larr; Account
-          </Link>
-          <h1 className="text-lg font-bold text-gray-800">Emails: {email}</h1>
-        </div>
-      </header>
+    <div className="h-full flex flex-col">
+      {/* Page Header */}
+      <div className="px-6 py-4 border-b border-dd-200 bg-white flex-shrink-0">
+        <Link to={`/accounts/${encodeURIComponent(email!)}`} className="text-sm font-medium text-dd-red hover:text-dd-red-hover transition-colors">
+          ← Back to Account
+        </Link>
+        <h1 className="text-xl font-bold text-dd-950 mt-1">Emails: {email}</h1>
+      </div>
 
       <EmailPanel
         mailboxes={mailboxes}

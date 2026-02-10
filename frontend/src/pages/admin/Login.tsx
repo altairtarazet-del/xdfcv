@@ -26,33 +26,58 @@ export default function AdminLogin() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-sm">
-        <h1 className="text-2xl font-bold text-center mb-6 text-gray-800">DasherHelp Admin</h1>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && <div className="bg-red-50 text-red-600 p-3 rounded text-sm">{error}</div>}
-          <input
-            type="text"
-            placeholder="Username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            required
-          />
+    <div className="min-h-screen flex items-center justify-center bg-dd-100">
+      <div className="bg-white rounded-dd shadow-dd-lg p-8 w-full max-w-sm mx-auto">
+        {/* Logo */}
+        <div className="flex items-center justify-center gap-3 mb-2">
+          <div className="w-10 h-10 bg-dd-red rounded-lg flex items-center justify-center">
+            <span className="text-white text-xl font-bold leading-none">D</span>
+          </div>
+          <span className="text-2xl font-bold text-dd-950">DasherHelp</span>
+        </div>
+        <p className="text-center text-dd-600 text-sm mb-8">Sign in to your admin account</p>
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {error && (
+            <div className="text-dd-red text-sm">{error}</div>
+          )}
+
+          <div>
+            <label htmlFor="username" className="block text-sm font-medium text-dd-950 mb-1.5">
+              Username
+            </label>
+            <input
+              id="username"
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full px-4 py-2.5 border border-dd-400 rounded-lg focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none transition"
+              placeholder="Enter your username"
+              required
+            />
+          </div>
+
+          <div>
+            <label htmlFor="password" className="block text-sm font-medium text-dd-950 mb-1.5">
+              Password
+            </label>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-4 py-2.5 border border-dd-400 rounded-lg focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none transition"
+              placeholder="Enter your password"
+              required
+            />
+          </div>
+
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition"
+            className="w-full bg-dd-red text-white rounded-dd-pill py-3 font-semibold hover:bg-dd-red-hover disabled:opacity-50 transition"
           >
-            {loading ? "Logging in..." : "Login"}
+            {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
       </div>

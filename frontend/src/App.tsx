@@ -7,6 +7,7 @@ import TeamManagement from "./pages/admin/TeamManagement";
 import CustomerEmails from "./pages/admin/CustomerEmails";
 import Analytics from "./pages/admin/Analytics";
 import AllEmails from "./pages/admin/AllEmails";
+import AdminLayout from "./components/AdminLayout";
 import PortalLogin from "./pages/portal/Login";
 import Inbox from "./pages/portal/Inbox";
 
@@ -21,6 +22,14 @@ function ProtectedRoute({ children, type }: { children: React.ReactNode; type: "
     return <Navigate to="/login" replace />;
   }
   return <>{children}</>;
+}
+
+function AdminPage({ children }: { children: React.ReactNode }) {
+  return (
+    <ProtectedRoute type="admin">
+      <AdminLayout>{children}</AdminLayout>
+    </ProtectedRoute>
+  );
 }
 
 export default function App() {
@@ -40,13 +49,13 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<AdminLogin />} />
-        <Route path="/" element={<ProtectedRoute type="admin"><Dashboard /></ProtectedRoute>} />
-        <Route path="/accounts/:email" element={<ProtectedRoute type="admin"><AccountDetail /></ProtectedRoute>} />
-        <Route path="/portal-users" element={<ProtectedRoute type="admin"><PortalUsersPage /></ProtectedRoute>} />
-        <Route path="/team" element={<ProtectedRoute type="admin"><TeamManagement /></ProtectedRoute>} />
-        <Route path="/emails/:email" element={<ProtectedRoute type="admin"><CustomerEmails /></ProtectedRoute>} />
-        <Route path="/all-emails" element={<ProtectedRoute type="admin"><AllEmails /></ProtectedRoute>} />
-        <Route path="/analytics" element={<ProtectedRoute type="admin"><Analytics /></ProtectedRoute>} />
+        <Route path="/" element={<AdminPage><Dashboard /></AdminPage>} />
+        <Route path="/accounts/:email" element={<AdminPage><AccountDetail /></AdminPage>} />
+        <Route path="/portal-users" element={<AdminPage><PortalUsersPage /></AdminPage>} />
+        <Route path="/team" element={<AdminPage><TeamManagement /></AdminPage>} />
+        <Route path="/emails/:email" element={<AdminPage><CustomerEmails /></AdminPage>} />
+        <Route path="/all-emails" element={<AdminPage><AllEmails /></AdminPage>} />
+        <Route path="/analytics" element={<AdminPage><Analytics /></AdminPage>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

@@ -8,13 +8,13 @@ interface StageInfo {
 }
 
 const STAGE_MAP: Record<string, StageInfo> = {
-  REGISTERED: { label: "Registered", color: "bg-gray-100 text-gray-700" },
-  IDENTITY_VERIFIED: { label: "ID Verified", color: "bg-blue-100 text-blue-700" },
-  BGC_PENDING: { label: "BGC Pending", color: "bg-yellow-100 text-yellow-700" },
-  BGC_CLEAR: { label: "BGC Clear", color: "bg-green-100 text-green-700" },
-  BGC_CONSIDER: { label: "BGC Consider", color: "bg-orange-100 text-orange-700" },
-  ACTIVE: { label: "Active", color: "bg-emerald-100 text-emerald-700" },
-  DEACTIVATED: { label: "Deactivated", color: "bg-red-100 text-red-700" },
+  REGISTERED: { label: "Registered", color: "bg-dd-100 text-dd-800" },
+  IDENTITY_VERIFIED: { label: "ID Verified", color: "bg-[#E0F0FF] text-[#004A99]" },
+  BGC_PENDING: { label: "BGC Pending", color: "bg-[#FFF3D6] text-[#8A6100]" },
+  BGC_CLEAR: { label: "BGC Clear", color: "bg-[#E5F9EB] text-[#004C1B]" },
+  BGC_CONSIDER: { label: "BGC Consider", color: "bg-dd-red-lighter text-dd-red-active" },
+  ACTIVE: { label: "Active", color: "bg-[#E5F9EB] text-[#004C1B]" },
+  DEACTIVATED: { label: "Deactivated", color: "bg-dd-red-lighter text-dd-red-active" },
 };
 
 const STAGES = Object.keys(STAGE_MAP);
@@ -175,124 +175,130 @@ export default function Dashboard() {
   }, [stage, search, page]);
 
   const severityColor: Record<string, string> = {
-    critical: "bg-red-500",
-    warning: "bg-yellow-500",
-    info: "bg-blue-500",
+    critical: "bg-dd-red",
+    warning: "bg-[#E5A500]",
+    info: "bg-[#0070E0]",
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-xl font-bold text-gray-800">DasherHelp Admin</h1>
-          <div className="flex items-center gap-4">
-            {/* Alert Bell */}
-            <div className="relative">
-              <button
-                onClick={() => { setShowAlerts(!showAlerts); if (!showAlerts) loadAlerts(); }}
-                className="relative p-2 text-gray-500 hover:text-gray-700"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                </svg>
-                {(stats?.unread_alerts || 0) > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                    {stats!.unread_alerts > 99 ? "99+" : stats!.unread_alerts}
-                  </span>
+    <div className="p-6 space-y-6">
+      {/* Page Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-dd-950">Dashboard</h1>
+          <p className="text-sm text-dd-600 mt-1">
+            Monitor dasher accounts, run scans, and manage onboarding stages.
+          </p>
+        </div>
+        {/* Alert Bell */}
+        <div className="relative">
+          <button
+            onClick={() => { setShowAlerts(!showAlerts); if (!showAlerts) loadAlerts(); }}
+            className="relative p-2.5 text-dd-600 hover:text-dd-950 hover:bg-dd-100 rounded-dd transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+            </svg>
+            {(stats?.unread_alerts || 0) > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 bg-dd-red text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                {stats!.unread_alerts > 99 ? "99+" : stats!.unread_alerts}
+              </span>
+            )}
+          </button>
+          {/* Alert Dropdown */}
+          {showAlerts && (
+            <div className="absolute right-0 mt-2 w-80 bg-white rounded-dd shadow-dd-lg border border-dd-200 z-50 max-h-96 overflow-y-auto">
+              <div className="px-4 py-3 border-b border-dd-200 flex justify-between items-center">
+                <span className="text-sm font-semibold text-dd-950">Alerts</span>
+                {alerts.length > 0 && (
+                  <button onClick={markAllRead} className="text-xs text-dd-red hover:text-dd-red-hover font-medium">
+                    Mark all read
+                  </button>
                 )}
-              </button>
-              {/* Alert Dropdown */}
-              {showAlerts && (
-                <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border z-50 max-h-96 overflow-y-auto">
-                  <div className="px-4 py-3 border-b flex justify-between items-center">
-                    <span className="text-sm font-semibold text-gray-700">Alerts</span>
-                    {alerts.length > 0 && (
-                      <button onClick={markAllRead} className="text-xs text-blue-600 hover:underline">
-                        Mark all read
-                      </button>
-                    )}
-                  </div>
-                  {alerts.length === 0 ? (
-                    <div className="px-4 py-6 text-center text-gray-400 text-sm">No unread alerts</div>
-                  ) : (
-                    alerts.map((a) => (
-                      <button
-                        key={a.id}
-                        onClick={() => markAlertRead(a.id)}
-                        className="w-full text-left px-4 py-3 border-b hover:bg-gray-50 flex gap-2"
-                      >
-                        <span className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${severityColor[a.severity] || "bg-gray-400"}`} />
-                        <div>
-                          <div className="text-sm font-medium text-gray-800">{a.title}</div>
-                          {a.message && <div className="text-xs text-gray-500 mt-0.5">{a.message}</div>}
-                          <div className="text-[10px] text-gray-400 mt-1">
-                            {new Date(a.created_at).toLocaleString()}
-                          </div>
-                        </div>
-                      </button>
-                    ))
-                  )}
-                </div>
+              </div>
+              {alerts.length === 0 ? (
+                <div className="px-4 py-6 text-center text-dd-500 text-sm">No unread alerts</div>
+              ) : (
+                alerts.map((a) => (
+                  <button
+                    key={a.id}
+                    onClick={() => markAlertRead(a.id)}
+                    className="w-full text-left px-4 py-3 border-b border-dd-200 hover:bg-dd-50 flex gap-3 transition-colors"
+                  >
+                    <span className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${severityColor[a.severity] || "bg-dd-400"}`} />
+                    <div>
+                      <div className="text-sm font-medium text-dd-950">{a.title}</div>
+                      {a.message && <div className="text-xs text-dd-600 mt-0.5">{a.message}</div>}
+                      <div className="text-[10px] text-dd-500 mt-1">
+                        {new Date(a.created_at).toLocaleString()}
+                      </div>
+                    </div>
+                  </button>
+                ))
               )}
             </div>
-            <Link to="/all-emails" className="text-sm text-blue-600 hover:underline">All Emails</Link>
-            <Link to="/analytics" className="text-sm text-blue-600 hover:underline">Analytics</Link>
-            <Link to="/team" className="text-sm text-blue-600 hover:underline">Team</Link>
-            <Link to="/portal-users" className="text-sm text-blue-600 hover:underline">Customers</Link>
-            <button onClick={logout} className="text-sm text-gray-500 hover:text-gray-700">Logout</button>
-          </div>
+          )}
         </div>
-      </header>
+      </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
-        {/* Stage Cards */}
-        {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-            {STAGES.map((s) => (
-              <button
-                key={s}
-                onClick={() => setSearchParams(stage === s ? {} : { stage: s })}
-                className={`p-4 rounded-lg text-center transition border-2 ${
-                  stage === s ? "border-blue-500" : "border-transparent"
-                } ${STAGE_MAP[s].color}`}
-              >
-                <div className="text-2xl font-bold">{stats.stage_counts[s] || 0}</div>
-                <div className="text-xs font-medium mt-1">{STAGE_MAP[s].label}</div>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Scan Controls */}
-        <div className="bg-white rounded-lg shadow-sm p-4 flex items-center justify-between">
-          <div className="text-sm text-gray-600">
-            {stats?.last_scan ? (
-              <>
-                Last scan: {new Date(stats.last_scan.started_at).toLocaleString()} —{" "}
-                {stats.last_scan.status} ({stats.last_scan.scanned} scanned, {stats.last_scan.transitions} transitions)
-              </>
-            ) : (
-              "No scans yet"
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            {scanStatus && <span className="text-sm text-blue-600">{scanStatus}</span>}
+      {/* Stage Cards */}
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+          {STAGES.map((s) => (
             <button
-              onClick={startScan}
-              disabled={scanning}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm transition"
+              key={s}
+              onClick={() => setSearchParams(stage === s ? {} : { stage: s })}
+              className={`p-4 rounded-dd text-center transition-all border-2 ${
+                stage === s ? "border-dd-red shadow-dd-md" : "border-transparent hover:shadow-dd-sm"
+              } ${STAGE_MAP[s].color}`}
             >
-              {scanning ? "Scanning..." : "Scan All"}
+              <div className="text-2xl font-bold">{stats.stage_counts[s] || 0}</div>
+              <div className="text-xs font-medium mt-1">{STAGE_MAP[s].label}</div>
             </button>
-          </div>
+          ))}
         </div>
+      )}
 
-        {/* Search + Bulk Actions */}
-        <div className="flex gap-3 flex-wrap">
+      {/* Scan Controls */}
+      <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 p-4 flex items-center justify-between">
+        <div className="text-sm text-dd-600">
+          {stats?.last_scan ? (
+            <>
+              Last scan: {new Date(stats.last_scan.started_at).toLocaleString()} —{" "}
+              <span className={`font-medium ${
+                stats.last_scan.status === "completed" ? "text-[#004C1B]" :
+                stats.last_scan.status === "failed" ? "text-dd-red-active" :
+                "text-dd-800"
+              }`}>
+                {stats.last_scan.status}
+              </span>
+              {" "}({stats.last_scan.scanned} scanned, {stats.last_scan.transitions} transitions)
+            </>
+          ) : (
+            "No scans yet"
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          {scanStatus && <span className="text-sm text-dd-red font-medium">{scanStatus}</span>}
+          <button
+            onClick={startScan}
+            disabled={scanning}
+            className="bg-dd-red text-white px-5 py-2 rounded-dd-pill hover:bg-dd-red-hover active:bg-dd-red-active disabled:opacity-50 text-sm font-medium transition-colors"
+          >
+            {scanning ? "Scanning..." : "Scan All"}
+          </button>
+        </div>
+      </div>
+
+      {/* Search + Bulk Actions */}
+      <div className="flex gap-3 flex-wrap items-center">
+        <div className="flex-1 relative">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dd-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
           <input
             type="text"
-            placeholder="Search email..."
+            placeholder="Search by email..."
             defaultValue={search}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
@@ -303,119 +309,130 @@ export default function Dashboard() {
                 setSearchParams(p);
               }
             }}
-            className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            className="w-full pl-10 pr-4 py-2.5 border border-dd-300 rounded-dd-pill text-sm text-dd-950 placeholder:text-dd-500 focus:ring-2 focus:ring-dd-red focus:border-dd-red focus:outline-none transition-colors"
           />
-          <span className="self-center text-sm text-gray-500">{total} accounts</span>
-          {selectedIds.size > 0 && (
-            <div className="flex gap-2">
-              <button onClick={() => bulkAction("archive")} className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-xs hover:bg-gray-300">
-                Archive ({selectedIds.size})
-              </button>
-              <button onClick={() => bulkAction("suspend")} className="px-3 py-1.5 bg-yellow-200 text-yellow-700 rounded-lg text-xs hover:bg-yellow-300">
-                Suspend
-              </button>
-              <button onClick={() => bulkAction("activate")} className="px-3 py-1.5 bg-green-200 text-green-700 rounded-lg text-xs hover:bg-green-300">
-                Activate
-              </button>
-            </div>
-          )}
         </div>
-
-        {/* Accounts Table */}
-        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="px-4 py-3 w-8">
-                  <input
-                    type="checkbox"
-                    checked={accounts.length > 0 && selectedIds.size === accounts.length}
-                    onChange={toggleSelectAll}
-                    className="rounded"
-                  />
-                </th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Customer</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Stage</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Stage Updated</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Error</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {accounts.map((acc) => (
-                <tr key={acc.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(acc.id)}
-                      onChange={() => toggleSelect(acc.id)}
-                      className="rounded"
-                    />
-                  </td>
-                  <td className="px-4 py-3">
-                    <Link to={`/accounts/${encodeURIComponent(acc.email)}`} className="text-blue-600 hover:underline">
-                      {acc.email}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-gray-500 text-xs">
-                    {acc.customer_name || "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${STAGE_MAP[acc.stage]?.color || ""}`}>
-                      {STAGE_MAP[acc.stage]?.label || acc.stage}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      acc.status === "active" ? "bg-green-100 text-green-700" :
-                      acc.status === "suspended" ? "bg-yellow-100 text-yellow-700" :
-                      "bg-gray-100 text-gray-500"
-                    }`}>
-                      {acc.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-500 text-xs">
-                    {acc.stage_updated_at ? new Date(acc.stage_updated_at).toLocaleString() : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-red-500 text-xs max-w-xs truncate">
-                    {acc.scan_error || ""}
-                  </td>
-                </tr>
-              ))}
-              {accounts.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
-                    No accounts found
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination */}
-        {total > 50 && (
-          <div className="flex justify-center gap-2">
-            {Array.from({ length: Math.ceil(total / 50) }, (_, i) => i + 1).map((p) => (
-              <button
-                key={p}
-                onClick={() => {
-                  const params: Record<string, string> = { page: String(p) };
-                  if (stage) params.stage = stage;
-                  if (search) params.search = search;
-                  setSearchParams(params);
-                }}
-                className={`px-3 py-1 rounded text-sm ${
-                  p === page ? "bg-blue-600 text-white" : "bg-white border hover:bg-gray-50"
-                }`}
-              >
-                {p}
-              </button>
-            ))}
+        <span className="text-sm text-dd-600 font-medium">{total} accounts</span>
+        {selectedIds.size > 0 && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => bulkAction("archive")}
+              className="px-4 py-1.5 bg-dd-200 text-dd-800 rounded-dd-pill text-xs font-medium hover:bg-dd-300 transition-colors"
+            >
+              Archive ({selectedIds.size})
+            </button>
+            <button
+              onClick={() => bulkAction("suspend")}
+              className="px-4 py-1.5 bg-[#FFF3D6] text-[#8A6100] rounded-dd-pill text-xs font-medium hover:bg-[#FFE9B3] transition-colors"
+            >
+              Suspend
+            </button>
+            <button
+              onClick={() => bulkAction("activate")}
+              className="px-4 py-1.5 bg-[#E5F9EB] text-[#004C1B] rounded-dd-pill text-xs font-medium hover:bg-[#C8F0D4] transition-colors"
+            >
+              Activate
+            </button>
           </div>
         )}
       </div>
+
+      {/* Accounts Table */}
+      <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-dd-50 border-b border-dd-200">
+            <tr>
+              <th className="px-4 py-3 w-8">
+                <input
+                  type="checkbox"
+                  checked={accounts.length > 0 && selectedIds.size === accounts.length}
+                  onChange={toggleSelectAll}
+                  className="rounded accent-dd-red"
+                />
+              </th>
+              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Email</th>
+              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Customer</th>
+              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Stage</th>
+              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Status</th>
+              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Stage Updated</th>
+              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Error</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-dd-200">
+            {accounts.map((acc) => (
+              <tr key={acc.id} className="hover:bg-dd-50 transition-colors">
+                <td className="px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(acc.id)}
+                    onChange={() => toggleSelect(acc.id)}
+                    className="rounded accent-dd-red"
+                  />
+                </td>
+                <td className="px-4 py-3 text-sm text-dd-950">
+                  <Link to={`/accounts/${encodeURIComponent(acc.email)}`} className="text-dd-red hover:text-dd-red-hover font-medium hover:underline">
+                    {acc.email}
+                  </Link>
+                </td>
+                <td className="px-4 py-3 text-sm text-dd-600">
+                  {acc.customer_name || "—"}
+                </td>
+                <td className="px-4 py-3">
+                  <span className={`inline-flex px-2.5 py-1 rounded-dd-pill text-xs font-medium ${STAGE_MAP[acc.stage]?.color || ""}`}>
+                    {STAGE_MAP[acc.stage]?.label || acc.stage}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <span className={`inline-flex px-2.5 py-1 rounded-dd-pill text-xs font-medium ${
+                    acc.status === "active" ? "bg-[#E5F9EB] text-[#004C1B]" :
+                    acc.status === "suspended" ? "bg-[#FFF3D6] text-[#8A6100]" :
+                    "bg-dd-100 text-dd-600"
+                  }`}>
+                    {acc.status}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-sm text-dd-600">
+                  {acc.stage_updated_at ? new Date(acc.stage_updated_at).toLocaleString() : "—"}
+                </td>
+                <td className="px-4 py-3 text-sm text-dd-red-active max-w-xs truncate">
+                  {acc.scan_error || ""}
+                </td>
+              </tr>
+            ))}
+            {accounts.length === 0 && (
+              <tr>
+                <td colSpan={7} className="px-4 py-12 text-center text-dd-500">
+                  No accounts found
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      {total > 50 && (
+        <div className="flex justify-center gap-2">
+          {Array.from({ length: Math.ceil(total / 50) }, (_, i) => i + 1).map((p) => (
+            <button
+              key={p}
+              onClick={() => {
+                const params: Record<string, string> = { page: String(p) };
+                if (stage) params.stage = stage;
+                if (search) params.search = search;
+                setSearchParams(params);
+              }}
+              className={`px-3.5 py-1.5 rounded-dd-pill text-sm font-medium transition-colors ${
+                p === page
+                  ? "bg-dd-red text-white"
+                  : "bg-white border border-dd-200 text-dd-800 hover:bg-dd-50"
+              }`}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

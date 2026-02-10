@@ -33,13 +33,23 @@ interface FullMessage extends Message {
 }
 
 const STAGE_COLORS: Record<string, string> = {
-  REGISTERED: "bg-gray-400",
-  IDENTITY_VERIFIED: "bg-blue-400",
-  BGC_PENDING: "bg-yellow-400",
-  BGC_CLEAR: "bg-green-400",
-  BGC_CONSIDER: "bg-orange-400",
+  REGISTERED: "bg-dd-500",
+  IDENTITY_VERIFIED: "bg-blue-500",
+  BGC_PENDING: "bg-yellow-500",
+  BGC_CLEAR: "bg-green-500",
+  BGC_CONSIDER: "bg-orange-500",
   ACTIVE: "bg-emerald-500",
-  DEACTIVATED: "bg-red-400",
+  DEACTIVATED: "bg-dd-red",
+};
+
+const STAGE_LABELS: Record<string, string> = {
+  REGISTERED: "Registered",
+  IDENTITY_VERIFIED: "ID Verified",
+  BGC_PENDING: "BGC Pending",
+  BGC_CLEAR: "BGC Clear",
+  BGC_CONSIDER: "BGC Consider",
+  ACTIVE: "Active",
+  DEACTIVATED: "Deactivated",
 };
 
 export default function AllEmails() {
@@ -58,9 +68,7 @@ export default function AllEmails() {
   async function loadAccounts() {
     setLoadingAccounts(true);
     try {
-      const data = await api.get<{ accounts: Account[] }>(
-        "/api/dashboard/accounts?per_page=200"
-      );
+      const data = await api.get<{ accounts: Account[] }>("/api/dashboard/accounts?per_page=200");
       setAccounts(data.accounts);
     } catch {
       setAccounts([]);
@@ -82,9 +90,7 @@ export default function AllEmails() {
       );
       setMailboxes(data.mailboxes);
       if (data.mailboxes.length > 0) {
-        const inbox =
-          data.mailboxes.find((m) => m.name.toLowerCase() === "inbox") ||
-          data.mailboxes[0];
+        const inbox = data.mailboxes.find((m) => m.name.toLowerCase() === "inbox") || data.mailboxes[0];
         setActiveMailbox(inbox.id);
       }
     } catch {
@@ -123,13 +129,8 @@ export default function AllEmails() {
     }
   }
 
-  useEffect(() => {
-    loadAccounts();
-  }, []);
-
-  useEffect(() => {
-    if (activeMailbox) loadMessages(activeMailbox);
-  }, [activeMailbox]);
+  useEffect(() => { loadAccounts(); }, []);
+  useEffect(() => { if (activeMailbox) loadMessages(activeMailbox); }, [activeMailbox]);
 
   const filteredAccounts = searchCustomer
     ? accounts.filter(
@@ -140,79 +141,86 @@ export default function AllEmails() {
     : accounts;
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b flex-shrink-0">
-        <div className="px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link to="/" className="text-blue-600 hover:underline text-sm">
-              &larr; Dashboard
-            </Link>
-            <h1 className="text-lg font-bold text-gray-800">All Customer Emails</h1>
-            <span className="text-sm text-gray-400">{accounts.length} accounts</span>
-          </div>
-        </div>
-      </header>
+    <div className="h-full flex flex-col">
+      {/* Page Header */}
+      <div className="px-6 py-4 border-b border-dd-200 bg-white flex-shrink-0">
+        <h1 className="text-xl font-bold text-dd-950">All Emails</h1>
+        <p className="text-sm text-dd-600 mt-0.5">{accounts.length} customer accounts</p>
+      </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Customer List Sidebar */}
-        <div className="w-64 bg-white border-r flex-shrink-0 flex flex-col">
+        {/* Account Sidebar */}
+        <div className="w-72 bg-white border-r border-dd-200 flex-shrink-0 flex flex-col">
           {/* Search */}
-          <div className="px-3 py-2 border-b">
-            <input
-              type="text"
-              placeholder="Search customer..."
-              value={searchCustomer}
-              onChange={(e) => setSearchCustomer(e.target.value)}
-              className="w-full px-3 py-1.5 bg-gray-100 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            />
+          <div className="px-3 py-3 border-b border-dd-200">
+            <div className="relative">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dd-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Search customer..."
+                value={searchCustomer}
+                onChange={(e) => setSearchCustomer(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 bg-dd-100 rounded-lg text-sm text-dd-950 placeholder:text-dd-500 focus:ring-2 focus:ring-dd-red/20 focus:outline-none border border-transparent focus:border-dd-red/30"
+              />
+            </div>
           </div>
 
           {/* Account List */}
           <div className="flex-1 overflow-y-auto">
             {loadingAccounts ? (
-              <div className="p-4 text-gray-400 text-sm">Loading...</div>
+              <div className="p-4 text-dd-500 text-sm">Loading...</div>
             ) : filteredAccounts.length === 0 ? (
-              <div className="p-4 text-gray-400 text-sm">No accounts found</div>
+              <div className="p-4 text-dd-500 text-sm">No accounts found</div>
             ) : (
               filteredAccounts.map((acc) => (
                 <button
                   key={acc.id}
                   onClick={() => selectAccount(acc.email)}
-                  className={`w-full text-left px-3 py-2.5 border-b hover:bg-gray-50 transition ${
-                    selectedEmail === acc.email ? "bg-blue-50 border-l-2 border-l-blue-500" : ""
+                  className={`w-full text-left px-4 py-3 border-b border-dd-200 hover:bg-dd-50 transition-colors ${
+                    selectedEmail === acc.email
+                      ? "bg-dd-red-light border-l-[3px] border-l-dd-red pl-[13px]"
+                      : ""
                   }`}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2.5">
                     <span
-                      className={`w-2 h-2 rounded-full flex-shrink-0 ${STAGE_COLORS[acc.stage] || "bg-gray-300"}`}
-                      title={acc.stage}
+                      className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${STAGE_COLORS[acc.stage] || "bg-dd-400"}`}
+                      title={STAGE_LABELS[acc.stage] || acc.stage}
                     />
-                    <span className="text-sm text-gray-800 truncate">
-                      {acc.email.split("@")[0]}
-                    </span>
-                  </div>
-                  {acc.customer_name && (
-                    <div className="text-[10px] text-gray-400 mt-0.5 ml-4 truncate">
-                      {acc.customer_name}
+                    <div className="min-w-0 flex-1">
+                      <div className={`text-sm truncate ${selectedEmail === acc.email ? "text-dd-red font-semibold" : "text-dd-950 font-medium"}`}>
+                        {acc.email.split("@")[0]}
+                      </div>
+                      <div className="text-[11px] text-dd-600 mt-0.5">
+                        {STAGE_LABELS[acc.stage] || acc.stage}
+                        {acc.customer_name && ` · ${acc.customer_name}`}
+                      </div>
                     </div>
-                  )}
+                  </div>
                 </button>
               ))
             )}
           </div>
         </div>
 
-        {/* Email Panel */}
+        {/* Email Viewer */}
         {selectedEmail ? (
           <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="px-4 py-2 bg-gray-100 border-b flex-shrink-0 flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700">{selectedEmail}</span>
+            {/* Selected account bar */}
+            <div className="px-4 py-2.5 bg-dd-50 border-b border-dd-200 flex-shrink-0 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-dd-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                <span className="text-sm font-medium text-dd-950">{selectedEmail}</span>
+              </div>
               <Link
                 to={`/accounts/${encodeURIComponent(selectedEmail)}`}
-                className="text-xs text-blue-600 hover:underline"
+                className="text-xs font-medium text-dd-red hover:text-dd-red-hover transition-colors"
               >
-                View Account
+                View Account →
               </Link>
             </div>
             <EmailPanel
@@ -229,8 +237,14 @@ export default function AllEmails() {
             />
           </div>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
-            Select a customer to view their emails
+          <div className="flex-1 flex items-center justify-center bg-dd-50">
+            <div className="text-center">
+              <svg className="w-16 h-16 text-dd-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              <p className="text-dd-600 font-medium">Select a customer</p>
+              <p className="text-sm text-dd-500 mt-1">Choose an account from the left to view their emails</p>
+            </div>
           </div>
         )}
       </div>
