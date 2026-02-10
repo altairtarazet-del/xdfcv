@@ -1,8 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../api/client";
-import { useTranslation } from "../../i18n/LanguageContext";
-import { LanguageSelector } from "../../components/LanguageSelector";
 
 interface Mailbox {
   id: string;
@@ -35,7 +33,6 @@ export default function Inbox() {
   const [loadingBody, setLoadingBody] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const navigate = useNavigate();
-  const { t } = useTranslation();
 
   async function loadMailboxes() {
     try {
@@ -119,11 +116,8 @@ export default function Inbox() {
       {/* Header */}
       <header className="bg-white shadow-sm border-b flex-shrink-0">
         <div className="px-4 py-3 flex justify-between items-center">
-          <h1 className="text-lg font-bold text-gray-800">{t("dasherHelpMail")}</h1>
-          <div className="flex items-center gap-4">
-            <LanguageSelector />
-            <button onClick={logout} className="text-sm text-gray-500 hover:text-gray-700">{t("logout")}</button>
-          </div>
+          <h1 className="text-lg font-bold text-gray-800">DasherHelp Mail</h1>
+          <button onClick={logout} className="text-sm text-gray-500 hover:text-gray-700">Logout</button>
         </div>
       </header>
 
@@ -147,9 +141,9 @@ export default function Inbox() {
         {/* Middle Panel — Message List */}
         <div className="w-80 border-r flex-shrink-0 overflow-y-auto bg-white">
           {loadingMsgs ? (
-            <div className="p-4 text-gray-400 text-sm">{t("loading")}</div>
+            <div className="p-4 text-gray-400 text-sm">Loading...</div>
           ) : messages.length === 0 ? (
-            <div className="p-4 text-gray-400 text-sm">{t("noMessages")}</div>
+            <div className="p-4 text-gray-400 text-sm">No messages</div>
           ) : (
             messages.map((msg) => (
               <button
@@ -160,10 +154,10 @@ export default function Inbox() {
                 } ${msg.seen === false ? "font-semibold" : ""}`}
               >
                 <div className="text-xs text-gray-500 truncate">
-                  {msg.from || msg.sender || t("unknown")}
+                  {msg.from || msg.sender || "Unknown"}
                 </div>
                 <div className="text-sm truncate mt-0.5">
-                  {msg.subject || t("noSubject")}
+                  {msg.subject || "(no subject)"}
                 </div>
                 <div className="text-[10px] text-gray-400 mt-0.5">
                   {(msg.date || msg.created_at) ? new Date(msg.date || msg.created_at!).toLocaleString() : ""}
@@ -176,13 +170,13 @@ export default function Inbox() {
         {/* Right Panel — Reading Pane */}
         <div className="flex-1 overflow-hidden flex flex-col bg-white">
           {loadingBody ? (
-            <div className="p-6 text-gray-400 text-sm">{t("loading")}</div>
+            <div className="p-6 text-gray-400 text-sm">Loading...</div>
           ) : activeMessage ? (
             <>
               <div className="p-4 border-b flex-shrink-0">
                 <h2 className="text-lg font-semibold text-gray-800">{activeMessage.subject}</h2>
                 <div className="text-sm text-gray-500 mt-1">
-                  {activeMessage.from || activeMessage.sender || t("unknown")}
+                  From: {activeMessage.from || activeMessage.sender || "Unknown"}
                 </div>
                 <div className="text-xs text-gray-400 mt-0.5">
                   {(activeMessage.date || activeMessage.created_at) &&
@@ -199,14 +193,14 @@ export default function Inbox() {
                   />
                 ) : (
                   <div className="p-4 whitespace-pre-wrap text-sm text-gray-700">
-                    {activeMessage.text || t("noContent")}
+                    {activeMessage.text || "No content"}
                   </div>
                 )}
               </div>
             </>
           ) : (
             <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-              {t("selectMessage")}
+              Select a message to read
             </div>
           )}
         </div>
