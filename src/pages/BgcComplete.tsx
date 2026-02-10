@@ -297,47 +297,65 @@ export default function BgcComplete() {
 
   const handleScan = async () => {
     setLoading(true);
+    const errors: string[] = [];
+    const parts: string[] = [];
+
+    const invoke = async (action: string) => {
+      const { data, error } = await supabase.functions.invoke('smtp-api', {
+        body: { action },
+      });
+      if (error) throw new Error(data?.error || error.message || 'Bilinmeyen hata');
+      return data;
+    };
+
     try {
-      const { data: bgcResult, error: bgcError } = await supabase.functions.invoke('smtp-api', {
-        body: { action: 'scanBgcComplete' },
-      });
-      if (bgcError) throw bgcError;
-
-      const { data: submittedResult, error: submittedError } = await supabase.functions.invoke('smtp-api', {
-        body: { action: 'scanBgcSubmitted' },
-      });
-      if (submittedError) throw submittedError;
-
-      const { data: fpResult, error: fpError } = await supabase.functions.invoke('smtp-api', {
-        body: { action: 'scanFirstPackage' },
-      });
-      if (fpError) throw fpError;
-
-      // Recheck existing BGC emails for consider status
-      const { data: recheckResult } = await supabase.functions.invoke('smtp-api', {
-        body: { action: 'recheckBgcConsider' },
-      });
-
-      await fetchData();
-
-      const parts = [];
+      const bgcResult = await invoke('scanBgcComplete');
       if (bgcResult?.newBgcFound) parts.push(`${bgcResult.newBgcFound} clear`);
       if (bgcResult?.newConsiderFound) parts.push(`${bgcResult.newConsiderFound} consider`);
       if (bgcResult?.newDeactivatedFound) parts.push(`${bgcResult.newDeactivatedFound} kapanma`);
+    } catch (e: any) {
+      errors.push('BGC: ' + e.message);
+    }
+
+    try {
+      const submittedResult = await invoke('scanBgcSubmitted');
       if (submittedResult?.newSubmittedFound) parts.push(`${submittedResult.newSubmittedFound} BGC surecte`);
       if (submittedResult?.newInfoNeededFound) parts.push(`${submittedResult.newInfoNeededFound} bilgi bekliyor`);
-      if (fpResult?.newFirstPackageFound) parts.push(`${fpResult.newFirstPackageFound} ilk paket`);
-      if (recheckResult?.considersFound) parts.push(`${recheckResult.considersFound} consider tespit`);
+    } catch (e: any) {
+      errors.push('Basvuru: ' + e.message);
+    }
 
+    try {
+      const fpResult = await invoke('scanFirstPackage');
+      if (fpResult?.newFirstPackageFound) parts.push(`${fpResult.newFirstPackageFound} ilk paket`);
+    } catch (e: any) {
+      errors.push('Ilk paket: ' + e.message);
+    }
+
+    try {
+      const recheckResult = await invoke('recheckBgcConsider');
+      if (recheckResult?.considersFound) parts.push(`${recheckResult.considersFound} consider tespit`);
+    } catch {
+      // silent — optional step
+    }
+
+    await fetchData();
+
+    if (errors.length > 0 && parts.length === 0) {
+      toast({ variant: 'destructive', title: 'Tarama Hatasi', description: errors[0] });
+    } else if (errors.length > 0) {
+      toast({
+        title: 'Tarama Kismen Tamamlandi',
+        description: parts.join(', ') + '. (' + errors.length + ' hata)',
+      });
+    } else {
       toast({
         title: 'Tarama Tamamlandi',
         description: parts.length > 0 ? parts.join(', ') + '.' : 'Yeni sonuc yok.',
       });
-    } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Hata', description: error.message || 'Tarama hatasi' });
-    } finally {
-      setLoading(false);
     }
+
+    setLoading(false);
   };
 
   const handleDetectSuspicious = async () => {
