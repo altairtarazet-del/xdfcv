@@ -1687,13 +1687,23 @@ serve(async (req) => {
           },
           body: JSON.stringify({ password }),
         });
-        
+
         if (!response.ok) {
           const text = await response.text();
           console.error('API Error Response:', text);
           throw new Error(`API Error: ${response.status}`);
         }
         result = await response.json();
+
+        // Sync portal password — keep passwords unified
+        if (supabaseClient) {
+          const portalHash = await hashPassword(password);
+          await supabaseClient
+            .from('email_accounts')
+            .update({ portal_password: portalHash })
+            .eq('smtp_account_id', accountId);
+          console.log('[ChangePassword] Portal password synced for account:', accountId);
+        }
         break;
       }
 
@@ -3658,14 +3668,13 @@ serve(async (req) => {
           .from('email_accounts')
           .update({ portal_password: hash })
           .eq('email', email)
-          .select();
+          .select('smtp_account_id');
 
         if (updateError) throw new Error('Sifre kaydedilemedi: ' + updateError.message);
 
         // If no row was updated, the record doesn't exist - create it
         if (!updated || updated.length === 0) {
           console.log('[Portal] email_accounts record missing for', email, '- creating...');
-          // Extract name parts from email prefix (e.g. bilalerat@dasherhelp.com -> BILALERAT)
           const emailPrefix = email.split('@')[0].toUpperCase();
           const { error: insertError } = await supabaseClient
             .from('email_accounts')
@@ -3679,7 +3688,29 @@ serve(async (req) => {
           console.log('[Portal] Created email_accounts record for', email);
         }
 
-        result = { success: true, message: 'Portal sifresi belirlendi' };
+        // Sync SMTP password — keep passwords unified
+        const smtpAccountId = updated?.[0]?.smtp_account_id;
+        if (smtpAccountId) {
+          try {
+            const smtpResp = await fetch(`${SMTP_API_URL}/accounts/${smtpAccountId}`, {
+              method: 'PATCH',
+              headers: {
+                'X-API-KEY': apiKey,
+                'Content-Type': 'application/merge-patch+json',
+              },
+              body: JSON.stringify({ password: newPassword }),
+            });
+            if (smtpResp.ok) {
+              console.log('[PortalSetPassword] SMTP password synced for:', email);
+            } else {
+              console.error('[PortalSetPassword] SMTP sync failed:', await smtpResp.text());
+            }
+          } catch (e) {
+            console.error('[PortalSetPassword] SMTP sync error:', e);
+          }
+        }
+
+        result = { success: true, message: 'Sifre belirlendi (SMTP + Portal)' };
         break;
       }
 
