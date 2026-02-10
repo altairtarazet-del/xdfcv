@@ -15,7 +15,7 @@ class SmtpDevClient:
     def _headers(self) -> dict:
         return {
             "X-API-Key": self.api_key,
-            "Accept": "application/json",
+            "Accept": "application/ld+json",
         }
 
     async def _request(self, method: str, path: str, **kwargs) -> dict | list | None:
