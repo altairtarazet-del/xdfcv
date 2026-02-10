@@ -20,8 +20,12 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Key, Mail, RefreshCw, Shield, Eye, EyeOff, Server, ChevronLeft, ChevronRight, AlertCircle, Trash2, Calendar, Search, X, Globe, Link2 } from 'lucide-react';
+import { Plus, Key, Mail, RefreshCw, Shield, Eye, EyeOff, Server, ChevronLeft, ChevronRight, AlertCircle, Trash2, Calendar, Search, X, Globe, Link2, ShoppingBag, Pencil, Check, XCircle } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import type { MarketListing, ListingStatus, BgcStatus } from '@/types/market';
 import {
   Select,
   SelectContent,
@@ -126,6 +130,150 @@ export default function EmailManagementPage() {
   const [portalPassword, setPortalPassword] = useState('');
   const [portalPasswordConfirm, setPortalPasswordConfirm] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
+
+  // Market listing states
+  const [marketListings, setMarketListings] = useState<MarketListing[]>([]);
+  const [marketLoading, setMarketLoading] = useState(false);
+  const [isMarketDialogOpen, setIsMarketDialogOpen] = useState(false);
+  const [editingListing, setEditingListing] = useState<MarketListing | null>(null);
+  const [marketForm, setMarketForm] = useState({
+    title: '', description: '', account_type: 'DoorDash Dasher',
+    bgc_status: 'pending' as BgcStatus, price: '', whatsapp: '', telegram: '',
+  });
+
+  const resetMarketForm = () => {
+    setMarketForm({ title: '', description: '', account_type: 'DoorDash Dasher', bgc_status: 'pending', price: '', whatsapp: '', telegram: '' });
+    setEditingListing(null);
+  };
+
+  const fetchMarketListings = useCallback(async () => {
+    setMarketLoading(true);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const { data, error } = await supabase.functions.invoke('smtp-api', {
+        body: { action: 'getListings' },
+        headers: session?.session?.access_token ? { Authorization: `Bearer ${session.session.access_token}` } : undefined,
+      });
+      if (error) throw error;
+      // Admin sees all listings via direct DB query
+      const { data: allListings, error: dbErr } = await supabase
+        .from('market_listings')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (!dbErr && allListings) {
+        setMarketListings(allListings as unknown as MarketListing[]);
+      } else {
+        setMarketListings(data?.listings || []);
+      }
+    } catch {
+      toast({ variant: 'destructive', title: 'Hata', description: 'Market ilanlari yuklenemedi' });
+    } finally {
+      setMarketLoading(false);
+    }
+  }, [toast]);
+
+  const handleMarketSubmit = async () => {
+    if (!marketForm.title || !marketForm.price) {
+      toast({ variant: 'destructive', title: 'Hata', description: 'Baslik ve fiyat zorunlu' });
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token;
+      if (!token) throw new Error('Yetkilendirme gerekli');
+
+      const payload: Record<string, any> = {
+        action: editingListing ? 'updateListing' : 'createListing',
+        title: marketForm.title,
+        description: marketForm.description || null,
+        account_type: marketForm.account_type,
+        bgc_status: marketForm.bgc_status,
+        price: Number(marketForm.price),
+        contact_info: {
+          ...(marketForm.whatsapp ? { whatsapp: marketForm.whatsapp } : {}),
+          ...(marketForm.telegram ? { telegram: marketForm.telegram } : {}),
+        },
+      };
+      if (editingListing) payload.id = editingListing.id;
+
+      const { error } = await supabase.functions.invoke('smtp-api', {
+        body: payload,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (error) throw error;
+
+      toast({ title: 'Basarili', description: editingListing ? 'Ilan guncellendi' : 'Ilan olusturuldu' });
+      setIsMarketDialogOpen(false);
+      resetMarketForm();
+      fetchMarketListings();
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Hata', description: err?.message || 'Islem basarisiz' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUpdateListingStatus = async (id: string, status: ListingStatus) => {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token;
+      const { error } = await supabase.functions.invoke('smtp-api', {
+        body: { action: 'updateListing', id, status },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (error) throw error;
+      toast({ title: 'Basarili', description: 'Ilan durumu guncellendi' });
+      fetchMarketListings();
+    } catch {
+      toast({ variant: 'destructive', title: 'Hata', description: 'Durum guncellenemedi' });
+    }
+  };
+
+  const handleDeleteListing = async (id: string) => {
+    if (!confirm('Bu ilani silmek istediginize emin misiniz?')) return;
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token;
+      const { error } = await supabase.functions.invoke('smtp-api', {
+        body: { action: 'deleteListing', id },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (error) throw error;
+      toast({ title: 'Basarili', description: 'Ilan silindi' });
+      fetchMarketListings();
+    } catch {
+      toast({ variant: 'destructive', title: 'Hata', description: 'Ilan silinemedi' });
+    }
+  };
+
+  const openEditListing = (listing: MarketListing) => {
+    setEditingListing(listing);
+    setMarketForm({
+      title: listing.title,
+      description: listing.description || '',
+      account_type: listing.account_type,
+      bgc_status: listing.bgc_status,
+      price: String(listing.price),
+      whatsapp: listing.contact_info?.whatsapp || '',
+      telegram: listing.contact_info?.telegram || '',
+    });
+    setIsMarketDialogOpen(true);
+  };
+
+  const STATUS_BADGE: Record<string, { label: string; className: string }> = {
+    available: { label: 'Aktif', className: 'bg-green-500/15 text-green-400' },
+    reserved: { label: 'Rezerve', className: 'bg-yellow-500/15 text-yellow-400' },
+    sold: { label: 'Satildi', className: 'bg-red-500/15 text-red-400' },
+    delisted: { label: 'Kaldirildi', className: 'bg-gray-500/15 text-gray-400' },
+  };
+
+  const BGC_BADGE_ADMIN: Record<string, string> = {
+    clear: 'bg-green-500/15 text-green-400',
+    consider: 'bg-yellow-500/15 text-yellow-400',
+    pending: 'bg-blue-500/15 text-blue-400',
+    processing: 'bg-blue-500/15 text-blue-400',
+  };
 
   // Filter accounts based on search query
   const filteredAccounts = useMemo(() => {
@@ -630,7 +778,17 @@ export default function EmailManagementPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
+      <Tabs defaultValue="emails" className="space-y-6" onValueChange={(v) => { if (v === 'market' && marketListings.length === 0) fetchMarketListings(); }}>
+        <TabsList>
+          <TabsTrigger value="emails" className="gap-1.5">
+            <Mail size={14} /> Email Hesaplari
+          </TabsTrigger>
+          <TabsTrigger value="market" className="gap-1.5">
+            <ShoppingBag size={14} /> Market Ilanlari
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="emails" className="space-y-6">
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
@@ -1150,7 +1308,155 @@ export default function EmailManagementPage() {
             </div>
           </DialogContent>
         </Dialog>
-      </div>
+        </TabsContent>
+
+        {/* ============ MARKET ILANLARI TAB ============ */}
+        <TabsContent value="market" className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-foreground">Market Ilanlari</h1>
+              <p className="text-muted-foreground text-sm">Hesap satis ilanlarini yonetin</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={fetchMarketListings} disabled={marketLoading}>
+                <RefreshCw size={14} className={`mr-1.5 ${marketLoading ? 'animate-spin' : ''}`} />
+                Yenile
+              </Button>
+              <Button size="sm" onClick={() => { resetMarketForm(); setIsMarketDialogOpen(true); }}>
+                <Plus size={14} className="mr-1.5" />
+                Yeni Ilan
+              </Button>
+            </div>
+          </div>
+
+          {marketLoading ? (
+            <div className="text-center py-12 text-muted-foreground">Yukleniyor...</div>
+          ) : marketListings.length === 0 ? (
+            <div className="text-center py-12">
+              <ShoppingBag size={40} className="mx-auto text-muted-foreground/30 mb-3" />
+              <p className="text-muted-foreground">Henuz ilan yok</p>
+            </div>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Baslik</TableHead>
+                    <TableHead>Fiyat</TableHead>
+                    <TableHead>BGC</TableHead>
+                    <TableHead>Durum</TableHead>
+                    <TableHead>Tarih</TableHead>
+                    <TableHead className="text-right">Islemler</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {marketListings.map((listing) => {
+                    const sBadge = STATUS_BADGE[listing.status] || STATUS_BADGE.available;
+                    return (
+                      <TableRow key={listing.id}>
+                        <TableCell className="font-medium max-w-[200px] truncate">{listing.title}</TableCell>
+                        <TableCell className="font-bold">${listing.price}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={BGC_BADGE_ADMIN[listing.bgc_status] || ''}>
+                            {listing.bgc_status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={sBadge.className}>{sBadge.label}</Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {new Date(listing.created_at).toLocaleDateString('tr-TR')}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button variant="ghost" size="sm" onClick={() => openEditListing(listing)} title="Duzenle">
+                              <Pencil size={14} />
+                            </Button>
+                            {listing.status === 'available' && (
+                              <Button variant="ghost" size="sm" onClick={() => handleUpdateListingStatus(listing.id, 'sold')} title="Satildi" className="text-red-400 hover:text-red-300">
+                                <Check size={14} />
+                              </Button>
+                            )}
+                            {listing.status !== 'delisted' && (
+                              <Button variant="ghost" size="sm" onClick={() => handleUpdateListingStatus(listing.id, 'delisted')} title="Kaldir" className="text-yellow-400 hover:text-yellow-300">
+                                <XCircle size={14} />
+                              </Button>
+                            )}
+                            <Button variant="ghost" size="sm" onClick={() => handleDeleteListing(listing.id)} title="Sil" className="text-destructive hover:text-destructive">
+                              <Trash2 size={14} />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          {/* Create/Edit Listing Dialog */}
+          <Dialog open={isMarketDialogOpen} onOpenChange={(open) => { if (!open) { setIsMarketDialogOpen(false); resetMarketForm(); } }}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>{editingListing ? 'Ilani Duzenle' : 'Yeni Ilan'}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 pt-2">
+                <div className="space-y-2">
+                  <Label>Baslik *</Label>
+                  <Input value={marketForm.title} onChange={(e) => setMarketForm(f => ({ ...f, title: e.target.value }))} placeholder="orn. BGC Clear DoorDash Hesap" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Aciklama</Label>
+                  <Textarea value={marketForm.description} onChange={(e) => setMarketForm(f => ({ ...f, description: e.target.value }))} placeholder="Hesap detaylari..." rows={3} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Hesap Tipi</Label>
+                    <Select value={marketForm.account_type} onValueChange={(v) => setMarketForm(f => ({ ...f, account_type: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="DoorDash Dasher">DoorDash Dasher</SelectItem>
+                        <SelectItem value="DoorDash Customer">DoorDash Customer</SelectItem>
+                        <SelectItem value="DoorDash Merchant">DoorDash Merchant</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>BGC Durumu</Label>
+                    <Select value={marketForm.bgc_status} onValueChange={(v) => setMarketForm(f => ({ ...f, bgc_status: v as BgcStatus }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="clear">Clear</SelectItem>
+                        <SelectItem value="consider">Consider</SelectItem>
+                        <SelectItem value="pending">Pending</SelectItem>
+                        <SelectItem value="processing">Processing</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Fiyat ($) *</Label>
+                  <Input type="number" value={marketForm.price} onChange={(e) => setMarketForm(f => ({ ...f, price: e.target.value }))} placeholder="400" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>WhatsApp</Label>
+                    <Input value={marketForm.whatsapp} onChange={(e) => setMarketForm(f => ({ ...f, whatsapp: e.target.value }))} placeholder="+90..." />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Telegram</Label>
+                    <Input value={marketForm.telegram} onChange={(e) => setMarketForm(f => ({ ...f, telegram: e.target.value }))} placeholder="@handle" />
+                  </div>
+                </div>
+                <Button onClick={handleMarketSubmit} disabled={isSubmitting} className="w-full">
+                  {isSubmitting ? 'Kaydediliyor...' : (editingListing ? 'Guncelle' : 'Olustur')}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </TabsContent>
+      </Tabs>
     </DashboardLayout>
   );
 }

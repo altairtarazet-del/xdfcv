@@ -20,6 +20,7 @@ import Intelligence from "./pages/Intelligence";
 
 import PortalLogin from "./pages/portal/PortalLogin";
 import PortalInbox from "./pages/portal/PortalInbox";
+import PortalMarket from "./pages/portal/PortalMarket";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -46,7 +47,9 @@ const App = () => (
             <Route path="/dashboard/intelligence" element={<Intelligence />} />
             <Route path="/dashboard/settings" element={<Settings />} />
             <Route path="/portal/login" element={<PortalLogin />} />
-            <Route path="/portal" element={<PortalInbox />} />
+            <Route path="/portal" element={<PortalMarket />} />
+            <Route path="/portal/market" element={<PortalMarket />} />
+            <Route path="/portal/mail" element={<PortalInbox />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

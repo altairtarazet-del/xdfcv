@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, EyeOff, Lock, Mail, ArrowRight } from 'lucide-react';
+import { Eye, EyeOff, Lock, Mail, ArrowRight, ShoppingBag } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 export default function PortalLogin() {
   const [email, setEmail] = useState('');
@@ -21,7 +22,7 @@ export default function PortalLogin() {
 
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
-      navigate('/portal');
+      navigate('/portal/mail');
     }
   }, [isAuthenticated, authLoading, navigate]);
 
@@ -47,7 +48,7 @@ export default function PortalLogin() {
           description: error,
         });
       } else {
-        navigate('/portal');
+        navigate('/portal/mail');
       }
     } finally {
       setIsLoading(false);
@@ -141,6 +142,14 @@ export default function PortalLogin() {
           <p className="text-center text-muted-foreground text-xs mt-5">
             Sifreniz icin yoneticinize basvurun
           </p>
+
+          <Link
+            to="/portal"
+            className="flex items-center justify-center gap-1.5 text-sm text-primary hover:text-primary/80 mt-4 transition-colors"
+          >
+            <ShoppingBag size={14} />
+            Markete Don
+          </Link>
         </div>
 
         {/* Footer */}

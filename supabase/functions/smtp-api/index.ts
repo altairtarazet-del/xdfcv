@@ -3683,6 +3683,125 @@ serve(async (req) => {
         break;
       }
 
+      // ============================================================
+      // MARKET LISTINGS
+      // ============================================================
+
+      case 'getListings': {
+        if (!supabaseClient) throw new Error('Supabase not configured');
+
+        const { data: listings, error: listErr } = await supabaseClient
+          .from('market_listings')
+          .select('*')
+          .in('status', ['available', 'reserved'])
+          .order('created_at', { ascending: false });
+
+        if (listErr) throw new Error('Ilanlar alinamadi: ' + listErr.message);
+
+        // Check if caller is authenticated portal user
+        let isAuth = false;
+        if (body.portalToken) {
+          try {
+            const jwtSecret = Deno.env.get('PORTAL_JWT_SECRET') || Deno.env.get('SUPABASE_JWT_SECRET') || 'portal-secret-key';
+            const key = await crypto.subtle.importKey(
+              'raw',
+              new TextEncoder().encode(jwtSecret),
+              { name: 'HMAC', hash: 'SHA-256' },
+              false,
+              ['sign', 'verify']
+            );
+            await jwtVerify(body.portalToken, key);
+            isAuth = true;
+          } catch {
+            // Token invalid — treat as unauthenticated
+          }
+        }
+
+        result = {
+          listings: (listings || []).map((l: any) => {
+            if (!isAuth) {
+              const { contact_info, ...rest } = l;
+              return rest;
+            }
+            return l;
+          }),
+        };
+        break;
+      }
+
+      case 'createListing': {
+        if (!supabaseClient) throw new Error('Supabase not configured');
+        const authHeader = req.headers.get('Authorization');
+        if (!authHeader) throw new Error('Yetkilendirme gerekli');
+
+        const { title, description: desc, account_type, bgc_status: bgc, price, contact_info } = body;
+        if (!title) throw new Error('Baslik gerekli');
+        if (price == null) throw new Error('Fiyat gerekli');
+
+        const { data: newListing, error: createErr } = await supabaseClient
+          .from('market_listings')
+          .insert({
+            title,
+            description: desc || null,
+            account_type: account_type || 'DoorDash Dasher',
+            bgc_status: bgc || 'pending',
+            price: Number(price),
+            contact_info: contact_info || {},
+          })
+          .select()
+          .single();
+
+        if (createErr) throw new Error('Ilan olusturulamadi: ' + createErr.message);
+        result = { listing: newListing };
+        break;
+      }
+
+      case 'updateListing': {
+        if (!supabaseClient) throw new Error('Supabase not configured');
+        const authHeaderUpd = req.headers.get('Authorization');
+        if (!authHeaderUpd) throw new Error('Yetkilendirme gerekli');
+
+        const { id: listingId } = body;
+        if (!listingId) throw new Error('Ilan ID gerekli');
+
+        const allowedFields = ['title', 'description', 'account_type', 'bgc_status', 'price', 'contact_info', 'status'];
+        const updates: Record<string, any> = { updated_at: new Date().toISOString() };
+        for (const field of allowedFields) {
+          if (body[field] !== undefined) {
+            updates[field] = field === 'price' ? Number(body[field]) : body[field];
+          }
+        }
+
+        const { data: updatedListing, error: updErr } = await supabaseClient
+          .from('market_listings')
+          .update(updates)
+          .eq('id', listingId)
+          .select()
+          .single();
+
+        if (updErr) throw new Error('Ilan guncellenemedi: ' + updErr.message);
+        result = { listing: updatedListing };
+        break;
+      }
+
+      case 'deleteListing': {
+        if (!supabaseClient) throw new Error('Supabase not configured');
+        const authHeaderDel = req.headers.get('Authorization');
+        if (!authHeaderDel) throw new Error('Yetkilendirme gerekli');
+
+        const { id: deleteId } = body;
+        if (!deleteId) throw new Error('Ilan ID gerekli');
+
+        const { error: delErr } = await supabaseClient
+          .from('market_listings')
+          .delete()
+          .eq('id', deleteId);
+
+        if (delErr) throw new Error('Ilan silinemedi: ' + delErr.message);
+        result = { success: true };
+        break;
+      }
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }

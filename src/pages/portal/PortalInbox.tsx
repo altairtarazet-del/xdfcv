@@ -327,7 +327,7 @@ export default function PortalInbox() {
   };
 
   return (
-    <PortalLayout>
+    <PortalLayout requireAuth={true}>
       <div className="h-[calc(100vh-3.5rem)] flex flex-col lg:flex-row">
         {/* Mobile Folder Toggle */}
         <div className="lg:hidden flex items-center gap-2 p-3 border-b border-border">
