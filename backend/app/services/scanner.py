@@ -6,8 +6,16 @@ from datetime import datetime, timezone
 from app.database import get_db
 from app.services.smtp_client import SmtpDevClient
 from app.services.stage_detector import detect_stage_from_messages, check_bgc_body, STAGE_PRIORITY
+from app.services.email_classifier import classify_with_threshold
 
 BATCH_SIZE = 10
+
+# Alert-triggering categories
+ALERT_CATEGORIES = {
+    ("account", "deactivation"): ("deactivation", "critical"),
+    ("warning", "contract_violation"): ("contract_violation", "critical"),
+    ("warning", "low_rating_warning"): ("low_rating", "warning"),
+}
 
 
 async def scan_all_accounts(scan_id: int):
@@ -157,6 +165,9 @@ async def scan_single_account(db_account: dict, smtp_map: dict, client: SmtpDevC
             "trigger_email_subject": trigger_subject,
             "trigger_email_date": trigger_date,
         })
+
+        # Create alert for stage change
+        await _create_stage_alert(db, db_account, old_stage, new_stage, trigger_subject)
     else:
         await db.update(
             "accounts",
@@ -164,4 +175,80 @@ async def scan_single_account(db_account: dict, smtp_map: dict, client: SmtpDevC
             filters={"id": f"eq.{db_account['id']}"},
         )
 
+    # Run email classification on recent messages (top 20)
+    await _classify_recent_emails(db, db_account, messages[:20])
+
     return stage_changed
+
+
+async def _create_stage_alert(db, account: dict, old_stage: str, new_stage: str, trigger_subject: str | None):
+    """Create an alert for a stage transition."""
+    severity = "info"
+    alert_type = "stage_change"
+
+    if new_stage == "DEACTIVATED":
+        severity = "critical"
+        alert_type = "deactivation"
+    elif new_stage == "BGC_CONSIDER":
+        severity = "warning"
+    elif new_stage == "ACTIVE":
+        severity = "info"
+
+    await db.insert("alerts", {
+        "account_id": account["id"],
+        "alert_type": alert_type,
+        "severity": severity,
+        "title": f"{account['email']}: {old_stage} → {new_stage}",
+        "message": trigger_subject,
+    })
+
+
+async def _classify_recent_emails(db, account: dict, messages: list[dict]):
+    """Classify recent emails and create alerts for critical ones."""
+    for msg in messages:
+        msg_id = str(msg.get("@id") or msg.get("id", ""))
+        if not msg_id:
+            continue
+
+        subject = msg.get("subject", "")
+        sender = msg.get("from", msg.get("sender", ""))
+
+        # Check if already classified
+        existing = await db.select("email_analyses", filters={
+            "account_id": f"eq.{account['id']}",
+            "message_id": f"eq.{msg_id}",
+        })
+        if existing:
+            continue
+
+        result, needs_ai = classify_with_threshold(subject, sender)
+        if result is None:
+            continue  # Skip unclassifiable during batch scan
+
+        # Cache classification
+        try:
+            await db.insert("email_analyses", {
+                "account_id": account["id"],
+                "message_id": msg_id,
+                "category": result.category,
+                "sub_category": result.sub_category,
+                "confidence": result.confidence,
+                "analysis_source": "rules",
+                "summary": result.summary,
+                "urgency": result.urgency,
+                "action_required": result.action_required,
+            }, on_conflict="account_id,message_id")
+        except Exception:
+            pass  # Duplicate or other issue, skip
+
+        # Create alert for critical/warning categories
+        alert_key = (result.category, result.sub_category)
+        if alert_key in ALERT_CATEGORIES:
+            a_type, a_severity = ALERT_CATEGORIES[alert_key]
+            await db.insert("alerts", {
+                "account_id": account["id"],
+                "alert_type": a_type,
+                "severity": a_severity,
+                "title": f"{account['email']}: {result.summary}",
+                "message": subject,
+            })

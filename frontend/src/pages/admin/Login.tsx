@@ -14,8 +14,9 @@ export default function AdminLogin() {
     setError("");
     setLoading(true);
     try {
-      const data = await api.post<{ token: string }>("/api/admin/login", { username, password });
+      const data = await api.post<{ token: string; refresh_token: string }>("/api/admin/login", { username, password });
       localStorage.setItem("admin_token", data.token);
+      localStorage.setItem("admin_refresh_token", data.refresh_token);
       navigate("/");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Login failed");

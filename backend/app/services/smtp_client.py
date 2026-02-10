@@ -1,4 +1,5 @@
 import asyncio
+import time
 import httpx
 
 from app.config import settings
@@ -6,9 +7,51 @@ from app.config import settings
 BASE_URL = "https://api.smtp.dev"
 MAX_RETRIES = 3
 RETRY_BACKOFF = [2, 5, 15]  # seconds
+CACHE_TTL = 60  # seconds
+
+
+class _Cache:
+    """Simple in-memory TTL cache."""
+
+    def __init__(self, ttl: int = CACHE_TTL):
+        self.ttl = ttl
+        self._store: dict[str, tuple[float, object]] = {}
+
+    def get(self, key: str):
+        if key in self._store:
+            ts, val = self._store[key]
+            if time.time() - ts < self.ttl:
+                return val
+            del self._store[key]
+        return None
+
+    def set(self, key: str, value: object):
+        self._store[key] = (time.time(), value)
+
+    def invalidate(self, key: str):
+        self._store.pop(key, None)
+
+    def clear(self):
+        self._store.clear()
+
+
+# Singleton HTTP client for connection pooling
+_http_client: httpx.AsyncClient | None = None
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(
+            timeout=30,
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        )
+    return _http_client
 
 
 class SmtpDevClient:
+    _cache = _Cache()
+
     def __init__(self):
         self.api_key = settings.smtp_dev_api_key
 
@@ -19,22 +62,26 @@ class SmtpDevClient:
         }
 
     async def _request(self, method: str, path: str, **kwargs) -> dict | list | None:
-        """Make an HTTP request with retry on 429."""
+        """Make an HTTP request with retry on 429 and connection pooling."""
+        client = _get_http_client()
         for attempt in range(MAX_RETRIES):
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.request(method, f"{BASE_URL}{path}", headers=self._headers(), **kwargs)
-                if resp.status_code == 429:
-                    wait = RETRY_BACKOFF[min(attempt, len(RETRY_BACKOFF) - 1)]
-                    await asyncio.sleep(wait)
-                    continue
-                resp.raise_for_status()
-                if resp.status_code == 204:
-                    return None
-                return resp.json()
+            resp = await client.request(method, f"{BASE_URL}{path}", headers=self._headers(), **kwargs)
+            if resp.status_code == 429:
+                wait = RETRY_BACKOFF[min(attempt, len(RETRY_BACKOFF) - 1)]
+                await asyncio.sleep(wait)
+                continue
+            resp.raise_for_status()
+            if resp.status_code == 204:
+                return None
+            return resp.json()
         raise Exception(f"SMTP.dev API rate limited after {MAX_RETRIES} retries: {path}")
 
     async def get_all_accounts(self) -> list[dict]:
-        """Fetch all SMTP.dev accounts (paginated JSON-LD)."""
+        """Fetch all SMTP.dev accounts (paginated JSON-LD) with caching."""
+        cached = self._cache.get("all_accounts")
+        if cached is not None:
+            return cached
+
         all_accounts = []
         page = 1
         while True:
@@ -60,22 +107,44 @@ class SmtpDevClient:
             if not view.get("next") or len(members) == 0:
                 break
             page += 1
+
+        self._cache.set("all_accounts", all_accounts)
         return all_accounts
+
+    async def create_account(self, email: str) -> dict:
+        """Create a new SMTP.dev account."""
+        data = await self._request("POST", "/accounts", json={"address": email})
+        if data:
+            data["email"] = data.get("address", email)
+        # Invalidate accounts cache
+        self._cache.invalidate("all_accounts")
+        return data
 
     async def find_account_by_email(self, email: str) -> dict | None:
         """Find an SMTP.dev account by email address."""
+        cached = self._cache.get(f"account:{email}")
+        if cached is not None:
+            return cached
+
         accounts = await self.get_all_accounts()
         for acc in accounts:
             if acc.get("address") == email or acc.get("email") == email:
+                self._cache.set(f"account:{email}", acc)
                 return acc
         return None
 
     async def get_mailboxes(self, account_id: str) -> list[dict]:
         """Get mailboxes for an account (JSON-LD collection)."""
+        cached = self._cache.get(f"mailboxes:{account_id}")
+        if cached is not None:
+            return cached
+
         data = await self._request("GET", f"/accounts/{account_id}/mailboxes")
         members = data.get("member", []) if isinstance(data, dict) else data
         for mb in members:
             mb["name"] = mb.get("path", mb.get("name", ""))
+
+        self._cache.set(f"mailboxes:{account_id}", members)
         return members
 
     async def get_messages(
@@ -94,10 +163,7 @@ class SmtpDevClient:
         return {"data": data, "total": len(data)}
 
     async def get_message(self, message_id: str, account_id: str = None, mailbox_id: str = None) -> dict | None:
-        """Get a single message with full body.
-        If message_id starts with '/', it's treated as a full @id path.
-        Otherwise account_id and mailbox_id are required.
-        """
+        """Get a single message with full body."""
         if message_id.startswith("/"):
             path = message_id
         elif account_id and mailbox_id:
@@ -134,7 +200,7 @@ class SmtpDevClient:
 
 def _normalize_message(msg: dict):
     """Normalize SMTP.dev message format."""
-    # from: object {address, name} → string
+    # from: object {address, name} -> string
     from_field = msg.get("from")
     if isinstance(from_field, dict):
         addr = from_field.get("address", "")

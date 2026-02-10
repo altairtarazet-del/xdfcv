@@ -1,7 +1,6 @@
-import { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useParams, Link } from "react-router-dom";
 import { api } from "../../api/client";
-import { useSSE } from "../../hooks/useSSE";
 import EmailPanel from "../../components/EmailPanel";
 
 interface Mailbox {
@@ -26,7 +25,8 @@ interface FullMessage extends Message {
   to?: string;
 }
 
-export default function Inbox() {
+export default function CustomerEmails() {
+  const { email } = useParams<{ email: string }>();
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [activeMailbox, setActiveMailbox] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -34,48 +34,29 @@ export default function Inbox() {
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [loadingBody, setLoadingBody] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [newMailCount, setNewMailCount] = useState(0);
-  const navigate = useNavigate();
-
-  const token = localStorage.getItem("portal_token");
-
-  // SSE for real-time notifications
-  useSSE({
-    endpoint: "/api/sse/portal/events",
-    token,
-    enabled: !!token,
-    onEvent: {
-      new_email: () => {
-        setNewMailCount((c) => c + 1);
-        // Auto-refresh message list
-        if (activeMailbox) loadMessages(activeMailbox);
-      },
-      stage_change: () => {
-        // Could show a toast here
-      },
-    },
-  });
+  const [error, setError] = useState("");
 
   async function loadMailboxes() {
     try {
-      const data = await api.get<{ mailboxes: Mailbox[] }>("/api/portal/mailboxes");
+      const data = await api.get<{ mailboxes: Mailbox[] }>(
+        `/api/admin/customer-emails/${encodeURIComponent(email!)}/mailboxes`
+      );
       setMailboxes(data.mailboxes);
       if (data.mailboxes.length > 0) {
         const inbox = data.mailboxes.find((m) => m.name.toLowerCase() === "inbox") || data.mailboxes[0];
         setActiveMailbox(inbox.id);
       }
-    } catch {
-      // Error handled by API client (401 redirect)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load mailboxes");
     }
   }
 
   async function loadMessages(mailboxId: string) {
     setLoadingMsgs(true);
     setActiveMessage(null);
-    setNewMailCount(0);
     try {
       const data = await api.get<{ data: Message[] }>(
-        `/api/portal/mailboxes/${mailboxId}/messages?per_page=100`
+        `/api/admin/customer-emails/${encodeURIComponent(email!)}/mailboxes/${mailboxId}/messages?per_page=100`
       );
       setMessages(data.data || []);
     } catch {
@@ -90,7 +71,7 @@ export default function Inbox() {
     setLoadingBody(true);
     try {
       const msg = await api.get<FullMessage>(
-        `/api/portal/mailboxes/${activeMailbox}/messages/${messageId}`
+        `/api/admin/customer-emails/${encodeURIComponent(email!)}/mailboxes/${activeMailbox}/messages/${messageId}`
       );
       setActiveMessage(msg);
     } catch {
@@ -100,38 +81,27 @@ export default function Inbox() {
     }
   }
 
-  function logout() {
-    localStorage.removeItem("portal_token");
-    localStorage.removeItem("portal_refresh_token");
-    navigate("/login");
-  }
-
   useEffect(() => {
     loadMailboxes();
-  }, []);
+  }, [email]);
 
   useEffect(() => {
     if (activeMailbox) loadMessages(activeMailbox);
   }, [activeMailbox]);
 
+  if (error) return <div className="p-8 text-red-600">{error}</div>;
+
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      {/* Header */}
       <header className="bg-white shadow-sm border-b flex-shrink-0">
-        <div className="px-4 py-3 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-bold text-gray-800">DasherHelp Mail</h1>
-            {newMailCount > 0 && (
-              <span className="bg-blue-600 text-white text-xs font-bold rounded-full px-2 py-0.5">
-                {newMailCount} new
-              </span>
-            )}
-          </div>
-          <button onClick={logout} className="text-sm text-gray-500 hover:text-gray-700">Logout</button>
+        <div className="px-4 py-3 flex items-center gap-4">
+          <Link to={`/accounts/${encodeURIComponent(email!)}`} className="text-blue-600 hover:underline text-sm">
+            &larr; Account
+          </Link>
+          <h1 className="text-lg font-bold text-gray-800">Emails: {email}</h1>
         </div>
       </header>
 
-      {/* Email Panel */}
       <EmailPanel
         mailboxes={mailboxes}
         activeMailbox={activeMailbox}
@@ -143,7 +113,6 @@ export default function Inbox() {
         onSelectMessage={loadMessage}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        newMailCount={newMailCount}
       />
     </div>
   );

@@ -14,8 +14,9 @@ export default function PortalLogin() {
     setError("");
     setLoading(true);
     try {
-      const data = await api.post<{ token: string }>("/api/portal/login", { email, password });
+      const data = await api.post<{ token: string; refresh_token: string }>("/api/portal/login", { email, password });
       localStorage.setItem("portal_token", data.token);
+      localStorage.setItem("portal_refresh_token", data.refresh_token);
       navigate("/");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Login failed");

@@ -1,12 +1,57 @@
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+function isPortal(): boolean {
+  return window.location.hostname.startsWith("portal");
+}
+
+function getTokenKey(): string {
+  return isPortal() ? "portal_token" : "admin_token";
+}
+
+function getRefreshKey(): string {
+  return isPortal() ? "portal_refresh_token" : "admin_refresh_token";
+}
+
+function getRefreshEndpoint(): string {
+  return isPortal() ? "/api/portal/refresh" : "/api/admin/refresh";
+}
+
+let refreshPromise: Promise<string | null> | null = null;
+
+async function tryRefreshToken(): Promise<string | null> {
+  const refreshToken = localStorage.getItem(getRefreshKey());
+  if (!refreshToken) return null;
+
+  // Deduplicate concurrent refresh requests
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    try {
+      const resp = await fetch(`${API_URL}${getRefreshEndpoint()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      if (data.token) {
+        localStorage.setItem(getTokenKey(), data.token);
+        return data.token;
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
 class ApiClient {
   private getToken(): string | null {
-    const hostname = window.location.hostname;
-    if (hostname.startsWith("portal")) {
-      return localStorage.getItem("portal_token");
-    }
-    return localStorage.getItem("admin_token");
+    return localStorage.getItem(getTokenKey());
   }
 
   async fetch<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
@@ -18,11 +63,20 @@ class ApiClient {
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
     }
-    const resp = await fetch(`${API_URL}${path}`, { ...options, headers });
+    let resp = await fetch(`${API_URL}${path}`, { ...options, headers });
+
+    // On 401, try refreshing the token once
     if (resp.status === 401) {
-      // Clear token and redirect to login
-      localStorage.removeItem("admin_token");
-      localStorage.removeItem("portal_token");
+      const newToken = await tryRefreshToken();
+      if (newToken) {
+        headers["Authorization"] = `Bearer ${newToken}`;
+        resp = await fetch(`${API_URL}${path}`, { ...options, headers });
+      }
+    }
+
+    if (resp.status === 401) {
+      localStorage.removeItem(getTokenKey());
+      localStorage.removeItem(getRefreshKey());
       window.location.href = "/login";
       throw new Error("Unauthorized");
     }
