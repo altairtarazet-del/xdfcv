@@ -53,7 +53,7 @@ async def dashboard_accounts(
     if stage:
         filters["stage"] = f"eq.{stage}"
     if search:
-        filters["or"] = f"(email.ilike.*{search}*,customer_name.ilike.*{search}*)"
+        filters["or"] = f"(email.ilike.*{search}*,customer_name.ilike.*{search}*,first_name.ilike.*{search}*,last_name.ilike.*{search}*)"
     if status:
         filters["status"] = f"eq.{status}"
     if assigned_admin_id:
@@ -63,7 +63,7 @@ async def dashboard_accounts(
     total = await db.count("accounts", filters=filters if filters else None)
     accounts = await db.select(
         "accounts",
-        columns="id,email,stage,stage_updated_at,last_scanned_at,scan_error,notes,created_at,customer_name,phone,tags,status,assigned_admin_id",
+        columns="id,email,stage,stage_updated_at,last_scanned_at,scan_error,notes,created_at,customer_name,first_name,middle_name,last_name,date_of_birth,phone,tags,status,assigned_admin_id",
         filters=filters if filters else None,
         order="updated_at.desc",
         limit=per_page,

@@ -23,6 +23,10 @@ def generate_password(length: int = 12) -> str:
 async def provision_customer(
     email: str,
     customer_name: str | None = None,
+    first_name: str | None = None,
+    middle_name: str | None = None,
+    last_name: str | None = None,
+    date_of_birth: str | None = None,
     phone: str | None = None,
     admin_id: str | None = None,
 ) -> dict:
@@ -55,6 +59,10 @@ async def provision_customer(
         "smtp_account_id": smtp_account_id,
         "email": email,
         "customer_name": customer_name,
+        "first_name": first_name,
+        "middle_name": middle_name,
+        "last_name": last_name,
+        "date_of_birth": date_of_birth,
         "phone": phone,
         "status": "active",
     }

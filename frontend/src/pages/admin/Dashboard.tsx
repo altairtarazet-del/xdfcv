@@ -44,6 +44,8 @@ interface Account {
   scan_error: string | null;
   notes: string | null;
   customer_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
   status: string;
   tags: string[];
 }
@@ -399,7 +401,9 @@ export default function Dashboard() {
                   </Link>
                 </td>
                 <td className="px-4 py-3 text-sm text-dd-600">
-                  {acc.customer_name || "—"}
+                  {acc.first_name && acc.last_name
+                    ? `${acc.first_name} ${acc.last_name}`
+                    : acc.customer_name || "—"}
                 </td>
                 <td className="px-4 py-3">
                   <span className={`inline-flex px-2.5 py-1 rounded-dd-pill text-xs font-medium ${STAGE_MAP[acc.stage]?.color || ""}`}>
