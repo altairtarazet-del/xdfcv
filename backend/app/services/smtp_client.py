@@ -188,6 +188,26 @@ class SmtpDevClient:
             _normalize_message(data)
         return data
 
+    async def get_attachment(self, account_id: str, mailbox_id: str, message_id: str, attachment_id: str) -> tuple[bytes, str, str]:
+        """Download an attachment and return (content_bytes, content_type, filename)."""
+        path = f"/accounts/{account_id}/mailboxes/{mailbox_id}/messages/{message_id}/attachment/{attachment_id}"
+        client = _get_http_client()
+        for attempt in range(MAX_RETRIES):
+            resp = await client.get(f"{BASE_URL}{path}", headers=self._headers())
+            if resp.status_code == 429:
+                wait = RETRY_BACKOFF[min(attempt, len(RETRY_BACKOFF) - 1)]
+                await asyncio.sleep(wait)
+                continue
+            resp.raise_for_status()
+            content_type = resp.headers.get("content-type", "application/octet-stream")
+            # Try to extract filename from content-disposition header
+            cd = resp.headers.get("content-disposition", "")
+            filename = "attachment"
+            if "filename=" in cd:
+                filename = cd.split("filename=")[-1].strip('" ')
+            return resp.content, content_type, filename
+        raise Exception(f"SMTP.dev API rate limited after {MAX_RETRIES} retries: {path}")
+
     async def get_all_messages_headers(self, account_id: str, mailbox_ids: list[str]) -> list[dict]:
         """Fetch message headers from multiple mailboxes."""
         all_messages = []

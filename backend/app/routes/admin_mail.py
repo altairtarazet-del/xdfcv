@@ -1,5 +1,6 @@
 """Admin routes for viewing customer emails."""
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 
 from app.auth import require_admin
 from app.services.smtp_client import SmtpDevClient
@@ -70,3 +71,29 @@ async def customer_message(
     if _is_operator(payload) and _subject_hidden(message.get("subject", "")):
         raise HTTPException(status_code=403, detail="Access denied")
     return message
+
+
+@router.get("/customer-emails/{email}/mailboxes/{mailbox_id}/messages/{message_id}/attachments/{attachment_id}")
+async def customer_attachment(
+    email: str,
+    mailbox_id: str,
+    message_id: str,
+    attachment_id: str,
+    payload: dict = Depends(require_admin),
+):
+    """Download a customer email attachment."""
+    client = SmtpDevClient()
+    account = await client.find_account_by_email(email)
+    if not account:
+        raise HTTPException(status_code=404, detail="SMTP account not found")
+    try:
+        content, content_type, filename = await client.get_attachment(
+            account["id"], mailbox_id, message_id, attachment_id
+        )
+    except Exception:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

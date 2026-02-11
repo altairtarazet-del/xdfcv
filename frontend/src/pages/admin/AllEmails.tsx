@@ -26,10 +26,18 @@ interface Message {
   seen?: boolean;
 }
 
+interface Attachment {
+  id: string;
+  filename: string;
+  contentType?: string;
+  size?: number;
+}
+
 interface FullMessage extends Message {
   html?: string;
   text?: string;
   to?: string;
+  attachments?: Attachment[];
 }
 
 const STAGE_COLORS: Record<string, string> = {
@@ -235,6 +243,7 @@ export default function AllEmails() {
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
               onClearMessage={() => setActiveMessage(null)}
+              attachmentBaseUrl={selectedEmail ? `/api/admin/customer-emails/${encodeURIComponent(selectedEmail)}` : undefined}
             />
           </div>
         ) : (

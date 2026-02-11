@@ -20,10 +20,18 @@ interface Message {
   seen?: boolean;
 }
 
+interface Attachment {
+  id: string;
+  filename: string;
+  contentType?: string;
+  size?: number;
+}
+
 interface FullMessage extends Message {
   html?: string;
   text?: string;
   to?: string;
+  attachments?: Attachment[];
 }
 
 export default function Inbox() {
@@ -233,6 +241,7 @@ export default function Inbox() {
         onSearchChange={setSearchQuery}
         newMailCount={newMailCount}
         onClearMessage={() => setActiveMessage(null)}
+        attachmentBaseUrl="/api/portal"
       />
 
       {/* Change Password Modal */}

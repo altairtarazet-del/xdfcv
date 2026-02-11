@@ -1,9 +1,16 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 
 interface Mailbox {
   id: string;
   name: string;
   unread?: number;
+}
+
+interface Attachment {
+  id: string;
+  filename: string;
+  contentType?: string;
+  size?: number;
 }
 
 interface Message {
@@ -20,6 +27,7 @@ interface FullMessage extends Message {
   html?: string;
   text?: string;
   to?: string;
+  attachments?: Attachment[];
 }
 
 interface EmailPanelProps {
@@ -35,6 +43,8 @@ interface EmailPanelProps {
   onSearchChange?: (q: string) => void;
   newMailCount?: number;
   onClearMessage?: () => void;
+  /** Base URL prefix for building attachment download URLs, e.g. "/api/admin/customer-emails/user@example.com" or "/api/portal" */
+  attachmentBaseUrl?: string;
 }
 
 function groupByDate(messages: Message[]): Record<string, Message[]> {
@@ -66,6 +76,26 @@ const MAILBOX_ICONS: Record<string, string> = {
   drafts: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z",
 };
 
+function formatFileSize(bytes?: number): string {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const FILE_ICONS: Record<string, string> = {
+  pdf: "M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z",
+  image: "M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z",
+  default: "M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13",
+};
+
+function getFileIcon(contentType?: string): string {
+  if (!contentType) return FILE_ICONS.default;
+  if (contentType.includes("pdf")) return FILE_ICONS.pdf;
+  if (contentType.startsWith("image/")) return FILE_ICONS.image;
+  return FILE_ICONS.default;
+}
+
 export default function EmailPanel({
   mailboxes,
   activeMailbox,
@@ -79,8 +109,38 @@ export default function EmailPanel({
   onSearchChange,
   newMailCount = 0,
   onClearMessage,
+  attachmentBaseUrl,
 }: EmailPanelProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const downloadAttachment = useCallback(async (att: Attachment) => {
+    if (!attachmentBaseUrl || !activeMailbox || !activeMessage) return;
+    setDownloadingId(att.id);
+    try {
+      const tokenKey = window.location.pathname.startsWith("/portal") ? "portal_token" : "admin_token";
+      const token = localStorage.getItem(tokenKey);
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+      const url = `${apiUrl}${attachmentBaseUrl}/mailboxes/${activeMailbox}/messages/${activeMessage.id}/attachments/${att.id}`;
+      const resp = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!resp.ok) throw new Error("Download failed");
+      const blob = await resp.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = att.filename || "attachment";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      // silent fail
+    } finally {
+      setDownloadingId(null);
+    }
+  }, [attachmentBaseUrl, activeMailbox, activeMessage]);
 
   const filteredMessages = searchQuery
     ? messages.filter(
@@ -109,6 +169,12 @@ export default function EmailPanel({
           </html>
         `);
         doc.close();
+        // Make all links open in a new tab
+        const links = doc.querySelectorAll("a");
+        links.forEach((a) => {
+          a.setAttribute("target", "_blank");
+          a.setAttribute("rel", "noopener noreferrer");
+        });
       }
     }
   }, [activeMessage]);
@@ -238,6 +304,37 @@ export default function EmailPanel({
                 {(activeMessage.date || activeMessage.created_at) &&
                   new Date(activeMessage.date || activeMessage.created_at!).toLocaleString()}
               </div>
+              {/* Attachments */}
+              {activeMessage.attachments && activeMessage.attachments.length > 0 && attachmentBaseUrl && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {activeMessage.attachments.map((att) => (
+                    <button
+                      key={att.id}
+                      onClick={() => downloadAttachment(att)}
+                      disabled={downloadingId === att.id}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 bg-dd-100 hover:bg-dd-200 rounded-lg border border-dd-200 transition-colors text-left group"
+                    >
+                      <svg className="w-4 h-4 text-dd-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d={getFileIcon(att.contentType)} />
+                      </svg>
+                      <div className="min-w-0">
+                        <div className="text-xs font-medium text-dd-950 truncate max-w-[180px]">{att.filename}</div>
+                        {att.size && <div className="text-[10px] text-dd-500">{formatFileSize(att.size)}</div>}
+                      </div>
+                      {downloadingId === att.id ? (
+                        <svg className="w-3.5 h-3.5 text-dd-500 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                      ) : (
+                        <svg className="w-3.5 h-3.5 text-dd-500 group-hover:text-dd-red flex-shrink-0 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="flex-1 overflow-hidden">
               {activeMessage.html ? (
@@ -245,7 +342,7 @@ export default function EmailPanel({
                   ref={iframeRef}
                   title="Email content"
                   className="w-full h-full border-0"
-                  sandbox="allow-same-origin"
+                  sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
                 />
               ) : (
                 <div className="p-5 whitespace-pre-wrap text-sm text-dd-800 leading-relaxed">

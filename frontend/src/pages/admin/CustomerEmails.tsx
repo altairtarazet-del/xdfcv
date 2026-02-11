@@ -19,10 +19,18 @@ interface Message {
   seen?: boolean;
 }
 
+interface Attachment {
+  id: string;
+  filename: string;
+  contentType?: string;
+  size?: number;
+}
+
 interface FullMessage extends Message {
   html?: string;
   text?: string;
   to?: string;
+  attachments?: Attachment[];
 }
 
 export default function CustomerEmails() {
@@ -114,6 +122,7 @@ export default function CustomerEmails() {
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         onClearMessage={() => setActiveMessage(null)}
+        attachmentBaseUrl={`/api/admin/customer-emails/${encodeURIComponent(email!)}`}
       />
     </div>
   );
