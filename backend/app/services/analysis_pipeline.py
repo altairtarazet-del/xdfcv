@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from app.database import get_db
 from app.services.email_classifier import classify_with_threshold, ClassificationResult
 from app.services.ai_analyzer import analyze_email_with_ai
+from app.services.template_fingerprint import TemplateCache, make_fingerprint
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,7 @@ async def analyze_email(
     subject: str,
     sender: str,
     body: str = "",
+    template_cache: TemplateCache | None = None,
 ) -> dict:
     """
     Analyze a single email through the pipeline.
@@ -54,6 +56,18 @@ async def analyze_email(
                 urgency=ai_result.get("urgency", "low"),
                 action_required=ai_result.get("action_required", False),
             )
+            # Store AI result in template cache for cross-account dedup
+            if template_cache:
+                fingerprint = make_fingerprint(subject, sender)
+                template_cache.put(fingerprint, {
+                    "category": ai_result["category"],
+                    "sub_category": ai_result["sub_category"],
+                    "confidence": 0.75,
+                    "analysis_source": "ai",
+                    "summary": ai_result["summary"],
+                    "urgency": ai_result.get("urgency", "low"),
+                    "action_required": ai_result.get("action_required", False),
+                })
 
     # If still no result, mark as unknown
     if result is None:
@@ -129,7 +143,7 @@ async def get_account_analyses(account_id: str) -> list[dict]:
 async def get_analysis_stats() -> dict:
     """Get global analysis statistics."""
     db = get_db()
-    all_analyses = await db.select("email_analyses", columns="category,analysis_source,urgency")
+    all_analyses = await db.select("email_analyses", columns="category,analysis_source,urgency", limit=10000)
 
     category_counts: dict[str, int] = {}
     source_counts: dict[str, int] = {}

@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import secrets
 import traceback
@@ -12,6 +11,7 @@ from app.services.smtp_client import SmtpDevClient
 from app.services.stage_detector import detect_stage_from_messages, check_bgc_body, STAGE_PRIORITY
 from app.services.email_classifier import classify_with_threshold
 from app.services.name_extractor import extract_names_for_account
+from app.services.template_fingerprint import TemplateCache, make_fingerprint
 from app.utils import mask_email
 
 logger = logging.getLogger(__name__)
@@ -30,6 +30,7 @@ async def scan_all_accounts(scan_id: int):
     """Main scan orchestrator. Runs as a background task."""
     db = get_db()
     client = SmtpDevClient()
+    template_cache = TemplateCache()
     errors_list = []
     scanned = 0
     transitions = 0
@@ -87,7 +88,7 @@ async def scan_all_accounts(scan_id: int):
                 filters={"id": f"eq.{scan_id}"},
             )
             results = await asyncio.gather(
-                *[scan_single_account(acc, smtp_map, client, db) for acc in batch],
+                *[scan_single_account(acc, smtp_map, client, db, template_cache) for acc in batch],
                 return_exceptions=True,
             )
             for acc, result in zip(batch, results):
@@ -105,6 +106,8 @@ async def scan_all_accounts(scan_id: int):
                     scanned += 1
                     if result:
                         transitions += 1
+
+        logger.info(f"Scan template cache: {template_cache.stats}")
 
         # 4. Update scan log as completed
         await db.update(
@@ -134,7 +137,7 @@ async def scan_all_accounts(scan_id: int):
         )
 
 
-async def scan_single_account(db_account: dict, smtp_map: dict, client: SmtpDevClient, db) -> bool:
+async def scan_single_account(db_account: dict, smtp_map: dict, client: SmtpDevClient, db, template_cache: TemplateCache | None = None) -> bool:
     """Scan a single account's emails and update its stage. Returns True if stage changed."""
     smtp_id = db_account["smtp_account_id"]
     smtp_data = smtp_map.get(smtp_id, {})
@@ -211,7 +214,7 @@ async def scan_single_account(db_account: dict, smtp_map: dict, client: SmtpDevC
         )
 
     # Run email classification on recent messages (top 20)
-    await _classify_recent_emails(db, db_account, messages[:20])
+    await _classify_recent_emails(db, db_account, messages[:20], template_cache)
 
     return stage_changed
 
@@ -238,33 +241,73 @@ async def _create_stage_alert(db, account: dict, old_stage: str, new_stage: str,
     })
 
 
-async def _classify_recent_emails(db, account: dict, messages: list[dict]):
+async def _classify_recent_emails(db, account: dict, messages: list[dict], template_cache: TemplateCache | None = None):
     """Classify recent emails and create alerts for critical ones."""
+    # 1. Collect message IDs
+    msg_entries = []
     for msg in messages:
         msg_id = str(msg.get("@id") or msg.get("id", ""))
-        if not msg_id:
+        if msg_id:
+            msg_entries.append((msg_id, msg))
+    if not msg_entries:
+        return
+
+    # 2. Batch DB check — single query instead of N queries
+    all_ids = [mid for mid, _ in msg_entries]
+    existing = await db.select("email_analyses", filters={
+        "account_id": f"eq.{account['id']}",
+        "message_id": f"in.({','.join(all_ids)})",
+    })
+    already_classified = {e["message_id"] for e in existing}
+
+    # 3. Process each message
+    for msg_id, msg in msg_entries:
+        if msg_id in already_classified:
             continue
 
         subject = msg.get("subject", "")
         sender = msg.get("from", msg.get("sender", ""))
+        fingerprint = make_fingerprint(subject, sender)
 
-        # Check if already classified
-        existing = await db.select("email_analyses", filters={
-            "account_id": f"eq.{account['id']}",
-            "message_id": f"eq.{msg_id}",
-        })
-        if existing:
+        # Template cache hit?
+        cached = template_cache.get(fingerprint) if template_cache else None
+        if cached:
+            source = cached["analysis_source"]
+            if not source.endswith("_dedup"):
+                source = source + "_dedup"
+            result_data = {
+                **cached,
+                "account_id": account["id"],
+                "message_id": msg_id,
+                "analysis_source": source,
+            }
+            try:
+                await db.insert("email_analyses", result_data, on_conflict="account_id,message_id")
+            except Exception:
+                pass
+            await _maybe_create_alert_from_data(db, account, result_data, subject)
             continue
 
+        # Normal classification
         result, needs_ai = classify_with_threshold(subject, sender)
         if result is None:
             continue  # Skip unclassifiable during batch scan
 
-        # Cache classification
-        try:
-            await db.insert("email_analyses", {
-                "account_id": account["id"],
-                "message_id": msg_id,
+        analysis_data = {
+            "account_id": account["id"],
+            "message_id": msg_id,
+            "category": result.category,
+            "sub_category": result.sub_category,
+            "confidence": result.confidence,
+            "analysis_source": "rules",
+            "summary": result.summary,
+            "urgency": result.urgency,
+            "action_required": result.action_required,
+        }
+
+        # Store in template cache BEFORE await to benefit concurrent coroutines
+        if template_cache:
+            template_cache.put(fingerprint, {
                 "category": result.category,
                 "sub_category": result.sub_category,
                 "confidence": result.confidence,
@@ -272,21 +315,42 @@ async def _classify_recent_emails(db, account: dict, messages: list[dict]):
                 "summary": result.summary,
                 "urgency": result.urgency,
                 "action_required": result.action_required,
-            }, on_conflict="account_id,message_id")
-        except Exception:
-            pass  # Duplicate or other issue, skip
-
-        # Create alert for critical/warning categories
-        alert_key = (result.category, result.sub_category)
-        if alert_key in ALERT_CATEGORIES:
-            a_type, a_severity = ALERT_CATEGORIES[alert_key]
-            await db.insert("alerts", {
-                "account_id": account["id"],
-                "alert_type": a_type,
-                "severity": a_severity,
-                "title": f"{account['email']}: {result.summary}",
-                "message": subject,
             })
+
+        try:
+            await db.insert("email_analyses", analysis_data, on_conflict="account_id,message_id")
+        except Exception:
+            pass
+
+        await _maybe_create_alert(db, account, result, subject)
+
+
+async def _maybe_create_alert(db, account: dict, result, subject: str):
+    """Create an alert if the classification matches alert-triggering categories."""
+    alert_key = (result.category, result.sub_category)
+    if alert_key in ALERT_CATEGORIES:
+        a_type, a_severity = ALERT_CATEGORIES[alert_key]
+        await db.insert("alerts", {
+            "account_id": account["id"],
+            "alert_type": a_type,
+            "severity": a_severity,
+            "title": f"{account['email']}: {result.summary}",
+            "message": subject,
+        })
+
+
+async def _maybe_create_alert_from_data(db, account: dict, data: dict, subject: str):
+    """Create an alert from raw classification data dict (for dedup'd results)."""
+    alert_key = (data.get("category"), data.get("sub_category"))
+    if alert_key in ALERT_CATEGORIES:
+        a_type, a_severity = ALERT_CATEGORIES[alert_key]
+        await db.insert("alerts", {
+            "account_id": account["id"],
+            "alert_type": a_type,
+            "severity": a_severity,
+            "title": f"{account['email']}: {data.get('summary', '')}",
+            "message": subject,
+        })
 
 
 async def _ensure_portal_user(db, email: str, account_id: str):
