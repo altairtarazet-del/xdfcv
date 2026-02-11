@@ -138,7 +138,7 @@ async def list_admins(payload: dict = Depends(require_role("admin"))):
     rows = await db.select(
         "admin_users",
         columns="id,username,display_name,role,is_active,last_login_at,created_at",
-        order="created_at.asc",
+        order="created_at.desc",
     )
     return {"admins": rows}
 
