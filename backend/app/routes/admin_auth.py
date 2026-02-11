@@ -145,7 +145,7 @@ async def list_admins(payload: dict = Depends(require_role("admin"))):
 
 @router.post("/team")
 async def create_admin(body: CreateAdminRequest, payload: dict = Depends(require_role("super_admin"))):
-    if body.role not in ("super_admin", "admin", "viewer"):
+    if body.role not in ("super_admin", "admin", "viewer", "operator"):
         raise HTTPException(status_code=400, detail="Invalid role")
     db = get_db()
     try:
@@ -179,7 +179,7 @@ async def update_admin(admin_id: str, body: UpdateAdminRequest, payload: dict = 
     if body.display_name is not None:
         data["display_name"] = body.display_name
     if body.role is not None:
-        if body.role not in ("super_admin", "admin", "viewer"):
+        if body.role not in ("super_admin", "admin", "viewer", "operator"):
             raise HTTPException(status_code=400, detail="Invalid role")
         data["role"] = body.role
     if body.is_active is not None:

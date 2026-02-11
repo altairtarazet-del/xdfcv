@@ -77,6 +77,8 @@ export default function Dashboard() {
   const page = parseInt(searchParams.get("page") || "1");
 
   const token = localStorage.getItem("admin_token");
+  const adminRole = localStorage.getItem("admin_role") || "admin";
+  const isOperator = adminRole === "operator" || adminRole === "viewer";
 
   // SSE for real-time updates
   const { connected: sseConnected } = useSSE({
@@ -188,6 +190,7 @@ export default function Dashboard() {
   function logout() {
     localStorage.removeItem("admin_token");
     localStorage.removeItem("admin_refresh_token");
+    localStorage.removeItem("admin_role");
     navigate("/login");
   }
 
@@ -286,35 +289,37 @@ export default function Dashboard() {
       )}
 
       {/* Scan Controls */}
-      <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 p-4 flex items-center justify-between">
-        <div className="text-sm text-dd-600">
-          {stats?.last_scan ? (
-            <>
-              Last scan: {new Date(stats.last_scan.started_at).toLocaleString()} —{" "}
-              <span className={`font-medium ${
-                stats.last_scan.status === "completed" ? "text-[#004C1B]" :
-                stats.last_scan.status === "failed" ? "text-dd-red-active" :
-                "text-dd-800"
-              }`}>
-                {stats.last_scan.status}
-              </span>
-              {" "}({stats.last_scan.scanned} scanned, {stats.last_scan.transitions} transitions)
-            </>
-          ) : (
-            "No scans yet"
-          )}
+      {!isOperator && (
+        <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 p-4 flex items-center justify-between">
+          <div className="text-sm text-dd-600">
+            {stats?.last_scan ? (
+              <>
+                Last scan: {new Date(stats.last_scan.started_at).toLocaleString()} —{" "}
+                <span className={`font-medium ${
+                  stats.last_scan.status === "completed" ? "text-[#004C1B]" :
+                  stats.last_scan.status === "failed" ? "text-dd-red-active" :
+                  "text-dd-800"
+                }`}>
+                  {stats.last_scan.status}
+                </span>
+                {" "}({stats.last_scan.scanned} scanned, {stats.last_scan.transitions} transitions)
+              </>
+            ) : (
+              "No scans yet"
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            {scanStatus && <span className="text-sm text-dd-red font-medium">{scanStatus}</span>}
+            <button
+              onClick={startScan}
+              disabled={scanning}
+              className="bg-dd-red text-white px-5 py-2 rounded-dd-pill hover:bg-dd-red-hover active:bg-dd-red-active disabled:opacity-50 text-sm font-medium transition-colors"
+            >
+              {scanning ? "Scanning..." : "Scan All"}
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          {scanStatus && <span className="text-sm text-dd-red font-medium">{scanStatus}</span>}
-          <button
-            onClick={startScan}
-            disabled={scanning}
-            className="bg-dd-red text-white px-5 py-2 rounded-dd-pill hover:bg-dd-red-hover active:bg-dd-red-active disabled:opacity-50 text-sm font-medium transition-colors"
-          >
-            {scanning ? "Scanning..." : "Scan All"}
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* Search + Bulk Actions */}
       <div className="flex gap-3 flex-wrap items-center">
@@ -339,7 +344,7 @@ export default function Dashboard() {
           />
         </div>
         <span className="text-sm text-dd-600 font-medium">{total} accounts</span>
-        {selectedIds.size > 0 && (
+        {!isOperator && selectedIds.size > 0 && (
           <div className="flex gap-2">
             <button
               onClick={() => bulkAction("archive")}
@@ -368,14 +373,16 @@ export default function Dashboard() {
         <table className="w-full">
           <thead className="bg-dd-50 border-b border-dd-200">
             <tr>
-              <th className="px-4 py-3 w-8">
-                <input
-                  type="checkbox"
-                  checked={accounts.length > 0 && selectedIds.size === accounts.length}
-                  onChange={toggleSelectAll}
-                  className="rounded accent-dd-red"
-                />
-              </th>
+              {!isOperator && (
+                <th className="px-4 py-3 w-8">
+                  <input
+                    type="checkbox"
+                    checked={accounts.length > 0 && selectedIds.size === accounts.length}
+                    onChange={toggleSelectAll}
+                    className="rounded accent-dd-red"
+                  />
+                </th>
+              )}
               <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Email</th>
               <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Customer</th>
               <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Stage</th>
@@ -387,14 +394,16 @@ export default function Dashboard() {
           <tbody className="divide-y divide-dd-200">
             {accounts.map((acc) => (
               <tr key={acc.id} className="hover:bg-dd-50 transition-colors">
-                <td className="px-4 py-3">
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.has(acc.id)}
-                    onChange={() => toggleSelect(acc.id)}
-                    className="rounded accent-dd-red"
-                  />
-                </td>
+                {!isOperator && (
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(acc.id)}
+                      onChange={() => toggleSelect(acc.id)}
+                      className="rounded accent-dd-red"
+                    />
+                  </td>
+                )}
                 <td className="px-4 py-3 text-sm text-dd-950">
                   <Link to={`/accounts/${encodeURIComponent(acc.email)}`} className="text-dd-red hover:text-dd-red-hover font-medium hover:underline">
                     {acc.email}
@@ -429,7 +438,7 @@ export default function Dashboard() {
             ))}
             {accounts.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-dd-500">
+                <td colSpan={isOperator ? 6 : 7} className="px-4 py-12 text-center text-dd-500">
                   No accounts found
                 </td>
               </tr>

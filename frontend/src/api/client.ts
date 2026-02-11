@@ -77,6 +77,7 @@ class ApiClient {
     if (resp.status === 401) {
       localStorage.removeItem(getTokenKey());
       localStorage.removeItem(getRefreshKey());
+      localStorage.removeItem("admin_role");
       window.location.href = "/login";
       throw new Error("Unauthorized");
     }

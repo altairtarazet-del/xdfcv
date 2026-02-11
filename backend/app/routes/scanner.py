@@ -3,7 +3,7 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.auth import require_admin
+from app.auth import require_admin, require_role
 from app.database import get_db
 from app.services.scanner import scan_all_accounts, _ensure_portal_user
 from app.services.smtp_client import SmtpDevClient
@@ -12,7 +12,7 @@ router = APIRouter()
 
 
 @router.post("/scan")
-async def start_scan(_=Depends(require_admin)):
+async def start_scan(_=Depends(require_role("admin"))):
     db = get_db()
     rows = await db.insert("scan_logs", {"status": "running"})
     scan_id = rows[0]["id"]

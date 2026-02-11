@@ -6,7 +6,14 @@ interface AdminLayoutProps {
   children: React.ReactNode;
 }
 
-const NAV_ITEMS = [
+interface NavItem {
+  to: string;
+  label: string;
+  icon: React.ReactNode;
+  minRole?: string; // "admin" or "super_admin" — hidden from operator/viewer
+}
+
+const NAV_ITEMS: NavItem[] = [
   {
     to: "/",
     label: "Dashboard",
@@ -28,6 +35,7 @@ const NAV_ITEMS = [
   {
     to: "/analytics",
     label: "Analytics",
+    minRole: "admin",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -46,6 +54,7 @@ const NAV_ITEMS = [
   {
     to: "/team",
     label: "Team",
+    minRole: "admin",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -54,10 +63,24 @@ const NAV_ITEMS = [
   },
 ];
 
+const ROLE_LEVELS: Record<string, number> = {
+  super_admin: 3,
+  admin: 2,
+  operator: 1,
+  viewer: 1,
+};
+
 export default function AdminLayout({ children }: AdminLayoutProps) {
   const navigate = useNavigate();
   const [unreadAlerts, setUnreadAlerts] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const adminRole = localStorage.getItem("admin_role") || "admin";
+  const userLevel = ROLE_LEVELS[adminRole] || 1;
+
+  const visibleNavItems = NAV_ITEMS.filter((item) => {
+    if (!item.minRole) return true;
+    return userLevel >= (ROLE_LEVELS[item.minRole] || 0);
+  });
 
   useEffect(() => {
     api.get<{ stage_counts: Record<string, number>; total_accounts: number; unread_alerts: number }>("/api/dashboard/stats")
@@ -68,6 +91,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   function logout() {
     localStorage.removeItem("admin_token");
     localStorage.removeItem("admin_refresh_token");
+    localStorage.removeItem("admin_role");
     navigate("/login");
   }
 
@@ -85,7 +109,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
       {/* Navigation */}
       <nav className="flex-1 py-3 overflow-y-auto">
-        {NAV_ITEMS.map((item) => (
+        {visibleNavItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

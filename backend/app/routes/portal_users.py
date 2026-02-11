@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from app.auth import require_admin, hash_password
+from app.auth import require_admin, require_role, hash_password
 from app.database import get_db
 from app.services.smtp_client import SmtpDevClient
 
@@ -63,7 +63,7 @@ class UpdatePortalUser(BaseModel):
 
 
 @router.patch("/{email}")
-async def update_portal_user(email: str, body: UpdatePortalUser, _=Depends(require_admin)):
+async def update_portal_user(email: str, body: UpdatePortalUser, _=Depends(require_role("admin"))):
     db = get_db()
     data = {}
     if body.display_name is not None:
@@ -86,7 +86,7 @@ async def update_portal_user(email: str, body: UpdatePortalUser, _=Depends(requi
 
 
 @router.delete("/{email}")
-async def delete_portal_user(email: str, _=Depends(require_admin)):
+async def delete_portal_user(email: str, _=Depends(require_role("admin"))):
     db = get_db()
     result = await db.delete("portal_users", filters={"email": f"eq.{email}"})
     if not result:

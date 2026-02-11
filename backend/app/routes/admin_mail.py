@@ -6,9 +6,20 @@ from app.services.smtp_client import SmtpDevClient
 
 router = APIRouter()
 
+# Subjects hidden from operator role
+OPERATOR_HIDDEN_SUBJECTS = ["start your background check"]
+
+
+def _is_operator(payload: dict) -> bool:
+    return payload.get("admin_role") == "operator"
+
+
+def _subject_hidden(subject: str) -> bool:
+    return any(h in (subject or "").lower() for h in OPERATOR_HIDDEN_SUBJECTS)
+
 
 @router.get("/customer-emails/{email}/mailboxes")
-async def customer_mailboxes(email: str, _=Depends(require_admin)):
+async def customer_mailboxes(email: str, payload: dict = Depends(require_admin)):
     """List mailboxes for a customer's email account."""
     client = SmtpDevClient()
     account = await client.find_account_by_email(email)
@@ -24,7 +35,7 @@ async def customer_messages(
     mailbox_id: str,
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=100),
-    _=Depends(require_admin),
+    payload: dict = Depends(require_admin),
 ):
     """List messages in a customer's mailbox."""
     client = SmtpDevClient()
@@ -32,6 +43,9 @@ async def customer_messages(
     if not account:
         raise HTTPException(status_code=404, detail="SMTP account not found")
     messages = await client.get_messages(account["id"], mailbox_id, page=page, per_page=per_page)
+    # Filter hidden subjects for operator role
+    if _is_operator(payload) and isinstance(messages, dict) and "data" in messages:
+        messages["data"] = [m for m in messages["data"] if not _subject_hidden(m.get("subject", ""))]
     return messages
 
 
@@ -40,7 +54,7 @@ async def customer_message(
     email: str,
     mailbox_id: str,
     message_id: str,
-    _=Depends(require_admin),
+    payload: dict = Depends(require_admin),
 ):
     """Get a single customer message with full body."""
     client = SmtpDevClient()
@@ -52,4 +66,7 @@ async def customer_message(
     )
     if not message:
         raise HTTPException(status_code=404, detail="Message not found")
+    # Block operator from viewing hidden messages
+    if _is_operator(payload) and _subject_hidden(message.get("subject", "")):
+        raise HTTPException(status_code=403, detail="Access denied")
     return message

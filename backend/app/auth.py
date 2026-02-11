@@ -12,8 +12,8 @@ from app.config import settings
 
 security = HTTPBearer()
 
-# Role hierarchy: super_admin > admin > viewer
-ROLE_HIERARCHY = {"super_admin": 3, "admin": 2, "viewer": 1}
+# Role hierarchy: super_admin > admin > operator = viewer
+ROLE_HIERARCHY = {"super_admin": 3, "admin": 2, "operator": 1, "viewer": 1}
 
 
 def hash_password(password: str) -> str:

@@ -32,6 +32,15 @@ function AdminPage({ children }: { children: React.ReactNode }) {
   );
 }
 
+function RequireMinRole({ children, minRole }: { children: React.ReactNode; minRole: string }) {
+  const LEVELS: Record<string, number> = { super_admin: 3, admin: 2, operator: 1, viewer: 1 };
+  const adminRole = localStorage.getItem("admin_role") || "admin";
+  if ((LEVELS[adminRole] || 1) < (LEVELS[minRole] || 0)) {
+    return <Navigate to="/" replace />;
+  }
+  return <>{children}</>;
+}
+
 export default function App() {
   if (isPortal()) {
     return (
@@ -52,10 +61,10 @@ export default function App() {
         <Route path="/" element={<AdminPage><Dashboard /></AdminPage>} />
         <Route path="/accounts/:email" element={<AdminPage><AccountDetail /></AdminPage>} />
         <Route path="/portal-users" element={<AdminPage><PortalUsersPage /></AdminPage>} />
-        <Route path="/team" element={<AdminPage><TeamManagement /></AdminPage>} />
+        <Route path="/team" element={<AdminPage><RequireMinRole minRole="admin"><TeamManagement /></RequireMinRole></AdminPage>} />
         <Route path="/emails/:email" element={<AdminPage><CustomerEmails /></AdminPage>} />
         <Route path="/all-emails" element={<AdminPage><AllEmails /></AdminPage>} />
-        <Route path="/analytics" element={<AdminPage><Analytics /></AdminPage>} />
+        <Route path="/analytics" element={<AdminPage><RequireMinRole minRole="admin"><Analytics /></RequireMinRole></AdminPage>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

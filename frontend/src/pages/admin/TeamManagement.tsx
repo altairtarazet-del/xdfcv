@@ -14,6 +14,7 @@ interface Admin {
 const ROLE_COLORS: Record<string, string> = {
   super_admin: "bg-dd-red-lighter text-dd-red-active",
   admin: "bg-blue-50 text-blue-700",
+  operator: "bg-[#FFF3D6] text-[#8A6100]",
   viewer: "bg-dd-100 text-dd-600",
 };
 
@@ -146,6 +147,7 @@ export default function TeamManagement() {
               className="px-4 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none bg-white"
             >
               <option value="viewer">Viewer</option>
+              <option value="operator">Operator</option>
               <option value="admin">Admin</option>
               <option value="super_admin">Super Admin</option>
             </select>

@@ -23,6 +23,8 @@ export default function PortalUsersPage() {
   const [users, setUsers] = useState<PortalUser[]>([]);
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
+  const adminRole = localStorage.getItem("admin_role") || "admin";
+  const canManage = adminRole === "admin" || adminRole === "super_admin";
 
   // Provision wizard state
   const [showProvision, setShowProvision] = useState(false);
@@ -155,12 +157,14 @@ export default function PortalUsersPage() {
           >
             New Customer
           </button>
-          <button
-            onClick={() => { setShowManual(true); setShowProvision(false); }}
-            className="border border-dd-950 text-dd-950 px-5 py-2.5 rounded-dd-pill text-sm hover:bg-dd-100 font-semibold transition-colors"
-          >
-            Manual Create
-          </button>
+          {canManage && (
+            <button
+              onClick={() => { setShowManual(true); setShowProvision(false); }}
+              className="border border-dd-950 text-dd-950 px-5 py-2.5 rounded-dd-pill text-sm hover:bg-dd-100 font-semibold transition-colors"
+            >
+              Manual Create
+            </button>
+          )}
         </div>
       </div>
 
@@ -388,18 +392,22 @@ export default function PortalUsersPage() {
                     >
                       Emails
                     </Link>
-                    <button onClick={() => resetPassword(u.email)}
-                      className="px-3 py-1 rounded-dd-pill text-xs font-semibold border border-dd-950 text-dd-950 hover:bg-dd-100 transition-colors">
-                      Reset Pwd
-                    </button>
-                    <button onClick={() => toggleActive(u)}
-                      className="px-3 py-1 rounded-dd-pill text-xs font-semibold border border-dd-950 text-dd-950 hover:bg-dd-100 transition-colors">
-                      {u.is_active ? "Disable" : "Enable"}
-                    </button>
-                    <button onClick={() => deleteUser(u.email)}
-                      className="px-3 py-1 rounded-dd-pill text-xs font-semibold text-dd-red border border-dd-red hover:bg-dd-red-lighter transition-colors">
-                      Delete
-                    </button>
+                    {canManage && (
+                      <>
+                        <button onClick={() => resetPassword(u.email)}
+                          className="px-3 py-1 rounded-dd-pill text-xs font-semibold border border-dd-950 text-dd-950 hover:bg-dd-100 transition-colors">
+                          Reset Pwd
+                        </button>
+                        <button onClick={() => toggleActive(u)}
+                          className="px-3 py-1 rounded-dd-pill text-xs font-semibold border border-dd-950 text-dd-950 hover:bg-dd-100 transition-colors">
+                          {u.is_active ? "Disable" : "Enable"}
+                        </button>
+                        <button onClick={() => deleteUser(u.email)}
+                          className="px-3 py-1 rounded-dd-pill text-xs font-semibold text-dd-red border border-dd-red hover:bg-dd-red-lighter transition-colors">
+                          Delete
+                        </button>
+                      </>
+                    )}
                   </div>
                 </td>
               </tr>

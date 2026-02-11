@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from app.auth import require_admin
+from app.auth import require_admin, require_role
 from app.database import get_db
 
 router = APIRouter()
@@ -103,7 +103,7 @@ class AccountUpdateRequest(BaseModel):
 
 
 @router.patch("/accounts/{email}")
-async def update_account(email: str, body: AccountUpdateRequest, _=Depends(require_admin)):
+async def update_account(email: str, body: AccountUpdateRequest, _=Depends(require_role("admin"))):
     db = get_db()
     data = {}
     if body.customer_name is not None:
@@ -138,7 +138,7 @@ class BulkActionRequest(BaseModel):
 
 
 @router.post("/bulk-action")
-async def bulk_action(body: BulkActionRequest, _=Depends(require_admin)):
+async def bulk_action(body: BulkActionRequest, _=Depends(require_role("admin"))):
     db = get_db()
     updated = 0
     for account_id in body.account_ids:
