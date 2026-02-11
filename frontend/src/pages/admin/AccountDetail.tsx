@@ -606,17 +606,47 @@ function AnalysisTab({ accountId, email }: { accountId: string; email: string })
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
+  const [urgency, setUrgency] = useState("");
+  const [source, setSource] = useState("");
+  const [actionRequired, setActionRequired] = useState<boolean | null>(null);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const perPage = 50;
+
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [filter, urgency, source, actionRequired, debouncedSearch]);
 
   async function loadAnalyses() {
     setLoading(true);
     try {
-      const params = filter ? `?category=${filter}` : "";
-      const data = await api.get<{ analyses: Analysis[] }>(
-        `/api/analysis/account/${accountId}${params}`
+      const params = new URLSearchParams();
+      if (filter) params.set("category", filter);
+      if (urgency) params.set("urgency", urgency);
+      if (source) params.set("source", source);
+      if (actionRequired !== null) params.set("action_required", String(actionRequired));
+      if (debouncedSearch) params.set("search", debouncedSearch);
+      params.set("page", String(page));
+      params.set("per_page", String(perPage));
+
+      const qs = params.toString();
+      const data = await api.get<{ analyses: Analysis[]; total: number; page: number; per_page: number }>(
+        `/api/analysis/account/${accountId}?${qs}`
       );
       setAnalyses(data.analyses);
+      setTotal(data.total);
     } catch {
       setAnalyses([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
@@ -624,9 +654,12 @@ function AnalysisTab({ accountId, email }: { accountId: string; email: string })
 
   useEffect(() => {
     loadAnalyses();
-  }, [accountId, filter]);
+  }, [accountId, filter, urgency, source, actionRequired, debouncedSearch, page]);
 
-  // Count by category
+  const hasFilters = !!(urgency || source || actionRequired !== null || debouncedSearch);
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+
+  // Count by category (page-level only when filters active)
   const categoryCounts: Record<string, number> = {};
   for (const a of analyses) {
     categoryCounts[a.category] = (categoryCounts[a.category] || 0) + 1;
@@ -644,7 +677,7 @@ function AnalysisTab({ accountId, email }: { accountId: string; email: string })
               : "bg-white text-dd-700 border border-dd-300 hover:border-dd-950 hover:text-dd-950"
           }`}
         >
-          All ({analyses.length})
+          All {!hasFilters ? `(${total})` : ""}
         </button>
         {Object.entries(categoryCounts).map(([cat, count]) => (
           <button
@@ -659,6 +692,67 @@ function AnalysisTab({ accountId, email }: { accountId: string; email: string })
             {cat} ({count})
           </button>
         ))}
+      </div>
+
+      {/* Advanced filters bar */}
+      <div className="flex items-center gap-3 flex-wrap bg-dd-50 border border-dd-200 rounded-dd p-3">
+        <select
+          value={urgency}
+          onChange={(e) => setUrgency(e.target.value)}
+          className="px-3 py-1.5 border border-dd-300 rounded-dd text-xs text-dd-950 bg-white focus:ring-2 focus:ring-dd-red focus:border-dd-red focus:outline-none"
+        >
+          <option value="">All Urgency</option>
+          <option value="critical">Critical</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+          <option value="info">Info</option>
+        </select>
+
+        <select
+          value={source}
+          onChange={(e) => setSource(e.target.value)}
+          className="px-3 py-1.5 border border-dd-300 rounded-dd text-xs text-dd-950 bg-white focus:ring-2 focus:ring-dd-red focus:border-dd-red focus:outline-none"
+        >
+          <option value="">All Sources</option>
+          <option value="rules">Rules</option>
+          <option value="rules_dedup">Rules (Dedup)</option>
+          <option value="ai">AI</option>
+          <option value="ai_dedup">AI (Dedup)</option>
+          <option value="manual">Manual</option>
+        </select>
+
+        <label className="inline-flex items-center gap-1.5 text-xs text-dd-700 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={actionRequired === true}
+            onChange={(e) => setActionRequired(e.target.checked ? true : null)}
+            className="rounded border-dd-300 text-dd-red focus:ring-dd-red"
+          />
+          Action Required
+        </label>
+
+        <div className="relative flex-1 min-w-[180px]">
+          <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-dd-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search summary..."
+            className="w-full pl-8 pr-3 py-1.5 border border-dd-300 rounded-dd text-xs text-dd-950 placeholder:text-dd-400 bg-white focus:ring-2 focus:ring-dd-red focus:border-dd-red focus:outline-none"
+          />
+        </div>
+
+        {hasFilters && (
+          <button
+            onClick={() => { setUrgency(""); setSource(""); setActionRequired(null); setSearch(""); }}
+            className="px-3 py-1.5 text-xs font-medium text-dd-600 hover:text-dd-red transition-colors"
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
       {/* View emails link */}
@@ -756,16 +850,44 @@ function AnalysisTab({ accountId, email }: { accountId: string; email: string })
                 <tr>
                   <td colSpan={6} className="px-5 py-12 text-center">
                     <div className="text-dd-400 text-sm">
-                      No email analyses yet
+                      {hasFilters ? "No analyses match your filters" : "No email analyses yet"}
                     </div>
                     <div className="text-dd-300 text-xs mt-1">
-                      Run a scan to analyze emails for this account
+                      {hasFilters ? "Try adjusting your filter criteria" : "Run a scan to analyze emails for this account"}
                     </div>
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+
+          {/* Pagination */}
+          {total > perPage && (
+            <div className="flex items-center justify-between px-5 py-3 border-t border-dd-200 bg-dd-50">
+              <span className="text-xs text-dd-600">
+                Showing {(page - 1) * perPage + 1}-{Math.min(page * perPage, total)} of {total}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                  className="px-3 py-1 text-xs font-medium rounded-dd border border-dd-300 text-dd-700 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Prev
+                </button>
+                <span className="text-xs text-dd-600">
+                  {page} / {totalPages}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                  className="px-3 py-1 text-xs font-medium rounded-dd border border-dd-300 text-dd-700 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
