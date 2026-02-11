@@ -47,8 +47,9 @@ async def provision_customer(
     if existing:
         raise ValueError(f"Account already exists for {email}")
 
-    # 1. Create SMTP.dev account
-    smtp_account = await client.create_account(email)
+    # 1. Create SMTP.dev account (password required by API)
+    portal_password = generate_password()
+    smtp_account = await client.create_account(email, password=portal_password)
     smtp_account_id = smtp_account.get("id", smtp_account.get("@id", ""))
     # Clean @id paths (e.g., "/accounts/abc123" -> "abc123")
     if isinstance(smtp_account_id, str) and "/" in smtp_account_id:
@@ -72,8 +73,7 @@ async def provision_customer(
     account_rows = await db.insert("accounts", account_data)
     account = account_rows[0]
 
-    # 3. Create portal user with random password
-    portal_password = generate_password()
+    # 3. Create portal user (same password as SMTP.dev account)
     portal_rows = await db.insert("portal_users", {
         "email": email,
         "password_hash": hash_password(portal_password),
