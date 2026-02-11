@@ -26,6 +26,23 @@ async def list_portal_users(
         filters=filters if filters else None,
         order="created_at.desc",
     )
+    # Enrich with account data (first_name, last_name, date_of_birth)
+    account_ids = [r["account_id"] for r in rows if r.get("account_id")]
+    account_map = {}
+    if account_ids:
+        for aid in account_ids:
+            accs = await db.select(
+                "accounts",
+                columns="id,first_name,last_name,date_of_birth",
+                filters={"id": f"eq.{aid}"},
+            )
+            if accs:
+                account_map[aid] = accs[0]
+    for row in rows:
+        acc = account_map.get(row.get("account_id"), {})
+        row["first_name"] = acc.get("first_name")
+        row["last_name"] = acc.get("last_name")
+        row["date_of_birth"] = acc.get("date_of_birth")
     return {"users": rows}
 
 

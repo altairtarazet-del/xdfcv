@@ -65,7 +65,14 @@ export default function Dashboard() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [total, setTotal] = useState(0);
   const [scanning, setScanning] = useState(false);
-  const [scanStatus, setScanStatus] = useState("");
+  const [scanProgress, setScanProgress] = useState<{
+    scanned: number;
+    total: number;
+    errors: number;
+    transitions: number;
+    current_account: string;
+    status: string;
+  } | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const [showAlerts, setShowAlerts] = useState(false);
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -138,25 +145,36 @@ export default function Dashboard() {
 
   async function startScan() {
     setScanning(true);
-    setScanStatus("Starting scan...");
+    setScanProgress({ scanned: 0, total: 0, errors: 0, transitions: 0, current_account: "", status: "running" });
     try {
       const data = await api.post<{ scan_id: number }>("/api/scan");
       const scanId = data.scan_id;
       const poll = setInterval(async () => {
-        const s = await api.get<{ status: string; scanned: number; errors: number; transitions: number }>(
-          `/api/scan/${scanId}`
-        );
-        setScanStatus(`${s.status} — ${s.scanned} scanned, ${s.transitions} transitions, ${s.errors} errors`);
+        const s = await api.get<{
+          status: string; scanned: number; errors: number; transitions: number;
+          total_accounts: number; current_account: string;
+        }>(`/api/scan/${scanId}`);
+        setScanProgress({
+          scanned: s.scanned,
+          total: s.total_accounts || 0,
+          errors: s.errors,
+          transitions: s.transitions,
+          current_account: s.current_account || "",
+          status: s.status,
+        });
         if (s.status !== "running") {
           clearInterval(poll);
-          setScanning(false);
-          loadStats();
-          loadAccounts();
+          setTimeout(() => {
+            setScanning(false);
+            setScanProgress(null);
+            loadStats();
+            loadAccounts();
+          }, 3000);
         }
-      }, 2000);
+      }, 1000);
     } catch {
       setScanning(false);
-      setScanStatus("Scan failed to start");
+      setScanProgress(null);
     }
   }
 
@@ -291,34 +309,97 @@ export default function Dashboard() {
 
       {/* Scan Controls */}
       {!isViewer && (
-        <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 p-4 flex items-center justify-between">
-          <div className="text-sm text-dd-600">
-            {stats?.last_scan ? (
-              <>
-                Last scan: {new Date(stats.last_scan.started_at).toLocaleString()} —{" "}
-                <span className={`font-medium ${
-                  stats.last_scan.status === "completed" ? "text-[#004C1B]" :
-                  stats.last_scan.status === "failed" ? "text-dd-red-active" :
-                  "text-dd-800"
-                }`}>
-                  {stats.last_scan.status}
+        <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 overflow-hidden">
+          {/* Scan Header */}
+          <div className="px-5 py-4 flex items-center justify-between">
+            <div className="text-sm text-dd-600">
+              {stats?.last_scan && !scanning ? (
+                <>
+                  Last scan: {new Date(stats.last_scan.started_at).toLocaleString()} —{" "}
+                  <span className={`font-medium ${
+                    stats.last_scan.status === "completed" ? "text-[#004C1B]" :
+                    stats.last_scan.status === "failed" ? "text-dd-red-active" :
+                    "text-dd-800"
+                  }`}>
+                    {stats.last_scan.status}
+                  </span>
+                  {" "}({stats.last_scan.scanned} scanned, {stats.last_scan.transitions} transitions)
+                </>
+              ) : !scanning ? (
+                "No scans yet"
+              ) : null}
+              {scanning && scanProgress && (
+                <span className="font-medium text-dd-950">
+                  {scanProgress.status === "running"
+                    ? scanProgress.total > 0
+                      ? `Scanning accounts... ${scanProgress.scanned}/${scanProgress.total}`
+                      : "Syncing SMTP accounts..."
+                    : scanProgress.status === "completed"
+                      ? "Scan completed!"
+                      : "Scan failed"}
                 </span>
-                {" "}({stats.last_scan.scanned} scanned, {stats.last_scan.transitions} transitions)
-              </>
-            ) : (
-              "No scans yet"
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            {scanStatus && <span className="text-sm text-dd-red font-medium">{scanStatus}</span>}
+              )}
+            </div>
             <button
               onClick={startScan}
               disabled={scanning}
-              className="bg-dd-red text-white px-5 py-2 rounded-dd-pill hover:bg-dd-red-hover active:bg-dd-red-active disabled:opacity-50 text-sm font-medium transition-colors"
+              className="bg-dd-red text-white px-5 py-2.5 rounded-dd-pill hover:bg-dd-red-hover active:bg-dd-red-active disabled:opacity-50 text-sm font-semibold transition-colors flex items-center gap-2"
             >
+              {scanning && (
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              )}
               {scanning ? "Scanning..." : "Scan All"}
             </button>
           </div>
+
+          {/* Progress Bar */}
+          {scanning && scanProgress && (
+            <div className="px-5 pb-4 space-y-3">
+              {/* Bar */}
+              <div className="relative h-3 bg-dd-200 rounded-full overflow-hidden">
+                <div
+                  className={`absolute inset-y-0 left-0 rounded-full transition-all duration-500 ease-out ${
+                    scanProgress.status === "completed" ? "bg-[#00A651]" :
+                    scanProgress.status === "failed" ? "bg-dd-red" :
+                    "bg-dd-red"
+                  }`}
+                  style={{ width: scanProgress.total > 0 ? `${Math.max(2, (scanProgress.scanned / scanProgress.total) * 100)}%` : "5%" }}
+                />
+                {scanProgress.status === "running" && (
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-[shimmer_1.5s_infinite]" />
+                )}
+              </div>
+
+              {/* Stats Row */}
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-4">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[#00A651]" />
+                    <span className="text-dd-600">Scanned</span>
+                    <span className="font-bold text-dd-950">{scanProgress.scanned}</span>
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[#0070E0]" />
+                    <span className="text-dd-600">Transitions</span>
+                    <span className="font-bold text-dd-950">{scanProgress.transitions}</span>
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-dd-red" />
+                    <span className="text-dd-600">Errors</span>
+                    <span className="font-bold text-dd-950">{scanProgress.errors}</span>
+                  </span>
+                </div>
+                {scanProgress.current_account && scanProgress.status === "running" && (
+                  <span className="text-dd-500 truncate max-w-[200px]">
+                    {scanProgress.current_account}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

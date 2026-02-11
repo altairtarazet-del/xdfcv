@@ -10,6 +10,9 @@ interface PortalUser {
   is_active: boolean;
   last_login_at: string | null;
   created_at: string;
+  first_name: string | null;
+  last_name: string | null;
+  date_of_birth: string | null;
 }
 
 interface ProvisionResult {
@@ -34,7 +37,6 @@ export default function PortalUsersPage() {
   const [provDobMonth, setProvDobMonth] = useState("");
   const [provDobDay, setProvDobDay] = useState("");
   const [provDobYear, setProvDobYear] = useState("");
-  const [provPhone, setProvPhone] = useState("");
   const [provisioning, setProvisioning] = useState(false);
   const [provResult, setProvResult] = useState<ProvisionResult | null>(null);
 
@@ -71,7 +73,6 @@ export default function PortalUsersPage() {
         middle_name: provMiddleName || null,
         last_name: provLastName,
         date_of_birth: dob,
-        phone: provPhone || null,
       });
       setProvResult(result);
       loadUsers();
@@ -91,7 +92,6 @@ export default function PortalUsersPage() {
     setProvDobMonth("");
     setProvDobDay("");
     setProvDobYear("");
-    setProvPhone("");
   }
 
   async function createUser(e: React.FormEvent) {
@@ -229,45 +229,33 @@ export default function PortalUsersPage() {
               </div>
             )}
 
-            {/* DOB + Phone */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[12px] uppercase tracking-wider text-dd-600 font-semibold">Date of Birth</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="MM"
-                    value={provDobMonth}
-                    onChange={(e) => setProvDobMonth(e.target.value.replace(/\D/g, "").slice(0, 2))}
-                    maxLength={2}
-                    className="w-16 px-3 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 text-center placeholder:text-dd-500 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
-                  />
-                  <input
-                    type="text"
-                    placeholder="DD"
-                    value={provDobDay}
-                    onChange={(e) => setProvDobDay(e.target.value.replace(/\D/g, "").slice(0, 2))}
-                    maxLength={2}
-                    className="w-16 px-3 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 text-center placeholder:text-dd-500 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
-                  />
-                  <input
-                    type="text"
-                    placeholder="YYYY"
-                    value={provDobYear}
-                    onChange={(e) => setProvDobYear(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                    maxLength={4}
-                    className="w-20 px-3 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 text-center placeholder:text-dd-500 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
-                  />
-                </div>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[12px] uppercase tracking-wider text-dd-600 font-semibold">Phone</label>
+            {/* DOB */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[12px] uppercase tracking-wider text-dd-600 font-semibold">Date of Birth</label>
+              <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="+1 (555) 123-4567"
-                  value={provPhone}
-                  onChange={(e) => setProvPhone(e.target.value)}
-                  className="px-4 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 placeholder:text-dd-500 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
+                  placeholder="MM"
+                  value={provDobMonth}
+                  onChange={(e) => setProvDobMonth(e.target.value.replace(/\D/g, "").slice(0, 2))}
+                  maxLength={2}
+                  className="w-16 px-3 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 text-center placeholder:text-dd-500 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
+                />
+                <input
+                  type="text"
+                  placeholder="DD"
+                  value={provDobDay}
+                  onChange={(e) => setProvDobDay(e.target.value.replace(/\D/g, "").slice(0, 2))}
+                  maxLength={2}
+                  className="w-16 px-3 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 text-center placeholder:text-dd-500 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
+                />
+                <input
+                  type="text"
+                  placeholder="YYYY"
+                  value={provDobYear}
+                  onChange={(e) => setProvDobYear(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  maxLength={4}
+                  className="w-20 px-3 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 text-center placeholder:text-dd-500 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
                 />
               </div>
             </div>
@@ -358,11 +346,11 @@ export default function PortalUsersPage() {
         <table className="w-full">
           <thead>
             <tr className="bg-dd-50">
-              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Name</th>
+              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">First Name</th>
+              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Last Name</th>
               <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Email</th>
               <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Status</th>
-              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Last Login</th>
-              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Created</th>
+              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">DOB</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
@@ -370,7 +358,10 @@ export default function PortalUsersPage() {
             {users.map((u) => (
               <tr key={u.id} className="hover:bg-dd-50 transition-colors">
                 <td className="px-4 py-3 text-sm text-dd-950 font-medium border-b border-dd-200">
-                  {u.display_name || "--"}
+                  {u.first_name || "--"}
+                </td>
+                <td className="px-4 py-3 text-sm text-dd-950 font-medium border-b border-dd-200">
+                  {u.last_name || "--"}
                 </td>
                 <td className="px-4 py-3 text-sm text-dd-800 border-b border-dd-200">{u.email}</td>
                 <td className="px-4 py-3 border-b border-dd-200">
@@ -380,10 +371,14 @@ export default function PortalUsersPage() {
                     {u.is_active ? "Active" : "Disabled"}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-xs text-dd-600 border-b border-dd-200">
-                  {u.last_login_at ? new Date(u.last_login_at).toLocaleString() : "Never"}
+                <td className="px-4 py-3 text-sm text-dd-600 border-b border-dd-200">
+                  {u.date_of_birth
+                    ? (() => {
+                        const [y, m, d] = u.date_of_birth.split("-");
+                        return `${m}/${d}/${y}`;
+                      })()
+                    : "--"}
                 </td>
-                <td className="px-4 py-3 text-xs text-dd-600 border-b border-dd-200">{new Date(u.created_at).toLocaleString()}</td>
                 <td className="px-4 py-3 text-right border-b border-dd-200">
                   <div className="flex items-center justify-end gap-2">
                     <Link

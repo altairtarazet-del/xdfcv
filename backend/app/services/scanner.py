@@ -56,8 +56,20 @@ async def scan_all_accounts(scan_id: int):
         smtp_map = {a["id"]: a for a in smtp_accounts}
 
         # 3. Process in batches
-        for i in range(0, len(db_accounts), BATCH_SIZE):
+        total = len(db_accounts)
+        for i in range(0, total, BATCH_SIZE):
             batch = db_accounts[i : i + BATCH_SIZE]
+            # Update progress before batch
+            await db.update(
+                "scan_logs",
+                {
+                    "scanned": scanned,
+                    "errors": len(errors_list),
+                    "transitions": transitions,
+                    "current_account": batch[0].get("email", ""),
+                },
+                filters={"id": f"eq.{scan_id}"},
+            )
             results = await asyncio.gather(
                 *[scan_single_account(acc, smtp_map, client, db) for acc in batch],
                 return_exceptions=True,
