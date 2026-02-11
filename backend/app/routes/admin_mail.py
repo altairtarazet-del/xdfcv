@@ -8,7 +8,11 @@ from app.services.smtp_client import SmtpDevClient
 router = APIRouter()
 
 # Subjects hidden from operator role
-OPERATOR_HIDDEN_SUBJECTS = ["start your background check"]
+OPERATOR_HIDDEN_SUBJECTS = [
+    "start your background check",
+    "start your doordash background check",
+    "reminder: start your doordash background check",
+]
 
 
 def _is_operator(payload: dict) -> bool:
