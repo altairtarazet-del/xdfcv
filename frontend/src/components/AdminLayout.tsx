@@ -74,8 +74,17 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const navigate = useNavigate();
   const [unreadAlerts, setUnreadAlerts] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebar_collapsed") === "true");
   const adminRole = localStorage.getItem("admin_role") || "admin";
   const userLevel = ROLE_LEVELS[adminRole] || 1;
+
+  function toggleCollapsed() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("sidebar_collapsed", String(next));
+      return next;
+    });
+  }
 
   const visibleNavItems = NAV_ITEMS.filter((item) => {
     if (!item.minRole) return true;
@@ -98,12 +107,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const sidebarContent = (
     <>
       {/* Logo */}
-      <div className="px-5 py-5 border-b border-dd-200">
+      <div className={`py-5 border-b border-dd-200 ${collapsed ? "px-3" : "px-5"}`}>
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 bg-dd-red rounded-lg flex items-center justify-center">
+          <div className="w-8 h-8 bg-dd-red rounded-lg flex items-center justify-center flex-shrink-0">
             <span className="text-white font-bold text-sm">D</span>
           </div>
-          <span className="font-bold text-lg text-dd-950">DasherHelp</span>
+          {!collapsed && <span className="font-bold text-lg text-dd-950">DasherHelp</span>}
         </div>
       </div>
 
@@ -115,17 +124,18 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             to={item.to}
             end={item.to === "/"}
             onClick={() => setMobileMenuOpen(false)}
+            title={collapsed ? item.label : undefined}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-5 py-2.5 text-sm font-medium transition-colors ${
+              `flex items-center ${collapsed ? "justify-center px-3" : "gap-3 px-5"} py-2.5 text-sm font-medium transition-colors ${
                 isActive
-                  ? "bg-dd-red-light text-dd-red border-l-[3px] border-dd-red pl-[17px]"
+                  ? `bg-dd-red-light text-dd-red border-l-[3px] border-dd-red ${collapsed ? "pl-[9px]" : "pl-[17px]"}`
                   : "text-dd-800 hover:bg-dd-100 hover:text-dd-950"
               }`
             }
           >
             {item.icon}
-            {item.label}
-            {item.label === "Dashboard" && unreadAlerts > 0 && (
+            {!collapsed && item.label}
+            {!collapsed && item.label === "Dashboard" && unreadAlerts > 0 && (
               <span className="ml-auto bg-dd-red text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
                 {unreadAlerts > 99 ? "99+" : unreadAlerts}
               </span>
@@ -134,20 +144,33 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         ))}
       </nav>
 
+      {/* Collapse toggle */}
+      <button
+        onClick={toggleCollapsed}
+        className="hidden lg:flex items-center justify-center py-3 border-t border-dd-200 text-dd-500 hover:text-dd-950 hover:bg-dd-50 transition-colors"
+        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      >
+        <svg className={`w-5 h-5 transition-transform ${collapsed ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+        </svg>
+      </button>
+
       {/* User section */}
-      <div className="border-t border-dd-200 px-5 py-4">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-dd-300 rounded-full flex items-center justify-center">
+      <div className={`border-t border-dd-200 py-4 ${collapsed ? "px-3" : "px-5"}`}>
+        <div className={`flex items-center ${collapsed ? "justify-center" : "gap-3"}`}>
+          <div className="w-8 h-8 bg-dd-300 rounded-full flex items-center justify-center flex-shrink-0">
             <svg className="w-4 h-4 text-dd-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-dd-950 truncate">Admin</div>
-            <button onClick={logout} className="text-xs text-dd-600 hover:text-dd-red transition-colors">
-              Sign out
-            </button>
-          </div>
+          {!collapsed && (
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-dd-950 truncate">Admin</div>
+              <button onClick={logout} className="text-xs text-dd-600 hover:text-dd-red transition-colors">
+                Sign out
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </>
@@ -190,8 +213,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       {/* Sidebar — desktop: always visible, mobile: slide-in */}
       <aside className={`
         fixed lg:static inset-y-0 left-0 z-50
-        w-[240px] bg-white border-r border-dd-200 flex flex-col flex-shrink-0
-        transform transition-transform duration-200 ease-in-out
+        ${collapsed ? "lg:w-[64px]" : "lg:w-[240px]"} w-[240px] bg-white border-r border-dd-200 flex flex-col flex-shrink-0
+        transform transition-all duration-200 ease-in-out
         ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
       `}>
         {sidebarContent}

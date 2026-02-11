@@ -30,14 +30,14 @@ async def list_portal_users(
     account_ids = [r["account_id"] for r in rows if r.get("account_id")]
     account_map = {}
     if account_ids:
-        for aid in account_ids:
-            accs = await db.select(
-                "accounts",
-                columns="id,first_name,last_name,date_of_birth",
-                filters={"id": f"eq.{aid}"},
-            )
-            if accs:
-                account_map[aid] = accs[0]
+        # Batch fetch all accounts in one query instead of N+1
+        accs = await db.select(
+            "accounts",
+            columns="id,first_name,last_name,date_of_birth",
+            filters={"id": f"in.({','.join(account_ids)})"},
+        )
+        for acc in accs:
+            account_map[acc["id"]] = acc
     for row in rows:
         acc = account_map.get(row.get("account_id"), {})
         row["first_name"] = acc.get("first_name")
