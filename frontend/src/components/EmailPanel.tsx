@@ -34,6 +34,7 @@ interface EmailPanelProps {
   searchQuery?: string;
   onSearchChange?: (q: string) => void;
   newMailCount?: number;
+  onClearMessage?: () => void;
 }
 
 function groupByDate(messages: Message[]): Record<string, Message[]> {
@@ -77,6 +78,7 @@ export default function EmailPanel({
   searchQuery = "",
   onSearchChange,
   newMailCount = 0,
+  onClearMessage,
 }: EmailPanelProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
@@ -145,7 +147,7 @@ export default function EmailPanel({
       </div>
 
       {/* Middle — Message List */}
-      <div className="w-80 border-r border-dd-200 flex-shrink-0 overflow-y-auto bg-white flex flex-col">
+      <div className={`w-full sm:w-80 border-r border-dd-200 flex-shrink-0 overflow-y-auto bg-white flex flex-col ${activeMessage ? "hidden sm:flex" : "flex"}`}>
         {onSearchChange && (
           <div className="px-3 py-2.5 border-b border-dd-200 flex-shrink-0">
             <div className="relative">
@@ -212,12 +214,21 @@ export default function EmailPanel({
       </div>
 
       {/* Right — Reading Pane */}
-      <div className="flex-1 overflow-hidden flex flex-col bg-white">
+      <div className={`flex-1 overflow-hidden flex flex-col bg-white ${activeMessage ? "flex" : "hidden sm:flex"}`}>
         {loadingBody ? (
           <div className="p-6 text-dd-500 text-sm">Loading...</div>
         ) : activeMessage ? (
           <>
             <div className="p-5 border-b border-dd-200 flex-shrink-0">
+              <button
+                onClick={() => onClearMessage?.()}
+                className="sm:hidden flex items-center gap-1 text-sm text-dd-red font-medium mb-3"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                Back
+              </button>
               <h2 className="text-lg font-bold text-dd-950">{activeMessage.subject}</h2>
               <div className="text-sm text-dd-700 mt-1.5 flex items-center gap-2">
                 <span className="font-medium">From:</span>

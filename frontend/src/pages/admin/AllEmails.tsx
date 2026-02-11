@@ -234,6 +234,7 @@ export default function AllEmails() {
               onSelectMessage={loadMessage}
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
+              onClearMessage={() => setActiveMessage(null)}
             />
           </div>
         ) : (

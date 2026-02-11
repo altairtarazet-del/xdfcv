@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../../api/client";
+import { useSSE } from "../../hooks/useSSE";
 
 interface StageInfo {
   label: string;
@@ -72,6 +73,29 @@ export default function Dashboard() {
   const stage = searchParams.get("stage") || "";
   const search = searchParams.get("search") || "";
   const page = parseInt(searchParams.get("page") || "1");
+
+  const token = localStorage.getItem("admin_token");
+
+  // SSE for real-time updates
+  const { connected: sseConnected } = useSSE({
+    endpoint: "/api/sse/admin/events",
+    token,
+    enabled: !!token,
+    onEvent: {
+      new_email: () => {
+        loadStats();
+        loadAccounts();
+      },
+      stage_change: () => {
+        loadStats();
+        loadAccounts();
+      },
+      alert: () => {
+        loadStats();
+        loadAlerts();
+      },
+    },
+  });
 
   async function loadStats() {
     const data = await api.get<Stats>("/api/dashboard/stats");

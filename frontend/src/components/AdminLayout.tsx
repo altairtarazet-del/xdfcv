@@ -57,6 +57,7 @@ const NAV_ITEMS = [
 export default function AdminLayout({ children }: AdminLayoutProps) {
   const navigate = useNavigate();
   const [unreadAlerts, setUnreadAlerts] = useState(0);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     api.get<{ stage_counts: Record<string, number>; total_accounts: number; unread_alerts: number }>("/api/dashboard/stats")
@@ -70,66 +71,110 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     navigate("/login");
   }
 
+  const sidebarContent = (
+    <>
+      {/* Logo */}
+      <div className="px-5 py-5 border-b border-dd-200">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 bg-dd-red rounded-lg flex items-center justify-center">
+            <span className="text-white font-bold text-sm">D</span>
+          </div>
+          <span className="font-bold text-lg text-dd-950">DasherHelp</span>
+        </div>
+      </div>
+
+      {/* Navigation */}
+      <nav className="flex-1 py-3 overflow-y-auto">
+        {NAV_ITEMS.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            end={item.to === "/"}
+            onClick={() => setMobileMenuOpen(false)}
+            className={({ isActive }) =>
+              `flex items-center gap-3 px-5 py-2.5 text-sm font-medium transition-colors ${
+                isActive
+                  ? "bg-dd-red-light text-dd-red border-l-[3px] border-dd-red pl-[17px]"
+                  : "text-dd-800 hover:bg-dd-100 hover:text-dd-950"
+              }`
+            }
+          >
+            {item.icon}
+            {item.label}
+            {item.label === "Dashboard" && unreadAlerts > 0 && (
+              <span className="ml-auto bg-dd-red text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                {unreadAlerts > 99 ? "99+" : unreadAlerts}
+              </span>
+            )}
+          </NavLink>
+        ))}
+      </nav>
+
+      {/* User section */}
+      <div className="border-t border-dd-200 px-5 py-4">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-dd-300 rounded-full flex items-center justify-center">
+            <svg className="w-4 h-4 text-dd-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium text-dd-950 truncate">Admin</div>
+            <button onClick={logout} className="text-xs text-dd-600 hover:text-dd-red transition-colors">
+              Sign out
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+
   return (
     <div className="flex h-screen bg-dd-100">
-      {/* Sidebar */}
-      <aside className="w-[240px] bg-white border-r border-dd-200 flex flex-col flex-shrink-0">
-        {/* Logo */}
-        <div className="px-5 py-5 border-b border-dd-200">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-dd-red rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">D</span>
-            </div>
-            <span className="font-bold text-lg text-dd-950">DasherHelp</span>
-          </div>
-        </div>
-
-        {/* Navigation */}
-        <nav className="flex-1 py-3 overflow-y-auto">
-          {NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === "/"}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-5 py-2.5 text-sm font-medium transition-colors ${
-                  isActive
-                    ? "bg-dd-red-light text-dd-red border-l-[3px] border-dd-red pl-[17px]"
-                    : "text-dd-800 hover:bg-dd-100 hover:text-dd-950"
-                }`
-              }
-            >
-              {item.icon}
-              {item.label}
-              {item.label === "Dashboard" && unreadAlerts > 0 && (
-                <span className="ml-auto bg-dd-red text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                  {unreadAlerts > 99 ? "99+" : unreadAlerts}
-                </span>
+      {/* Mobile header */}
+      <div className="lg:hidden fixed top-0 left-0 right-0 z-30 bg-white border-b border-dd-200 px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="p-1.5 rounded-lg hover:bg-dd-100 transition-colors"
+          >
+            <svg className="w-6 h-6 text-dd-800" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {mobileMenuOpen ? (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               )}
-            </NavLink>
-          ))}
-        </nav>
-
-        {/* User section */}
-        <div className="border-t border-dd-200 px-5 py-4">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-dd-300 rounded-full flex items-center justify-center">
-              <svg className="w-4 h-4 text-dd-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-dd-950 truncate">Admin</div>
-              <button onClick={logout} className="text-xs text-dd-600 hover:text-dd-red transition-colors">
-                Sign out
-              </button>
-            </div>
+            </svg>
+          </button>
+          <div className="w-7 h-7 bg-dd-red rounded-lg flex items-center justify-center">
+            <span className="text-white font-bold text-xs">D</span>
           </div>
+          <span className="font-bold text-dd-950">DasherHelp</span>
         </div>
+        {unreadAlerts > 0 && (
+          <span className="bg-dd-red text-white text-[10px] font-bold rounded-full px-2 py-0.5">
+            {unreadAlerts}
+          </span>
+        )}
+      </div>
+
+      {/* Mobile overlay */}
+      {mobileMenuOpen && (
+        <div className="lg:hidden fixed inset-0 z-40 bg-black/40" onClick={() => setMobileMenuOpen(false)} />
+      )}
+
+      {/* Sidebar — desktop: always visible, mobile: slide-in */}
+      <aside className={`
+        fixed lg:static inset-y-0 left-0 z-50
+        w-[240px] bg-white border-r border-dd-200 flex flex-col flex-shrink-0
+        transform transition-transform duration-200 ease-in-out
+        ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
+      `}>
+        {sidebarContent}
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto pt-14 lg:pt-0">
         {children}
       </main>
     </div>

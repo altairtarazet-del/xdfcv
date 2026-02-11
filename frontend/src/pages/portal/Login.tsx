@@ -26,34 +26,51 @@ export default function PortalLogin() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-sm">
-        <h1 className="text-2xl font-bold text-center mb-2 text-gray-800">DasherHelp</h1>
-        <p className="text-center text-gray-500 text-sm mb-6">Portal Login</p>
+    <div className="min-h-screen flex items-center justify-center bg-dd-100">
+      <div className="bg-white rounded-dd shadow-dd-lg p-8 w-full max-w-sm">
+        {/* Logo */}
+        <div className="flex flex-col items-center mb-6">
+          <div className="w-12 h-12 bg-dd-red rounded-xl flex items-center justify-center mb-3">
+            <span className="text-white font-bold text-xl">D</span>
+          </div>
+          <h1 className="text-xl font-bold text-dd-950">DasherHelp</h1>
+          <p className="text-sm text-dd-600 mt-1">Sign in to your portal</p>
+        </div>
+
         <form onSubmit={handleSubmit} className="space-y-4">
-          {error && <div className="bg-red-50 text-red-600 p-3 rounded text-sm">{error}</div>}
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            required
-          />
+          {error && (
+            <div className="bg-dd-red-lighter text-dd-red-active p-3 rounded-dd text-sm font-medium border border-dd-red/20">
+              {error}
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-dd-950">Email</label>
+            <input
+              type="email"
+              placeholder="your@email.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-4 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 placeholder:text-dd-500 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
+              required
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-dd-950">Password</label>
+            <input
+              type="password"
+              placeholder="Enter your password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-4 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 placeholder:text-dd-500 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
+              required
+            />
+          </div>
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition"
+            className="w-full bg-dd-red text-white py-3 rounded-dd-pill font-semibold hover:bg-dd-red-hover active:bg-dd-red-active disabled:opacity-50 transition-colors"
           >
-            {loading ? "Logging in..." : "Login"}
+            {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
       </div>
