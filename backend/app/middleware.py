@@ -102,15 +102,18 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
         })
 
 
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "0"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        return response
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "X-XSS-Protection": "0",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+}
+
+
+def _add_security_headers(response: Response) -> None:
+    for k, v in SECURITY_HEADERS.items():
+        response.headers[k] = v
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -118,12 +121,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         client_ip = request.client.host if request.client else "unknown"
 
         if not api_limiter.is_allowed(client_ip):
-            return Response(
+            resp = Response(
                 content='{"detail":"Rate limit exceeded"}',
                 status_code=429,
                 media_type="application/json",
             )
+            _add_security_headers(resp)
+            return resp
 
         response = await call_next(request)
+        _add_security_headers(response)
         response.headers["X-RateLimit-Remaining"] = str(api_limiter.remaining(client_ip))
         return response

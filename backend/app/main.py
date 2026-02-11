@@ -65,12 +65,11 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
 )
 
-# Add audit, rate limit, and security headers middleware
-from app.middleware import AuditLogMiddleware, RateLimitMiddleware, SecurityHeadersMiddleware  # noqa: E402
+# Add audit and rate limit middleware (rate limit also injects security headers)
+from app.middleware import AuditLogMiddleware, RateLimitMiddleware  # noqa: E402
 
 app.add_middleware(AuditLogMiddleware)
 app.add_middleware(RateLimitMiddleware)
-app.add_middleware(SecurityHeadersMiddleware)
 
 # Setup global exception handlers
 setup_exception_handlers(app)
