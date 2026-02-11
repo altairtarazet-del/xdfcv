@@ -29,17 +29,32 @@ interface AnalyticsData {
   };
 }
 
-function BarChart({ data, total }: { data: Record<string, number>; total: number }) {
+function BarChart({
+  data,
+  total,
+  labels,
+  colors,
+}: {
+  data: Record<string, number>;
+  total: number;
+  labels?: Record<string, string>;
+  colors?: Record<string, string>;
+}) {
   const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
   return (
     <div className="space-y-3">
       {sorted.map(([key, count]) => (
         <div key={key} className="flex items-center gap-3">
-          <div className="w-32 text-xs text-dd-600 truncate text-right font-medium">{key}</div>
+          <div className="w-32 text-xs text-dd-600 truncate text-right font-medium">
+            {labels?.[key] ?? key}
+          </div>
           <div className="flex-1 bg-dd-100 rounded-full h-5 overflow-hidden">
             <div
-              className="h-full rounded-full bg-dd-red transition-all duration-300"
-              style={{ width: `${total > 0 ? (count / total) * 100 : 0}%` }}
+              className={`h-full rounded-full transition-all duration-300 ${colors?.[key] ? '' : 'bg-dd-red'}`}
+              style={{
+                width: `${total > 0 ? (count / total) * 100 : 0}%`,
+                ...(colors?.[key] ? { backgroundColor: colors[key] } : {}),
+              }}
             />
           </div>
           <div className="w-12 text-xs text-dd-600 text-right font-semibold">{count}</div>
@@ -121,7 +136,24 @@ export default function Analytics() {
         {/* Analysis Source */}
         <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 p-6">
           <h2 className="text-[12px] uppercase tracking-wider text-dd-600 font-semibold mb-5">Analysis Method</h2>
-          <BarChart data={data.analysis.by_source} total={data.analysis.total} />
+          <BarChart
+            data={data.analysis.by_source}
+            total={data.analysis.total}
+            labels={{
+              rules: "Rules",
+              rules_dedup: "Rules (Dedup)",
+              ai: "AI",
+              ai_dedup: "AI (Dedup)",
+              manual: "Manual Review",
+            }}
+            colors={{
+              rules: "#E23744",
+              rules_dedup: "#F4727B",
+              ai: "#6366F1",
+              ai_dedup: "#A5B4FC",
+              manual: "#F59E0B",
+            }}
+          />
         </div>
 
         {/* Alert Types */}

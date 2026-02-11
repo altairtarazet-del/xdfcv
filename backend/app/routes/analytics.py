@@ -23,7 +23,7 @@ async def analytics_overview(_=Depends(require_admin)):
         status_counts[st] = status_counts.get(st, 0) + 1
 
     # Email analysis stats
-    analyses = await db.select("email_analyses", columns="category,analysis_source,urgency")
+    analyses = await db.select("email_analyses", columns="category,analysis_source,urgency", limit=10000)
     category_counts: dict[str, int] = {}
     source_counts: dict[str, int] = {}
     for a in analyses:
