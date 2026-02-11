@@ -78,7 +78,8 @@ export default function Dashboard() {
 
   const token = localStorage.getItem("admin_token");
   const adminRole = localStorage.getItem("admin_role") || "admin";
-  const isOperator = adminRole === "operator" || adminRole === "viewer";
+  const isRestricted = adminRole === "operator" || adminRole === "viewer";
+  const isViewer = adminRole === "viewer";
 
   // SSE for real-time updates
   const { connected: sseConnected } = useSSE({
@@ -289,7 +290,7 @@ export default function Dashboard() {
       )}
 
       {/* Scan Controls */}
-      {!isOperator && (
+      {!isViewer && (
         <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 p-4 flex items-center justify-between">
           <div className="text-sm text-dd-600">
             {stats?.last_scan ? (
@@ -344,7 +345,7 @@ export default function Dashboard() {
           />
         </div>
         <span className="text-sm text-dd-600 font-medium">{total} accounts</span>
-        {!isOperator && selectedIds.size > 0 && (
+        {!isRestricted && selectedIds.size > 0 && (
           <div className="flex gap-2">
             <button
               onClick={() => bulkAction("archive")}
@@ -373,7 +374,7 @@ export default function Dashboard() {
         <table className="w-full">
           <thead className="bg-dd-50 border-b border-dd-200">
             <tr>
-              {!isOperator && (
+              {!isRestricted && (
                 <th className="px-4 py-3 w-8">
                   <input
                     type="checkbox"
@@ -394,7 +395,7 @@ export default function Dashboard() {
           <tbody className="divide-y divide-dd-200">
             {accounts.map((acc) => (
               <tr key={acc.id} className="hover:bg-dd-50 transition-colors">
-                {!isOperator && (
+                {!isRestricted && (
                   <td className="px-4 py-3">
                     <input
                       type="checkbox"
@@ -438,7 +439,7 @@ export default function Dashboard() {
             ))}
             {accounts.length === 0 && (
               <tr>
-                <td colSpan={isOperator ? 6 : 7} className="px-4 py-12 text-center text-dd-500">
+                <td colSpan={isRestricted ? 6 : 7} className="px-4 py-12 text-center text-dd-500">
                   No accounts found
                 </td>
               </tr>

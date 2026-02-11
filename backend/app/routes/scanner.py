@@ -12,7 +12,7 @@ router = APIRouter()
 
 
 @router.post("/scan")
-async def start_scan(_=Depends(require_role("admin"))):
+async def start_scan(_=Depends(require_admin)):
     db = get_db()
     rows = await db.insert("scan_logs", {"status": "running"})
     scan_id = rows[0]["id"]
