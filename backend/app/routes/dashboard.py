@@ -1,8 +1,14 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.auth import require_admin, require_role
 from app.database import get_db
+from app.services.smtp_client import SmtpDevClient
+from app.services.name_extractor import extract_names_for_account
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -208,3 +214,57 @@ async def mark_all_alerts_read(payload: dict = Depends(require_admin)):
         "read_at": datetime.now(timezone.utc).isoformat(),
     }, filters={"is_read": "eq.false"})
     return {"ok": True}
+
+
+# --- Name Extraction Backfill ---
+
+@router.post("/accounts/extract-names")
+async def extract_names_backfill(
+    force: bool = Query(False),
+    _=Depends(require_admin),
+):
+    """Backfill first/last names for accounts that have empty name fields.
+
+    Use ?force=true to re-extract names for ALL accounts (overwriting existing).
+    """
+    db = get_db()
+    smtp_client = SmtpDevClient()
+
+    all_accounts = await db.select(
+        "accounts",
+        columns="id,email,smtp_account_id,first_name,last_name",
+    )
+    if force:
+        empty_name_accounts = all_accounts
+    else:
+        empty_name_accounts = [
+            a for a in all_accounts
+            if not a.get("first_name")
+        ]
+
+    processed = 0
+    updated = 0
+    failed = 0
+
+    for account in empty_name_accounts:
+        processed += 1
+        try:
+            result = await extract_names_for_account(db, smtp_client, account)
+            if result:
+                update_data = {}
+                if result.get("first_name"):
+                    update_data["first_name"] = result["first_name"]
+                if result.get("last_name"):
+                    update_data["last_name"] = result["last_name"]
+                if update_data:
+                    await db.update(
+                        "accounts",
+                        update_data,
+                        filters={"id": f"eq.{account['id']}"},
+                    )
+                    updated += 1
+        except Exception as e:
+            logger.warning(f"Name extraction failed for {account.get('email')}: {e}")
+            failed += 1
+
+    return {"processed": processed, "updated": updated, "failed": failed}

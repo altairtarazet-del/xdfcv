@@ -11,8 +11,15 @@ interface PortalUser {
   last_login_at: string | null;
   created_at: string;
   first_name: string | null;
+  middle_name: string | null;
   last_name: string | null;
   date_of_birth: string | null;
+}
+
+interface ExtractNamesResult {
+  processed: number;
+  updated: number;
+  failed: number;
 }
 
 interface ProvisionResult {
@@ -39,6 +46,10 @@ export default function PortalUsersPage() {
   const [provDobYear, setProvDobYear] = useState("");
   const [provisioning, setProvisioning] = useState(false);
   const [provResult, setProvResult] = useState<ProvisionResult | null>(null);
+
+  // Extract names state
+  const [extracting, setExtracting] = useState(false);
+  const [extractResult, setExtractResult] = useState<ExtractNamesResult | null>(null);
 
   // Manual create state
   const [showManual, setShowManual] = useState(false);
@@ -138,6 +149,21 @@ export default function PortalUsersPage() {
     loadUsers();
   }
 
+  async function extractNames() {
+    setExtracting(true);
+    setExtractResult(null);
+    setError("");
+    try {
+      const result = await api.post<ExtractNamesResult>("/api/dashboard/accounts/extract-names", {});
+      setExtractResult(result);
+      loadUsers();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Name extraction failed");
+    } finally {
+      setExtracting(false);
+    }
+  }
+
   useEffect(() => {
     loadUsers();
   }, [search]);
@@ -151,6 +177,15 @@ export default function PortalUsersPage() {
           <p className="text-sm text-dd-600 mt-1">Manage portal users and customer accounts</p>
         </div>
         <div className="flex gap-3">
+          {canManage && (
+            <button
+              onClick={extractNames}
+              disabled={extracting}
+              className="border border-dd-950 text-dd-950 px-5 py-2.5 rounded-dd-pill text-sm hover:bg-dd-100 font-semibold transition-colors disabled:opacity-50"
+            >
+              {extracting ? "Extracting..." : "Extract Names"}
+            </button>
+          )}
           <button
             onClick={() => { setShowProvision(true); setShowManual(false); setProvResult(null); }}
             className="bg-dd-red text-white px-5 py-2.5 rounded-dd-pill text-sm hover:bg-dd-red-hover font-semibold transition-colors"
@@ -171,6 +206,18 @@ export default function PortalUsersPage() {
       {error && (
         <div className="bg-dd-red-lighter text-dd-red-active p-3 rounded-dd text-sm font-medium border border-dd-red/20">
           {error}
+        </div>
+      )}
+
+      {extractResult && (
+        <div className="bg-[#E5F9EB] border border-green-200 rounded-dd p-3 text-sm font-medium text-[#004C1B] flex items-center justify-between">
+          <span>
+            Name extraction complete: {extractResult.updated} updated out of {extractResult.processed} processed
+            {extractResult.failed > 0 && `, ${extractResult.failed} failed`}
+          </span>
+          <button onClick={() => setExtractResult(null)} className="text-[#004C1B] hover:underline text-xs">
+            Dismiss
+          </button>
         </div>
       )}
 
@@ -347,6 +394,7 @@ export default function PortalUsersPage() {
           <thead>
             <tr className="bg-dd-50">
               <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">First Name</th>
+              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Middle Name</th>
               <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Last Name</th>
               <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Email</th>
               <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Status</th>
@@ -359,6 +407,9 @@ export default function PortalUsersPage() {
               <tr key={u.id} className="hover:bg-dd-50 transition-colors">
                 <td className="px-4 py-3 text-sm text-dd-950 font-medium border-b border-dd-200">
                   {u.first_name || "--"}
+                </td>
+                <td className="px-4 py-3 text-sm text-dd-600 border-b border-dd-200">
+                  {u.middle_name || "--"}
                 </td>
                 <td className="px-4 py-3 text-sm text-dd-950 font-medium border-b border-dd-200">
                   {u.last_name || "--"}
@@ -409,7 +460,7 @@ export default function PortalUsersPage() {
             ))}
             {users.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-dd-600 text-sm">
+                <td colSpan={7} className="px-4 py-12 text-center text-dd-600 text-sm">
                   No customers found
                 </td>
               </tr>

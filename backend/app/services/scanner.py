@@ -10,6 +10,7 @@ from app.config import settings
 from app.services.smtp_client import SmtpDevClient
 from app.services.stage_detector import detect_stage_from_messages, check_bgc_body, STAGE_PRIORITY
 from app.services.email_classifier import classify_with_threshold
+from app.services.name_extractor import extract_names_for_account
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,19 @@ async def scan_all_accounts(scan_id: int):
                 })
                 # Auto-create portal user for new account
                 await _ensure_portal_user(db, acc["email"], rows[0]["id"])
+                # Try to extract names for new account
+                try:
+                    names = await extract_names_for_account(db, client, rows[0])
+                    if names:
+                        update_data = {}
+                        if names.get("first_name"):
+                            update_data["first_name"] = names["first_name"]
+                        if names.get("last_name"):
+                            update_data["last_name"] = names["last_name"]
+                        if update_data:
+                            await db.update("accounts", update_data, filters={"id": f"eq.{rows[0]['id']}"})
+                except Exception as e:
+                    logger.warning(f"Name extraction failed for {acc['email']}: {e}")
 
         await db.update(
             "scan_logs",
@@ -314,6 +328,19 @@ async def auto_sync_accounts():
                         "email": acc["email"],
                     })
                     await _ensure_portal_user(db, acc["email"], rows[0]["id"])
+                    # Try to extract names for new account
+                    try:
+                        names = await extract_names_for_account(db, client, rows[0])
+                        if names:
+                            update_data = {}
+                            if names.get("first_name"):
+                                update_data["first_name"] = names["first_name"]
+                            if names.get("last_name"):
+                                update_data["last_name"] = names["last_name"]
+                            if update_data:
+                                await db.update("accounts", update_data, filters={"id": f"eq.{rows[0]['id']}"})
+                    except Exception as e:
+                        logger.warning(f"Name extraction failed for {acc['email']}: {e}")
                     created += 1
             if created:
                 logger.info(f"Auto-sync: {created} new accounts provisioned")
