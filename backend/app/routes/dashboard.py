@@ -53,7 +53,7 @@ async def dashboard_accounts(
     if stage:
         filters["stage"] = f"eq.{stage}"
     if search:
-        filters["email"] = f"ilike.*{search}*"
+        filters["or"] = f"(email.ilike.*{search}*,customer_name.ilike.*{search}*)"
     if status:
         filters["status"] = f"eq.{status}"
     if assigned_admin_id:

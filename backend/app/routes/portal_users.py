@@ -19,7 +19,7 @@ async def list_portal_users(
     db = get_db()
     filters = {}
     if search:
-        filters["email"] = f"ilike.*{search}*"
+        filters["or"] = f"(email.ilike.*{search}*,display_name.ilike.*{search}*)"
     rows = await db.select(
         "portal_users",
         columns="id,email,display_name,account_id,is_active,last_login_at,created_at",
