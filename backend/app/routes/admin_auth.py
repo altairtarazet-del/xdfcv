@@ -1,6 +1,7 @@
+import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from app.auth import (
@@ -9,7 +10,9 @@ from app.auth import (
 )
 from app.config import settings
 from app.database import get_db
-from app.rate_limit import login_limiter
+from app.rate_limit import login_limiter, login_tracker
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -20,13 +23,19 @@ class LoginRequest(BaseModel):
 
 
 @router.post("/login")
-async def admin_login(body: LoginRequest):
-    if not login_limiter.is_allowed(f"admin:{body.username}"):
+async def admin_login(body: LoginRequest, request: Request):
+    tracker_key = f"admin:{body.username}"
+
+    if login_tracker.is_locked(tracker_key):
+        raise HTTPException(status_code=429, detail="Account locked due to too many failed attempts. Try again in 5 minutes.")
+
+    if not login_limiter.is_allowed(tracker_key):
         raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
 
     db = get_db()
     rows = await db.select("admin_users", filters={"username": f"eq.{body.username}"})
     if not rows:
+        login_tracker.record_failure(tracker_key)
         raise HTTPException(status_code=401, detail="Invalid credentials")
     row = rows[0]
 
@@ -34,7 +43,10 @@ async def admin_login(body: LoginRequest):
         raise HTTPException(status_code=403, detail="Account is disabled")
 
     if not verify_password(body.password, row["password_hash"]):
+        login_tracker.record_failure(tracker_key)
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    login_tracker.reset(tracker_key)
 
     # Update last login
     await db.update(
@@ -100,6 +112,9 @@ async def refresh_token(body: RefreshRequest):
     if not admin_rows or not admin_rows[0].get("is_active", True):
         raise HTTPException(status_code=401, detail="User not found or disabled")
 
+    # Revoke old refresh token (token rotation)
+    await db.update("refresh_tokens", {"revoked": True}, filters={"id": f"eq.{rt['id']}"})
+
     row = admin_rows[0]
     new_token = create_token(
         sub=row["username"],
@@ -111,7 +126,17 @@ async def refresh_token(body: RefreshRequest):
         },
     )
 
-    return {"token": new_token}
+    # Issue new refresh token
+    new_raw_refresh, new_token_hash = create_refresh_token()
+    expires = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
+    await db.insert("refresh_tokens", {
+        "user_id": rt["user_id"],
+        "user_type": "admin",
+        "token_hash": new_token_hash,
+        "expires_at": expires.isoformat(),
+    })
+
+    return {"token": new_token, "refresh_token": new_raw_refresh}
 
 
 @router.get("/me")

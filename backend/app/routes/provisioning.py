@@ -1,6 +1,8 @@
 """Customer provisioning routes."""
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from app.auth import require_admin
 from app.services.provisioner import provision_customer
@@ -9,11 +11,18 @@ router = APIRouter()
 
 
 class ProvisionRequest(BaseModel):
-    first_name: str
-    middle_name: str | None = None
-    last_name: str
+    first_name: str = Field(..., max_length=30)
+    middle_name: str | None = Field(None, max_length=30)
+    last_name: str = Field(..., max_length=30)
     date_of_birth: str | None = None  # YYYY-MM-DD
     phone: str | None = None
+
+    @field_validator("date_of_birth")
+    @classmethod
+    def validate_dob(cls, v: str | None) -> str | None:
+        if v is not None and not re.match(r"^\d{4}-\d{2}-\d{2}$", v):
+            raise ValueError("date_of_birth must be in YYYY-MM-DD format")
+        return v
 
 
 @router.post("/provision")

@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -6,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import init_db, close_db, get_db
 from app.auth import hash_password
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -21,6 +24,14 @@ async def lifespan(app: FastAPI):
             "role": "super_admin",
             "display_name": "Admin",
         })
+
+    # Warn if default admin password is still "admin"
+    if settings.admin_seed_password == "admin":
+        logger.critical(
+            "CHANGE DEFAULT ADMIN PASSWORD! admin_seed_password is still 'admin'. "
+            "Set ADMIN_SEED_PASSWORD in .env for production."
+        )
+
     # Start auto-sync background task
     import asyncio
     from app.services.scanner import auto_sync_accounts
@@ -50,15 +61,16 @@ app.add_middleware(
         "http://127.0.0.1:5174",
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
 )
 
-# Add audit and rate limit middleware
-from app.middleware import AuditLogMiddleware, RateLimitMiddleware  # noqa: E402
+# Add audit, rate limit, and security headers middleware
+from app.middleware import AuditLogMiddleware, RateLimitMiddleware, SecurityHeadersMiddleware  # noqa: E402
 
 app.add_middleware(AuditLogMiddleware)
 app.add_middleware(RateLimitMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Setup global exception handlers
 setup_exception_handlers(app)

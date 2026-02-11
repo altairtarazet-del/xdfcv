@@ -29,6 +29,91 @@ interface ProvisionResult {
   };
 }
 
+function ProvisionCredentials({
+  credentials,
+  onDone,
+}: {
+  credentials: { email: string; portal_password: string };
+  onDone: () => void;
+}) {
+  const [showPassword, setShowPassword] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [expired, setExpired] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowPassword(false);
+      setExpired(true);
+    }, 30000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  async function copyToClipboard() {
+    try {
+      await navigator.clipboard.writeText(credentials.portal_password);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback
+      const el = document.createElement("textarea");
+      el.value = credentials.portal_password;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }
+
+  const maskedPassword = credentials.portal_password.replace(/./g, "\u2022");
+
+  return (
+    <div className="bg-[#E5F9EB] border border-green-200 rounded-dd p-6">
+      <h2 className="text-sm font-bold text-[#004C1B] mb-3">Customer Created Successfully</h2>
+      <div className="bg-white rounded-lg p-4 font-mono text-sm space-y-2 border border-green-200">
+        <div>
+          <span className="text-dd-600">Email:</span>{" "}
+          <span className="text-dd-950">{credentials.email}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-dd-600">Portal Password:</span>{" "}
+          <span
+            className={`font-bold ${expired ? "text-dd-600" : "text-[#004C1B]"} cursor-pointer select-all`}
+            onClick={() => !expired && setShowPassword((v) => !v)}
+            title={expired ? "Expired -- copy was available for 30s" : "Click to reveal"}
+          >
+            {showPassword && !expired ? credentials.portal_password : maskedPassword}
+          </span>
+          {!expired && (
+            <button
+              onClick={copyToClipboard}
+              className="px-2 py-0.5 rounded text-xs font-semibold border border-[#004C1B] text-[#004C1B] hover:bg-[#E5F9EB] transition-colors"
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
+          )}
+          {expired && (
+            <span className="text-xs text-dd-600">(expired)</span>
+          )}
+        </div>
+      </div>
+      <p className="text-xs text-[#004C1B] mt-3 font-medium">
+        {expired
+          ? "Password display has expired. If you didn't copy it, reset the password."
+          : "Copy these credentials now -- the password will be hidden after 30 seconds."}
+      </p>
+      <button
+        onClick={onDone}
+        className="mt-4 bg-dd-red text-white px-5 py-2 rounded-dd-pill text-sm hover:bg-dd-red-hover font-semibold transition-colors"
+      >
+        Done
+      </button>
+    </div>
+  );
+}
+
+
 export default function PortalUsersPage() {
   const [users, setUsers] = useState<PortalUser[]>([]);
   const [search, setSearch] = useState("");
@@ -329,22 +414,10 @@ export default function PortalUsersPage() {
 
       {/* Provision Result */}
       {provResult && (
-        <div className="bg-[#E5F9EB] border border-green-200 rounded-dd p-6">
-          <h2 className="text-sm font-bold text-[#004C1B] mb-3">Customer Created Successfully</h2>
-          <div className="bg-white rounded-lg p-4 font-mono text-sm space-y-2 border border-green-200">
-            <div><span className="text-dd-600">Email:</span> <span className="text-dd-950">{provResult.credentials.email}</span></div>
-            <div><span className="text-dd-600">Portal Password:</span> <span className="font-bold text-[#004C1B]">{provResult.credentials.portal_password}</span></div>
-          </div>
-          <p className="text-xs text-[#004C1B] mt-3 font-medium">
-            Copy these credentials now -- the password won't be shown again.
-          </p>
-          <button
-            onClick={resetProvisionForm}
-            className="mt-4 bg-dd-red text-white px-5 py-2 rounded-dd-pill text-sm hover:bg-dd-red-hover font-semibold transition-colors"
-          >
-            Done
-          </button>
-        </div>
+        <ProvisionCredentials
+          credentials={provResult.credentials}
+          onDone={resetProvisionForm}
+        />
       )}
 
       {/* Manual Create Form */}

@@ -1,16 +1,21 @@
 import logging
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.auth import require_admin, require_role
-from app.database import get_db
+from app.database import get_db, sanitize_filter_value
 from app.services.smtp_client import SmtpDevClient
 from app.services.name_extractor import extract_names_for_account
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Rate limiting for extract-names endpoint (global, 5 minute cooldown)
+_extract_names_last_run: float = 0.0
+_EXTRACT_NAMES_COOLDOWN = 300  # 5 minutes
 
 STAGES = [
     "REGISTERED", "IDENTITY_VERIFIED", "BGC_PENDING",
@@ -59,7 +64,8 @@ async def dashboard_accounts(
     if stage:
         filters["stage"] = f"eq.{stage}"
     if search:
-        filters["or"] = f"(email.ilike.*{search}*,customer_name.ilike.*{search}*,first_name.ilike.*{search}*,last_name.ilike.*{search}*)"
+        safe_search = sanitize_filter_value(search)
+        filters["or"] = f"(email.ilike.*{safe_search}*,customer_name.ilike.*{safe_search}*,first_name.ilike.*{safe_search}*,last_name.ilike.*{safe_search}*)"
     if status:
         filters["status"] = f"eq.{status}"
     if assigned_admin_id:
@@ -227,6 +233,13 @@ async def extract_names_backfill(
 
     Use ?force=true to re-extract names for ALL accounts (overwriting existing).
     """
+    global _extract_names_last_run
+    now = time.time()
+    if now - _extract_names_last_run < _EXTRACT_NAMES_COOLDOWN:
+        remaining = int(_EXTRACT_NAMES_COOLDOWN - (now - _extract_names_last_run))
+        raise HTTPException(status_code=429, detail=f"Please wait {remaining}s before running again.")
+    _extract_names_last_run = now
+
     db = get_db()
     smtp_client = SmtpDevClient()
 

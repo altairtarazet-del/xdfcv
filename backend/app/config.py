@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -16,8 +17,14 @@ class Settings(BaseSettings):
     synthetic_api_key: str = ""
     synthetic_api_base: str = "https://api.synthicai.com/v1"
     synthetic_model: str = "glm-4-7b"
-    default_portal_password: str = "Charles.2121"
     sync_interval_seconds: int = 300  # 5 minutes
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def jwt_secret_min_length(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError("jwt_secret must be at least 32 characters")
+        return v
 
     model_config = {"env_file": ".env"}
 

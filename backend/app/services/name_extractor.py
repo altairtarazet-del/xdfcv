@@ -4,10 +4,12 @@ Tier 1: Email greeting extraction (most reliable)
 Tier 2: Email local part split using extracted first name
 Tier 3: Common US first name dictionary fallback
 """
+import asyncio
 import logging
 import re
 
 from app.services.smtp_client import SmtpDevClient
+from app.utils import mask_email
 
 logger = logging.getLogger(__name__)
 
@@ -236,7 +238,7 @@ async def extract_names_for_account(db, smtp_client: SmtpDevClient, account: dic
     if not smtp_account_id or not local_part:
         return None
 
-    # --- Tier 1: Greeting extraction from recent emails ---
+    # --- Tier 1: Greeting extraction from recent emails (max 5 messages, rate limited) ---
     first_name = None
     try:
         smtp_data = await smtp_client.find_account_by_email(email)
@@ -245,11 +247,12 @@ async def extract_names_for_account(db, smtp_client: SmtpDevClient, account: dic
             if inbox_id:
                 result = await smtp_client.get_messages(smtp_account_id, inbox_id, page=1, per_page=5)
                 messages = result.get("data", [])
-                for msg in messages:
+                for msg in messages[:5]:
                     # Try to get full message body
                     msg_path = msg.get("@id") or msg.get("id")
                     if not msg_path:
                         continue
+                    await asyncio.sleep(0.5)  # Rate limit SMTP.dev API calls
                     full_msg = await smtp_client.get_message(str(msg_path))
                     if not full_msg:
                         continue
@@ -257,10 +260,10 @@ async def extract_names_for_account(db, smtp_client: SmtpDevClient, account: dic
                     name = extract_name_from_greeting(body)
                     if name:
                         first_name = name
-                        logger.info(f"Tier 1 match for {email}: greeting → {first_name}")
+                        logger.info(f"Tier 1 match for {mask_email(email)}: greeting → {first_name}")
                         break
     except Exception as e:
-        logger.warning(f"Tier 1 failed for {email}: {e}")
+        logger.warning(f"Tier 1 failed for {mask_email(email)}: {e}")
 
     # --- Tier 2: Split local part using extracted first name ---
     if first_name:
@@ -274,8 +277,8 @@ async def extract_names_for_account(db, smtp_client: SmtpDevClient, account: dic
     dict_result = extract_from_dictionary(local_part)
     if dict_result:
         first, last = dict_result
-        logger.info(f"Tier 3 match for {email}: dictionary → {first} {last}")
+        logger.info(f"Tier 3 match for {mask_email(email)}: dictionary → {first} {last}")
         return {"first_name": first, "last_name": last}
 
-    logger.debug(f"No name extraction possible for {email}")
+    logger.debug(f"No name extraction possible for {mask_email(email)}")
     return None

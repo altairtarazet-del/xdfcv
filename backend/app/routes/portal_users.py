@@ -1,10 +1,10 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
-from app.auth import require_admin, require_role, hash_password
-from app.database import get_db
+from app.auth import require_admin, require_role, hash_password, validate_password
+from app.database import get_db, sanitize_filter_value
 from app.services.smtp_client import SmtpDevClient
 
 logger = logging.getLogger(__name__)
@@ -13,13 +13,14 @@ router = APIRouter()
 
 @router.get("/")
 async def list_portal_users(
-    search: str | None = Query(None),
+    search: str | None = Query(None, min_length=2),
     _=Depends(require_admin),
 ):
     db = get_db()
     filters = {}
     if search:
-        filters["or"] = f"(email.ilike.*{search}*,display_name.ilike.*{search}*)"
+        safe_search = sanitize_filter_value(search)
+        filters["or"] = f"(email.ilike.*{safe_search}*,display_name.ilike.*{safe_search}*)"
     rows = await db.select(
         "portal_users",
         columns="id,email,display_name,account_id,is_active,last_login_at,created_at",
@@ -48,7 +49,7 @@ async def list_portal_users(
 
 
 class CreatePortalUser(BaseModel):
-    email: str
+    email: EmailStr
     password: str
     display_name: str | None = None
     account_id: str | None = None
@@ -56,6 +57,9 @@ class CreatePortalUser(BaseModel):
 
 @router.post("/")
 async def create_portal_user(body: CreatePortalUser, _=Depends(require_admin)):
+    valid, msg = validate_password(body.password)
+    if not valid:
+        raise HTTPException(status_code=400, detail=msg)
     db = get_db()
     data = {
         "email": body.email,
@@ -89,6 +93,9 @@ async def update_portal_user(email: str, body: UpdatePortalUser, _=Depends(requi
     if body.is_active is not None:
         data["is_active"] = body.is_active
     if body.password is not None:
+        valid, msg = validate_password(body.password)
+        if not valid:
+            raise HTTPException(status_code=400, detail=msg)
         data["password_hash"] = hash_password(body.password)
     if body.account_id is not None:
         data["account_id"] = body.account_id if body.account_id else None

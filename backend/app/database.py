@@ -12,6 +12,14 @@ from app.config import settings
 _client: httpx.AsyncClient | None = None
 
 
+def sanitize_filter_value(val: str) -> str:
+    """Sanitize PostgREST filter values to prevent filter injection."""
+    dangerous = [".", "(", ")", ","]
+    for ch in dangerous:
+        val = val.replace(ch, "")
+    return val
+
+
 async def init_db():
     global _client
     _client = httpx.AsyncClient(

@@ -106,4 +106,5 @@ async def provision_customer(
             "portal_password": portal_password,
         },
         "smtp_account_id": smtp_account_id,
+        "warning": "Copy now -- password won't be shown again",
     }

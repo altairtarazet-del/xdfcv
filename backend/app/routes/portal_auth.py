@@ -1,13 +1,16 @@
+import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app.auth import verify_password, create_token, require_portal, create_refresh_token, hash_password
+from app.auth import verify_password, create_token, require_portal, create_refresh_token, hash_password, validate_password
 from app.config import settings
 from app.database import get_db
-from app.rate_limit import login_limiter
+from app.rate_limit import login_limiter, login_tracker
 from app.services.smtp_client import SmtpDevClient
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -18,13 +21,19 @@ class PortalLoginRequest(BaseModel):
 
 
 @router.post("/login")
-async def portal_login(body: PortalLoginRequest):
-    if not login_limiter.is_allowed(f"portal:{body.email}"):
+async def portal_login(body: PortalLoginRequest, request: Request):
+    tracker_key = f"portal:{body.email}"
+
+    if login_tracker.is_locked(tracker_key):
+        raise HTTPException(status_code=429, detail="Account locked due to too many failed attempts. Try again in 5 minutes.")
+
+    if not login_limiter.is_allowed(tracker_key):
         raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
 
     db = get_db()
     rows = await db.select("portal_users", filters={"email": f"eq.{body.email}"})
     if not rows:
+        login_tracker.record_failure(tracker_key)
         raise HTTPException(status_code=401, detail="Invalid credentials")
     row = rows[0]
 
@@ -32,7 +41,10 @@ async def portal_login(body: PortalLoginRequest):
         raise HTTPException(status_code=403, detail="Account is disabled")
 
     if not verify_password(body.password, row["password_hash"]):
+        login_tracker.record_failure(tracker_key)
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    login_tracker.reset(tracker_key)
 
     await db.update(
         "portal_users",
@@ -89,13 +101,27 @@ async def refresh_token(body: RefreshRequest):
     if not user_rows or not user_rows[0].get("is_active", True):
         raise HTTPException(status_code=401, detail="User not found or disabled")
 
+    # Revoke old refresh token (token rotation)
+    await db.update("refresh_tokens", {"revoked": True}, filters={"id": f"eq.{rt['id']}"})
+
     row = user_rows[0]
     new_token = create_token(
         sub=row["email"],
         role="portal",
         extra={"display_name": row.get("display_name"), "account_id": row.get("account_id")},
     )
-    return {"token": new_token}
+
+    # Issue new refresh token
+    new_raw_refresh, new_token_hash = create_refresh_token()
+    expires = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
+    await db.insert("refresh_tokens", {
+        "user_id": rt["user_id"],
+        "user_type": "portal",
+        "token_hash": new_token_hash,
+        "expires_at": expires.isoformat(),
+    })
+
+    return {"token": new_token, "refresh_token": new_raw_refresh}
 
 
 @router.get("/me")
@@ -124,6 +150,10 @@ async def portal_change_password(body: ChangePasswordRequest, payload: dict = De
 
     if not verify_password(body.current_password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    valid, msg = validate_password(body.new_password)
+    if not valid:
+        raise HTTPException(status_code=400, detail=msg)
 
     # Update portal password
     await db.update(

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import secrets
 import traceback
 from datetime import datetime, timezone
 
@@ -11,6 +12,7 @@ from app.services.smtp_client import SmtpDevClient
 from app.services.stage_detector import detect_stage_from_messages, check_bgc_body, STAGE_PRIORITY
 from app.services.email_classifier import classify_with_threshold
 from app.services.name_extractor import extract_names_for_account
+from app.utils import mask_email
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +58,7 @@ async def scan_all_accounts(scan_id: int):
                         if update_data:
                             await db.update("accounts", update_data, filters={"id": f"eq.{rows[0]['id']}"})
                 except Exception as e:
-                    logger.warning(f"Name extraction failed for {acc['email']}: {e}")
+                    logger.warning(f"Name extraction failed for {mask_email(acc['email'])}: {e}")
 
         await db.update(
             "scan_logs",
@@ -293,7 +295,7 @@ async def _ensure_portal_user(db, email: str, account_id: str):
     if existing:
         return
     try:
-        password = settings.default_portal_password
+        password = secrets.token_urlsafe(12)
         await db.insert("portal_users", {
             "email": email,
             "password_hash": hash_password(password),
@@ -306,9 +308,9 @@ async def _ensure_portal_user(db, email: str, account_id: str):
         if accounts:
             smtp_client = SmtpDevClient()
             await smtp_client.update_password(accounts[0]["smtp_account_id"], password)
-        logger.info(f"Auto-created portal user for {email}")
+        logger.info(f"Auto-created portal user for {mask_email(email)}")
     except Exception as e:
-        logger.warning(f"Failed to create portal user for {email}: {e}")
+        logger.warning(f"Failed to create portal user for {mask_email(email)}: {e}")
 
 
 async def auto_sync_accounts():
@@ -340,7 +342,7 @@ async def auto_sync_accounts():
                             if update_data:
                                 await db.update("accounts", update_data, filters={"id": f"eq.{rows[0]['id']}"})
                     except Exception as e:
-                        logger.warning(f"Name extraction failed for {acc['email']}: {e}")
+                        logger.warning(f"Name extraction failed for {mask_email(acc['email'])}: {e}")
                     created += 1
             if created:
                 logger.info(f"Auto-sync: {created} new accounts provisioned")
