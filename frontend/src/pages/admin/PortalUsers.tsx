@@ -160,10 +160,18 @@ export default function PortalUsersPage() {
     setProvisioning(true);
     setError("");
     try {
-      const dob =
-        provDobYear && provDobMonth && provDobDay
-          ? `${provDobYear}-${provDobMonth.padStart(2, "0")}-${provDobDay.padStart(2, "0")}`
-          : null;
+      let dob: string | null = null;
+      if (provDobYear && provDobMonth && provDobDay) {
+        const m = parseInt(provDobMonth, 10);
+        const d = parseInt(provDobDay, 10);
+        const y = parseInt(provDobYear, 10);
+        if (m < 1 || m > 12 || d < 1 || d > 31 || y < 1900 || y > 2100) {
+          setError("Invalid date of birth. Month: 1-12, Day: 1-31, Year: 1900-2100");
+          setProvisioning(false);
+          return;
+        }
+        dob = `${provDobYear}-${provDobMonth.padStart(2, "0")}-${provDobDay.padStart(2, "0")}`;
+      }
       const result = await api.post<ProvisionResult>("/api/provision", {
         first_name: provFirstName,
         middle_name: provMiddleName || null,

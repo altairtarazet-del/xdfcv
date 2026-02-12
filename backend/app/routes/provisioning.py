@@ -20,8 +20,15 @@ class ProvisionRequest(BaseModel):
     @field_validator("date_of_birth")
     @classmethod
     def validate_dob(cls, v: str | None) -> str | None:
-        if v is not None and not re.match(r"^\d{4}-\d{2}-\d{2}$", v):
+        if v is None:
+            return v
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", v):
             raise ValueError("date_of_birth must be in YYYY-MM-DD format")
+        _, month, day = v.split("-")
+        if not (1 <= int(month) <= 12):
+            raise ValueError("Month must be between 1 and 12")
+        if not (1 <= int(day) <= 31):
+            raise ValueError("Day must be between 1 and 31")
         return v
 
 
