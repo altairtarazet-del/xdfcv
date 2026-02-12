@@ -123,6 +123,11 @@ class SmtpDevClient:
         self._cache.invalidate("all_accounts")
         return data
 
+    async def delete_account(self, account_id: str) -> None:
+        """Delete an SMTP.dev account."""
+        await self._request("DELETE", f"/accounts/{account_id}")
+        self._cache.invalidate("all_accounts")
+
     async def update_password(self, account_id: str, password: str) -> bool:
         """Update SMTP.dev account password."""
         client = _get_http_client()

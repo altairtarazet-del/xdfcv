@@ -70,7 +70,15 @@ async def provision_customer(
     if admin_id:
         account_data["assigned_admin_id"] = admin_id
 
-    account_rows = await db.insert("accounts", account_data)
+    try:
+        account_rows = await db.insert("accounts", account_data)
+    except Exception:
+        # Rollback: delete orphaned SMTP.dev account
+        try:
+            await client.delete_account(smtp_account_id)
+        except Exception as cleanup_err:
+            logger.warning("Failed to cleanup SMTP account %s: %s", smtp_account_id, cleanup_err)
+        raise
     account = account_rows[0]
 
     # 3. Create portal user (same password as SMTP.dev account)

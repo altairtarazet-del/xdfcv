@@ -90,7 +90,14 @@ class DB:
         if on_conflict:
             headers["Prefer"] = f"return=representation,resolution=merge-duplicates"
             headers["on-conflict"] = on_conflict
-        resp = await self.client.post(f"/{table}", json=data if isinstance(data, list) else [data], headers=headers)
+        payload = data if isinstance(data, list) else [data]
+        resp = await self.client.post(f"/{table}", json=payload, headers=headers)
+        if resp.status_code >= 400:
+            import logging
+            logging.getLogger(__name__).error(
+                "DB insert failed: table=%s status=%s body=%s payload=%s",
+                table, resp.status_code, resp.text, payload,
+            )
         resp.raise_for_status()
         return resp.json()
 
