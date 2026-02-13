@@ -8,7 +8,7 @@ from app.database import get_db
 from app.auth import hash_password
 from app.config import settings
 from app.services.smtp_client import SmtpDevClient
-from app.services.stage_detector import detect_stage_from_messages, check_bgc_body, STAGE_PRIORITY
+from app.services.stage_detector import detect_stage_with_metadata, check_bgc_body, STAGE_PRIORITY
 from app.services.email_classifier import classify_with_threshold
 from app.services.name_extractor import extract_names_for_account
 from app.services.template_fingerprint import TemplateCache, make_fingerprint
@@ -16,14 +16,32 @@ from app.utils import mask_email
 
 logger = logging.getLogger(__name__)
 
-BATCH_SIZE = 10
+# Rate limiter for SMTP.dev API calls (max 10 requests/second)
+_smtp_semaphore = asyncio.Semaphore(10)
 
-# Alert-triggering categories
+# Alert-triggering categories (expanded)
 ALERT_CATEGORIES = {
     ("account", "deactivation"): ("deactivation", "critical"),
     ("warning", "contract_violation"): ("contract_violation", "critical"),
     ("warning", "low_rating_warning"): ("low_rating", "warning"),
+    ("bgc", "bgc_pending_extended"): ("bgc_pending", "warning"),
+    ("policy", "policy_update"): ("policy_update", "info"),
+    ("tax", "tax_document"): ("tax_document", "info"),
 }
+
+# Sliding window size for email classification
+_CLASSIFY_WINDOW = 20
+
+
+def _compute_batch_size(total_accounts: int) -> int:
+    """Dynamic batch size: scales with account count, clamped to [5, 20]."""
+    return max(5, min(20, total_accounts // 10))
+
+
+async def _throttled_api_call(coro):
+    """Wrap an async SMTP API call with rate limiting."""
+    async with _smtp_semaphore:
+        return await coro
 
 
 async def scan_all_accounts(scan_id: int):
@@ -37,7 +55,7 @@ async def scan_all_accounts(scan_id: int):
 
     try:
         # 1. Fetch all SMTP.dev accounts and sync to DB + create portal users
-        smtp_accounts = await client.get_all_accounts()
+        smtp_accounts = await _throttled_api_call(client.get_all_accounts())
         for acc in smtp_accounts:
             existing = await db.select("accounts", filters={"smtp_account_id": f"eq.{acc['id']}"})
             if not existing:
@@ -72,10 +90,13 @@ async def scan_all_accounts(scan_id: int):
         # Build smtp_account_id -> smtp data map
         smtp_map = {a["id"]: a for a in smtp_accounts}
 
-        # 3. Process in batches
+        # 3. Process in batches (dynamic batch size)
         total = len(db_accounts)
-        for i in range(0, total, BATCH_SIZE):
-            batch = db_accounts[i : i + BATCH_SIZE]
+        batch_size = _compute_batch_size(total)
+        logger.info(f"Scan batch size: {batch_size} for {total} accounts")
+
+        for i in range(0, total, batch_size):
+            batch = db_accounts[i : i + batch_size]
             # Update progress before batch
             await db.update(
                 "scan_logs",
@@ -161,18 +182,29 @@ async def scan_single_account(db_account: dict, smtp_map: dict, client: SmtpDevC
         )
         return False
 
-    # Fetch all message headers
-    messages = await client.get_all_messages_headers(smtp_id, mb_ids)
+    # Fetch all message headers (rate-limited)
+    messages = await _throttled_api_call(client.get_all_messages_headers(smtp_id, mb_ids))
 
-    # Detect stage
-    new_stage, trigger_subject, trigger_date, needs_body_check = detect_stage_from_messages(messages)
+    # Sort messages by date DESC before any processing
+    messages.sort(
+        key=lambda m: m.get("date", m.get("created_at", "")),
+        reverse=True,
+    )
+
+    # Detect stage using metadata-enriched detector (supports reactivation)
+    stage_result = detect_stage_with_metadata(messages)
+    new_stage = stage_result["stage"]
+    trigger_subject = stage_result["trigger_subject"]
+    trigger_date = stage_result["trigger_date"]
+    needs_body_check = stage_result["needs_body_check"]
+    reactivated = stage_result.get("reactivated", False)
 
     # If we need to check bodies (BGC complete emails)
     if needs_body_check and new_stage in ("BGC_CLEAR", "BGC_CONSIDER"):
         for msg in needs_body_check:
             msg_path = msg.get("@id") or msg.get("id")
             if msg_path:
-                full_msg = await client.get_message(msg_path)
+                full_msg = await _throttled_api_call(client.get_message(msg_path))
                 if full_msg:
                     body = full_msg.get("html", "") or full_msg.get("text", "")
                     body_stage = check_bgc_body(body)
@@ -182,7 +214,12 @@ async def scan_single_account(db_account: dict, smtp_map: dict, client: SmtpDevC
                         trigger_date = msg.get("date", msg.get("created_at"))
 
     old_stage = db_account["stage"]
-    stage_changed = new_stage != old_stage and STAGE_PRIORITY[new_stage] > STAGE_PRIORITY[old_stage]
+
+    # Reactivation: allow DEACTIVATED → ACTIVE transition
+    if reactivated and old_stage == "DEACTIVATED" and new_stage == "ACTIVE":
+        stage_changed = True
+    else:
+        stage_changed = new_stage != old_stage and STAGE_PRIORITY[new_stage] > STAGE_PRIORITY[old_stage]
 
     if stage_changed:
         await db.update(
@@ -205,7 +242,7 @@ async def scan_single_account(db_account: dict, smtp_map: dict, client: SmtpDevC
         })
 
         # Create alert for stage change
-        await _create_stage_alert(db, db_account, old_stage, new_stage, trigger_subject)
+        await _create_stage_alert(db, db_account, old_stage, new_stage, trigger_subject, reactivated)
     else:
         await db.update(
             "accounts",
@@ -213,13 +250,13 @@ async def scan_single_account(db_account: dict, smtp_map: dict, client: SmtpDevC
             filters={"id": f"eq.{db_account['id']}"},
         )
 
-    # Run email classification on recent messages (top 20)
-    await _classify_recent_emails(db, db_account, messages[:20], template_cache)
+    # Run email classification on ALL messages using sliding window
+    await _classify_all_emails(db, db_account, messages, template_cache)
 
     return stage_changed
 
 
-async def _create_stage_alert(db, account: dict, old_stage: str, new_stage: str, trigger_subject: str | None):
+async def _create_stage_alert(db, account: dict, old_stage: str, new_stage: str, trigger_subject: str | None, reactivated: bool = False):
     """Create an alert for a stage transition."""
     severity = "info"
     alert_type = "stage_change"
@@ -229,6 +266,9 @@ async def _create_stage_alert(db, account: dict, old_stage: str, new_stage: str,
         alert_type = "deactivation"
     elif new_stage == "BGC_CONSIDER":
         severity = "warning"
+    elif new_stage == "ACTIVE" and reactivated:
+        severity = "info"
+        alert_type = "reactivation"
     elif new_stage == "ACTIVE":
         severity = "info"
 
@@ -241,8 +281,15 @@ async def _create_stage_alert(db, account: dict, old_stage: str, new_stage: str,
     })
 
 
+async def _classify_all_emails(db, account: dict, messages: list[dict], template_cache: TemplateCache | None = None):
+    """Classify ALL emails using a sliding window of _CLASSIFY_WINDOW size."""
+    for window_start in range(0, len(messages), _CLASSIFY_WINDOW):
+        window = messages[window_start : window_start + _CLASSIFY_WINDOW]
+        await _classify_recent_emails(db, account, window, template_cache)
+
+
 async def _classify_recent_emails(db, account: dict, messages: list[dict], template_cache: TemplateCache | None = None):
-    """Classify recent emails and create alerts for critical ones."""
+    """Classify a batch of emails and create alerts for critical ones."""
     # 1. Collect message IDs
     msg_entries = []
     for msg in messages:
@@ -384,7 +431,7 @@ async def auto_sync_accounts():
             await asyncio.sleep(settings.sync_interval_seconds)
             db = get_db()
             client = SmtpDevClient()
-            smtp_accounts = await client.get_all_accounts()
+            smtp_accounts = await _throttled_api_call(client.get_all_accounts())
             created = 0
             for acc in smtp_accounts:
                 existing = await db.select("accounts", filters={"smtp_account_id": f"eq.{acc['id']}"})
