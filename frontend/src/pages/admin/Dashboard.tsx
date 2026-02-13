@@ -1,64 +1,70 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { api } from "../../api/client";
-import { useSSE } from "../../hooks/useSSE";
+import {
+  Bell,
+  Search,
+  Loader2,
+  UserCheck,
+  ShieldCheck,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  Zap,
+  UserX,
+  AlertCircle,
+  Archive,
+  Pause,
+  Play,
+} from "lucide-react";
+import { api } from "@/api/client";
+import { useSSE } from "@/hooks/useSSE";
+import type { Stats, Account, Alert } from "@/types";
+import { STAGE_MAP, STAGES, STAGE_BADGE, STATUS_BADGE } from "@/types";
 
-interface StageInfo {
-  label: string;
-  color: string;
-}
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
-const STAGE_MAP: Record<string, StageInfo> = {
-  REGISTERED: { label: "Registered", color: "bg-dd-100 text-dd-800" },
-  IDENTITY_VERIFIED: { label: "ID Verified", color: "bg-[#E0F0FF] text-[#004A99]" },
-  BGC_PENDING: { label: "BGC Pending", color: "bg-[#FFF3D6] text-[#8A6100]" },
-  BGC_CLEAR: { label: "BGC Clear", color: "bg-[#E5F9EB] text-[#004C1B]" },
-  BGC_CONSIDER: { label: "BGC Consider", color: "bg-dd-red-lighter text-dd-red-active" },
-  ACTIVE: { label: "Active", color: "bg-[#E5F9EB] text-[#004C1B]" },
-  DEACTIVATED: { label: "Deactivated", color: "bg-dd-red-lighter text-dd-red-active" },
+const STAGE_ICONS: Record<string, React.ReactNode> = {
+  REGISTERED: <UserCheck className="h-4 w-4" />,
+  IDENTITY_VERIFIED: <ShieldCheck className="h-4 w-4" />,
+  BGC_PENDING: <Clock className="h-4 w-4" />,
+  BGC_CLEAR: <CheckCircle2 className="h-4 w-4" />,
+  BGC_CONSIDER: <AlertCircle className="h-4 w-4" />,
+  ACTIVE: <Zap className="h-4 w-4" />,
+  DEACTIVATED: <UserX className="h-4 w-4" />,
 };
 
-const STAGES = Object.keys(STAGE_MAP);
-
-interface Stats {
-  stage_counts: Record<string, number>;
-  total_accounts: number;
-  unread_alerts: number;
-  last_scan: {
-    id: number;
-    status: string;
-    started_at: string;
-    finished_at: string | null;
-    scanned: number;
-    errors: number;
-    transitions: number;
-  } | null;
-}
-
-interface Account {
-  id: string;
-  email: string;
-  stage: string;
-  stage_updated_at: string | null;
-  last_scanned_at: string | null;
-  scan_error: string | null;
-  notes: string | null;
-  customer_name: string | null;
-  first_name: string | null;
-  last_name: string | null;
-  status: string;
-  tags: string[];
-}
-
-interface Alert {
-  id: number;
-  alert_type: string;
-  severity: string;
-  title: string;
-  message: string | null;
-  is_read: boolean;
-  created_at: string;
-}
+const SEVERITY_STYLES: Record<string, string> = {
+  critical: "bg-destructive",
+  warning: "bg-yellow-500",
+  info: "bg-blue-500",
+};
 
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
@@ -74,9 +80,13 @@ export default function Dashboard() {
     status: string;
   } | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
-  const [showAlerts, setShowAlerts] = useState(false);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkConfirm, setBulkConfirm] = useState<{
+    action: string;
+    label: string;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   const stage = searchParams.get("stage") || "";
@@ -89,7 +99,7 @@ export default function Dashboard() {
   const isViewer = adminRole === "viewer";
 
   // SSE for real-time updates
-  const { connected: sseConnected } = useSSE({
+  useSSE({
     endpoint: "/api/sse/admin/events",
     token,
     enabled: !!token,
@@ -127,7 +137,9 @@ export default function Dashboard() {
   }
 
   async function loadAlerts() {
-    const data = await api.get<{ alerts: Alert[] }>("/api/dashboard/alerts?unread_only=true&per_page=10");
+    const data = await api.get<{ alerts: Alert[] }>(
+      "/api/dashboard/alerts?unread_only=true&per_page=10"
+    );
     setAlerts(data.alerts);
   }
 
@@ -145,14 +157,25 @@ export default function Dashboard() {
 
   async function startScan() {
     setScanning(true);
-    setScanProgress({ scanned: 0, total: 0, errors: 0, transitions: 0, current_account: "", status: "running" });
+    setScanProgress({
+      scanned: 0,
+      total: 0,
+      errors: 0,
+      transitions: 0,
+      current_account: "",
+      status: "running",
+    });
     try {
       const data = await api.post<{ scan_id: number }>("/api/scan");
       const scanId = data.scan_id;
       const poll = setInterval(async () => {
         const s = await api.get<{
-          status: string; scanned: number; errors: number; transitions: number;
-          total_accounts: number; current_account: string;
+          status: string;
+          scanned: number;
+          errors: number;
+          transitions: number;
+          total_accounts: number;
+          current_account: string;
         }>(`/api/scan/${scanId}`);
         setScanProgress({
           scanned: s.scanned,
@@ -178,14 +201,14 @@ export default function Dashboard() {
     }
   }
 
-  async function bulkAction(action: string, value?: string) {
+  async function executeBulkAction(action: string) {
     if (selectedIds.size === 0) return;
     await api.post("/api/dashboard/bulk-action", {
       account_ids: Array.from(selectedIds),
       action,
-      value,
     });
     setSelectedIds(new Set());
+    setBulkConfirm(null);
     loadAccounts();
   }
 
@@ -206,213 +229,251 @@ export default function Dashboard() {
     }
   }
 
-  function logout() {
-    localStorage.removeItem("admin_token");
-    localStorage.removeItem("admin_refresh_token");
-    localStorage.removeItem("admin_role");
-    navigate("/login");
-  }
-
   useEffect(() => {
-    loadStats();
-    loadAlerts();
+    Promise.all([loadStats(), loadAlerts()]).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
     loadAccounts();
   }, [stage, search, page]);
 
-  const severityColor: Record<string, string> = {
-    critical: "bg-dd-red",
-    warning: "bg-[#E5A500]",
-    info: "bg-[#0070E0]",
-  };
+  const totalPages = Math.ceil(total / 50);
+  const progressPercent =
+    scanProgress && scanProgress.total > 0
+      ? Math.max(2, (scanProgress.scanned / scanProgress.total) * 100)
+      : 5;
+
+  // Loading skeleton
+  if (loading) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-4 w-80" />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 rounded-xl" />
+          ))}
+        </div>
+        <Skeleton className="h-20 rounded-xl" />
+        <Skeleton className="h-96 rounded-xl" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-dd-950">Dashboard</h1>
-          <p className="text-sm text-dd-600 mt-1">
+          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-sm text-muted-foreground mt-1">
             Monitor dasher accounts, run scans, and manage onboarding stages.
           </p>
         </div>
-        {/* Alert Bell */}
-        <div className="relative">
-          <button
-            onClick={() => { setShowAlerts(!showAlerts); if (!showAlerts) loadAlerts(); }}
-            className="relative p-2.5 text-dd-600 hover:text-dd-950 hover:bg-dd-100 rounded-dd transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-            </svg>
-            {(stats?.unread_alerts || 0) > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 bg-dd-red text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                {stats!.unread_alerts > 99 ? "99+" : stats!.unread_alerts}
-              </span>
-            )}
-          </button>
-          {/* Alert Dropdown */}
-          {showAlerts && (
-            <div className="absolute right-0 mt-2 w-80 bg-white rounded-dd shadow-dd-lg border border-dd-200 z-50 max-h-96 overflow-y-auto">
-              <div className="px-4 py-3 border-b border-dd-200 flex justify-between items-center">
-                <span className="text-sm font-semibold text-dd-950">Alerts</span>
-                {alerts.length > 0 && (
-                  <button onClick={markAllRead} className="text-xs text-dd-red hover:text-dd-red-hover font-medium">
-                    Mark all read
-                  </button>
-                )}
-              </div>
-              {alerts.length === 0 ? (
-                <div className="px-4 py-6 text-center text-dd-500 text-sm">No unread alerts</div>
-              ) : (
-                alerts.map((a) => (
-                  <button
-                    key={a.id}
-                    onClick={() => markAlertRead(a.id)}
-                    className="w-full text-left px-4 py-3 border-b border-dd-200 hover:bg-dd-50 flex gap-3 transition-colors"
-                  >
-                    <span className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${severityColor[a.severity] || "bg-dd-400"}`} />
-                    <div>
-                      <div className="text-sm font-medium text-dd-950">{a.title}</div>
-                      {a.message && <div className="text-xs text-dd-600 mt-0.5">{a.message}</div>}
-                      <div className="text-[10px] text-dd-500 mt-1">
-                        {new Date(a.created_at).toLocaleString()}
-                      </div>
-                    </div>
-                  </button>
-                ))
+
+        {/* Alert Bell Dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="relative">
+              <Bell className="h-5 w-5" />
+              {(stats?.unread_alerts || 0) > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                  {stats!.unread_alerts > 99 ? "99+" : stats!.unread_alerts}
+                </span>
+              )}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-80">
+            <div className="flex items-center justify-between px-2 py-1.5">
+              <span className="text-sm font-semibold">Alerts</span>
+              {alerts.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto px-2 py-1 text-xs text-primary"
+                  onClick={markAllRead}
+                >
+                  Mark all read
+                </Button>
               )}
             </div>
-          )}
-        </div>
+            <DropdownMenuSeparator />
+            {alerts.length === 0 ? (
+              <div className="px-4 py-6 text-center text-muted-foreground text-sm">
+                No unread alerts
+              </div>
+            ) : (
+              alerts.map((a) => (
+                <DropdownMenuItem
+                  key={a.id}
+                  onClick={() => markAlertRead(a.id)}
+                  className="flex gap-3 items-start cursor-pointer py-2.5"
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${SEVERITY_STYLES[a.severity] || "bg-muted-foreground"}`}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium">{a.title}</div>
+                    {a.message && (
+                      <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                        {a.message}
+                      </div>
+                    )}
+                    <div className="text-[10px] text-muted-foreground mt-1">
+                      {new Date(a.created_at).toLocaleString()}
+                    </div>
+                  </div>
+                </DropdownMenuItem>
+              ))
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Stage Cards */}
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-          {STAGES.map((s) => (
-            <button
-              key={s}
-              onClick={() => setSearchParams(stage === s ? {} : { stage: s })}
-              className={`p-4 rounded-dd text-center transition-all border-2 ${
-                stage === s ? "border-dd-red shadow-dd-md" : "border-transparent hover:shadow-dd-sm"
-              } ${STAGE_MAP[s].color}`}
-            >
-              <div className="text-2xl font-bold">{stats.stage_counts[s] || 0}</div>
-              <div className="text-xs font-medium mt-1">{STAGE_MAP[s].label}</div>
-            </button>
-          ))}
+          {STAGES.map((s) => {
+            const isActive = stage === s;
+            return (
+              <Card
+                key={s}
+                className={`cursor-pointer transition-all hover:shadow-md ${
+                  isActive
+                    ? "ring-2 ring-primary shadow-md"
+                    : "hover:ring-1 hover:ring-border"
+                }`}
+                onClick={() =>
+                  setSearchParams(stage === s ? {} : { stage: s })
+                }
+              >
+                <CardContent className="p-4 text-center">
+                  <div className="flex justify-center mb-2 text-muted-foreground">
+                    {STAGE_ICONS[s]}
+                  </div>
+                  <div className="text-2xl font-bold">
+                    {stats.stage_counts[s] || 0}
+                  </div>
+                  <div className="text-xs font-medium text-muted-foreground mt-1">
+                    {STAGE_MAP[s].label}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 
       {/* Scan Controls */}
       {!isViewer && (
-        <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 overflow-hidden">
-          {/* Scan Header */}
-          <div className="px-5 py-4 flex items-center justify-between">
-            <div className="text-sm text-dd-600">
-              {stats?.last_scan && !scanning ? (
-                <>
-                  Last scan: {new Date(stats.last_scan.started_at).toLocaleString()} —{" "}
-                  <span className={`font-medium ${
-                    stats.last_scan.status === "completed" ? "text-[#004C1B]" :
-                    stats.last_scan.status === "failed" ? "text-dd-red-active" :
-                    "text-dd-800"
-                  }`}>
-                    {stats.last_scan.status}
+        <Card>
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-muted-foreground">
+                {stats?.last_scan && !scanning ? (
+                  <>
+                    Last scan:{" "}
+                    {new Date(stats.last_scan.started_at).toLocaleString()} —{" "}
+                    <span
+                      className={`font-medium ${
+                        stats.last_scan.status === "completed"
+                          ? "text-emerald-600"
+                          : stats.last_scan.status === "failed"
+                            ? "text-destructive"
+                            : "text-foreground"
+                      }`}
+                    >
+                      {stats.last_scan.status}
+                    </span>{" "}
+                    ({stats.last_scan.scanned} scanned,{" "}
+                    {stats.last_scan.transitions} transitions)
+                  </>
+                ) : !scanning ? (
+                  "No scans yet"
+                ) : null}
+                {scanning && scanProgress && (
+                  <span className="font-medium text-foreground">
+                    {scanProgress.status === "running"
+                      ? scanProgress.total > 0
+                        ? `Scanning accounts... ${scanProgress.scanned}/${scanProgress.total}`
+                        : "Syncing SMTP accounts..."
+                      : scanProgress.status === "completed"
+                        ? "Scan completed!"
+                        : "Scan failed"}
                   </span>
-                  {" "}({stats.last_scan.scanned} scanned, {stats.last_scan.transitions} transitions)
-                </>
-              ) : !scanning ? (
-                "No scans yet"
-              ) : null}
-              {scanning && scanProgress && (
-                <span className="font-medium text-dd-950">
-                  {scanProgress.status === "running"
-                    ? scanProgress.total > 0
-                      ? `Scanning accounts... ${scanProgress.scanned}/${scanProgress.total}`
-                      : "Syncing SMTP accounts..."
-                    : scanProgress.status === "completed"
-                      ? "Scan completed!"
-                      : "Scan failed"}
-                </span>
-              )}
-            </div>
-            <button
-              onClick={startScan}
-              disabled={scanning}
-              className="bg-dd-red text-white px-5 py-2.5 rounded-dd-pill hover:bg-dd-red-hover active:bg-dd-red-active disabled:opacity-50 text-sm font-semibold transition-colors flex items-center gap-2"
-            >
-              {scanning && (
-                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-              )}
-              {scanning ? "Scanning..." : "Scan All"}
-            </button>
-          </div>
-
-          {/* Progress Bar */}
-          {scanning && scanProgress && (
-            <div className="px-5 pb-4 space-y-3">
-              {/* Bar */}
-              <div className="relative h-3 bg-dd-200 rounded-full overflow-hidden">
-                <div
-                  className={`absolute inset-y-0 left-0 rounded-full transition-all duration-500 ease-out ${
-                    scanProgress.status === "completed" ? "bg-[#00A651]" :
-                    scanProgress.status === "failed" ? "bg-dd-red" :
-                    "bg-dd-red"
-                  }`}
-                  style={{ width: scanProgress.total > 0 ? `${Math.max(2, (scanProgress.scanned / scanProgress.total) * 100)}%` : "5%" }}
-                />
-                {scanProgress.status === "running" && (
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-[shimmer_1.5s_infinite]" />
                 )}
               </div>
+              <Button onClick={startScan} disabled={scanning}>
+                {scanning && <Loader2 className="animate-spin" />}
+                {scanning ? "Scanning..." : "Scan All"}
+              </Button>
+            </div>
 
-              {/* Stats Row */}
-              <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-4">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-[#00A651]" />
-                    <span className="text-dd-600">Scanned</span>
-                    <span className="font-bold text-dd-950">{scanProgress.scanned}</span>
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-[#0070E0]" />
-                    <span className="text-dd-600">Transitions</span>
-                    <span className="font-bold text-dd-950">{scanProgress.transitions}</span>
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-dd-red" />
-                    <span className="text-dd-600">Errors</span>
-                    <span className="font-bold text-dd-950">{scanProgress.errors}</span>
-                  </span>
+            {/* Progress Bar */}
+            {scanning && scanProgress && (
+              <div className="mt-4 space-y-3">
+                <div className="relative h-3 bg-secondary rounded-full overflow-hidden">
+                  <div
+                    className={`absolute inset-y-0 left-0 rounded-full transition-all duration-500 ease-out ${
+                      scanProgress.status === "completed"
+                        ? "bg-emerald-500"
+                        : "bg-primary"
+                    }`}
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                  {scanProgress.status === "running" && (
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-[shimmer_1.5s_infinite]" />
+                  )}
                 </div>
-                {scanProgress.current_account && scanProgress.status === "running" && (
-                  <span className="text-dd-500 truncate max-w-[200px]">
-                    {scanProgress.current_account}
-                  </span>
-                )}
+
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-4">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                      <span className="text-muted-foreground">Scanned</span>
+                      <span className="font-bold">
+                        {scanProgress.scanned}
+                      </span>
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-blue-500" />
+                      <span className="text-muted-foreground">
+                        Transitions
+                      </span>
+                      <span className="font-bold">
+                        {scanProgress.transitions}
+                      </span>
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-destructive" />
+                      <span className="text-muted-foreground">Errors</span>
+                      <span className="font-bold">{scanProgress.errors}</span>
+                    </span>
+                  </div>
+                  {scanProgress.current_account &&
+                    scanProgress.status === "running" && (
+                      <span className="text-muted-foreground truncate max-w-[200px]">
+                        {scanProgress.current_account}
+                      </span>
+                    )}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Search + Bulk Actions */}
       <div className="flex gap-3 flex-wrap items-center">
         <div className="flex-1 relative">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dd-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
             type="text"
             placeholder="Search by email..."
             defaultValue={search}
+            className="pl-10"
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 const val = (e.target as HTMLInputElement).value;
@@ -422,136 +483,192 @@ export default function Dashboard() {
                 setSearchParams(p);
               }
             }}
-            className="w-full pl-10 pr-4 py-2.5 border border-dd-300 rounded-dd-pill text-sm text-dd-950 placeholder:text-dd-500 focus:ring-2 focus:ring-dd-red focus:border-dd-red focus:outline-none transition-colors"
           />
         </div>
-        <span className="text-sm text-dd-600 font-medium">{total} accounts</span>
+        <span className="text-sm text-muted-foreground font-medium">
+          {total} accounts
+        </span>
         {!isRestricted && selectedIds.size > 0 && (
           <div className="flex gap-2">
-            <button
-              onClick={() => bulkAction("archive")}
-              className="px-4 py-1.5 bg-dd-200 text-dd-800 rounded-dd-pill text-xs font-medium hover:bg-dd-300 transition-colors"
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                setBulkConfirm({ action: "archive", label: "Archive" })
+              }
             >
+              <Archive className="h-3.5 w-3.5" />
               Archive ({selectedIds.size})
-            </button>
-            <button
-              onClick={() => bulkAction("suspend")}
-              className="px-4 py-1.5 bg-[#FFF3D6] text-[#8A6100] rounded-dd-pill text-xs font-medium hover:bg-[#FFE9B3] transition-colors"
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setBulkConfirm({ action: "suspend", label: "Suspend" })
+              }
             >
+              <Pause className="h-3.5 w-3.5" />
               Suspend
-            </button>
-            <button
-              onClick={() => bulkAction("activate")}
-              className="px-4 py-1.5 bg-[#E5F9EB] text-[#004C1B] rounded-dd-pill text-xs font-medium hover:bg-[#C8F0D4] transition-colors"
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setBulkConfirm({ action: "activate", label: "Activate" })
+              }
             >
+              <Play className="h-3.5 w-3.5" />
               Activate
-            </button>
+            </Button>
           </div>
         )}
       </div>
 
       {/* Accounts Table */}
-      <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-dd-50 border-b border-dd-200">
-            <tr>
+      <Card>
+        <Table>
+          <TableHeader>
+            <TableRow>
               {!isRestricted && (
-                <th className="px-4 py-3 w-8">
+                <TableHead className="w-8">
                   <input
                     type="checkbox"
-                    checked={accounts.length > 0 && selectedIds.size === accounts.length}
+                    checked={
+                      accounts.length > 0 &&
+                      selectedIds.size === accounts.length
+                    }
                     onChange={toggleSelectAll}
-                    className="rounded accent-dd-red"
+                    className="rounded accent-primary"
                   />
-                </th>
+                </TableHead>
               )}
-              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Email</th>
-              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Customer</th>
-              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Stage</th>
-              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Status</th>
-              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Stage Updated</th>
-              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Error</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-dd-200">
+              <TableHead>Email</TableHead>
+              <TableHead>Customer</TableHead>
+              <TableHead>Stage</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Stage Updated</TableHead>
+              <TableHead>Error</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {accounts.map((acc) => (
-              <tr key={acc.id} className="hover:bg-dd-50 transition-colors">
+              <TableRow key={acc.id}>
                 {!isRestricted && (
-                  <td className="px-4 py-3">
+                  <TableCell>
                     <input
                       type="checkbox"
                       checked={selectedIds.has(acc.id)}
                       onChange={() => toggleSelect(acc.id)}
-                      className="rounded accent-dd-red"
+                      className="rounded accent-primary"
                     />
-                  </td>
+                  </TableCell>
                 )}
-                <td className="px-4 py-3 text-sm text-dd-950">
-                  <Link to={`/accounts/${encodeURIComponent(acc.email)}`} className="text-dd-red hover:text-dd-red-hover font-medium hover:underline">
+                <TableCell>
+                  <Link
+                    to={`/accounts/${encodeURIComponent(acc.email)}`}
+                    className="text-primary hover:text-primary/80 font-medium hover:underline"
+                  >
                     {acc.email}
                   </Link>
-                </td>
-                <td className="px-4 py-3 text-sm text-dd-600">
+                </TableCell>
+                <TableCell className="text-muted-foreground">
                   {acc.first_name && acc.last_name
                     ? `${acc.first_name} ${acc.last_name}`
-                    : acc.customer_name || "—"}
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`inline-flex px-2.5 py-1 rounded-dd-pill text-xs font-medium ${STAGE_MAP[acc.stage]?.color || ""}`}>
+                    : acc.customer_name || "\u2014"}
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant="secondary"
+                    className={STAGE_BADGE[acc.stage] || ""}
+                  >
                     {STAGE_MAP[acc.stage]?.label || acc.stage}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`inline-flex px-2.5 py-1 rounded-dd-pill text-xs font-medium ${
-                    acc.status === "active" ? "bg-[#E5F9EB] text-[#004C1B]" :
-                    acc.status === "suspended" ? "bg-[#FFF3D6] text-[#8A6100]" :
-                    "bg-dd-100 text-dd-600"
-                  }`}>
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant="secondary"
+                    className={STATUS_BADGE[acc.status] || ""}
+                  >
                     {acc.status}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-sm text-dd-600">
-                  {acc.stage_updated_at ? new Date(acc.stage_updated_at).toLocaleString() : "—"}
-                </td>
-                <td className="px-4 py-3 text-sm text-dd-red-active max-w-xs truncate">
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-muted-foreground text-sm">
+                  {acc.stage_updated_at
+                    ? new Date(acc.stage_updated_at).toLocaleString()
+                    : "\u2014"}
+                </TableCell>
+                <TableCell className="text-destructive max-w-xs truncate text-sm">
                   {acc.scan_error || ""}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
             {accounts.length === 0 && (
-              <tr>
-                <td colSpan={isRestricted ? 6 : 7} className="px-4 py-12 text-center text-dd-500">
+              <TableRow>
+                <TableCell
+                  colSpan={isRestricted ? 6 : 7}
+                  className="h-24 text-center text-muted-foreground"
+                >
                   No accounts found
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </Card>
 
       {/* Pagination */}
-      {total > 50 && (
-        <div className="flex justify-center gap-2">
-          {Array.from({ length: Math.ceil(total / 50) }, (_, i) => i + 1).map((p) => (
-            <button
+      {totalPages > 1 && (
+        <div className="flex justify-center gap-1">
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+            <Button
               key={p}
+              variant={p === page ? "default" : "outline"}
+              size="sm"
               onClick={() => {
                 const params: Record<string, string> = { page: String(p) };
                 if (stage) params.stage = stage;
                 if (search) params.search = search;
                 setSearchParams(params);
               }}
-              className={`px-3.5 py-1.5 rounded-dd-pill text-sm font-medium transition-colors ${
-                p === page
-                  ? "bg-dd-red text-white"
-                  : "bg-white border border-dd-200 text-dd-800 hover:bg-dd-50"
-              }`}
             >
               {p}
-            </button>
+            </Button>
           ))}
         </div>
       )}
+
+      {/* Bulk Action Confirmation Dialog */}
+      <Dialog
+        open={!!bulkConfirm}
+        onOpenChange={(open) => !open && setBulkConfirm(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm {bulkConfirm?.label}</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to {bulkConfirm?.action}{" "}
+              {selectedIds.size} selected account
+              {selectedIds.size > 1 ? "s" : ""}? This action cannot be easily
+              undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkConfirm(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant={
+                bulkConfirm?.action === "activate" ? "default" : "destructive"
+              }
+              onClick={() =>
+                bulkConfirm && executeBulkAction(bulkConfirm.action)
+              }
+            >
+              {bulkConfirm?.label}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

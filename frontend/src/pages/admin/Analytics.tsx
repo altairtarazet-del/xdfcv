@@ -1,76 +1,77 @@
 import { useEffect, useState } from "react";
-import { api } from "../../api/client";
+import { api } from "@/api/client";
+import type { AnalyticsData } from "@/types";
+import {
+  Users,
+  ScanLine,
+  CheckCircle,
+  XCircle,
+  Bell,
+  UserCheck,
+} from "lucide-react";
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
+import { Skeleton } from "@/components/ui/skeleton";
 
-interface AnalyticsData {
-  accounts: {
-    total: number;
-    by_stage: Record<string, number>;
-    by_status: Record<string, number>;
-  };
-  analysis: {
-    total: number;
-    by_category: Record<string, number>;
-    by_source: Record<string, number>;
-  };
-  scans: {
-    recent_count: number;
-    success_rate: number;
-    total_scanned: number;
-    total_errors: number;
-  };
-  alerts: {
-    total: number;
-    unread: number;
-    by_type: Record<string, number>;
-  };
-  portal_activity: {
-    active_24h: number;
-    active_7d: number;
-  };
-}
+// --- Chart configs ---
 
-function BarChart({
-  data,
-  total,
-  labels,
-  colors,
-}: {
-  data: Record<string, number>;
-  total: number;
-  labels?: Record<string, string>;
-  colors?: Record<string, string>;
-}) {
-  const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
+const stageChartConfig: ChartConfig = {
+  count: { label: "Accounts", color: "var(--chart-1)" },
+};
+
+const categoryChartConfig: ChartConfig = {
+  count: { label: "Analyses", color: "var(--chart-2)" },
+};
+
+const scanChartConfig: ChartConfig = {
+  total: { label: "Total", color: "var(--chart-1)" },
+  successful: { label: "Successful", color: "var(--chart-3)" },
+  failed: { label: "Failed", color: "var(--chart-5)" },
+};
+
+const alertChartConfig: ChartConfig = {
+  count: { label: "Alerts", color: "var(--chart-4)" },
+};
+
+const portalChartConfig: ChartConfig = {
+  total_users: { label: "Total Users", color: "var(--chart-1)" },
+  active_users: { label: "Active Users", color: "var(--chart-3)" },
+  logins_30d: { label: "Logins (30d)", color: "var(--chart-2)" },
+};
+
+// --- Stat cards config ---
+
+const STAGE_COLORS: Record<string, string> = {
+  REGISTERED: "hsl(var(--dd-400))",
+  IDENTITY_VERIFIED: "hsl(210, 100%, 50%)",
+  BGC_PENDING: "hsl(45, 100%, 50%)",
+  BGC_CLEAR: "hsl(150, 100%, 35%)",
+  BGC_CONSIDER: "hsl(30, 100%, 50%)",
+  ACTIVE: "hsl(0, 80%, 55%)",
+  DEACTIVATED: "hsl(0, 70%, 40%)",
+};
+
+function ChartSkeleton() {
   return (
-    <div className="space-y-3">
-      {sorted.map(([key, count]) => (
-        <div key={key} className="flex items-center gap-3">
-          <div className="w-32 text-xs text-dd-600 truncate text-right font-medium">
-            {labels?.[key] ?? key}
-          </div>
-          <div className="flex-1 bg-dd-100 rounded-full h-5 overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all duration-300 ${colors?.[key] ? '' : 'bg-dd-red'}`}
-              style={{
-                width: `${total > 0 ? (count / total) * 100 : 0}%`,
-                ...(colors?.[key] ? { backgroundColor: colors[key] } : {}),
-              }}
-            />
-          </div>
-          <div className="w-12 text-xs text-dd-600 text-right font-semibold">{count}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
-  return (
-    <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 p-5">
-      <div className="text-[12px] uppercase tracking-wider text-dd-600 font-semibold">{label}</div>
-      <div className="text-2xl font-bold text-dd-950 mt-1">{value}</div>
-      {sub && <div className="text-xs text-dd-600 mt-1">{sub}</div>}
-    </div>
+    <Card>
+      <CardHeader>
+        <Skeleton className="h-5 w-40" />
+      </CardHeader>
+      <CardContent>
+        <Skeleton className="h-[250px] w-full" />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -78,90 +79,314 @@ export default function Analytics() {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  async function load() {
-    try {
-      const result = await api.get<AnalyticsData>("/api/analytics/overview");
-      setData(result);
-    } catch {
-      // handle error
-    } finally {
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
-    load();
+    api
+      .get<AnalyticsData>("/api/analytics/overview")
+      .then(setData)
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="p-8 text-dd-600 text-sm">Loading analytics...</div>;
-  if (!data) return <div className="p-8 text-dd-red text-sm font-semibold">Failed to load analytics</div>;
+  if (!loading && !data) {
+    return (
+      <div className="p-8 text-destructive text-sm font-semibold">
+        Failed to load analytics
+      </div>
+    );
+  }
+
+  // Derive stats
+  const totalAccounts = data
+    ? Object.values(data.accounts_by_stage).reduce((a, b) => a + b, 0)
+    : 0;
+
+  const statCards = [
+    {
+      label: "Total Accounts",
+      value: totalAccounts,
+      icon: Users,
+    },
+    {
+      label: "Total Scans",
+      value: data?.scans.total ?? 0,
+      icon: ScanLine,
+    },
+    {
+      label: "Successful Scans",
+      value: data?.scans.successful ?? 0,
+      icon: CheckCircle,
+    },
+    {
+      label: "Failed Scans",
+      value: data?.scans.failed ?? 0,
+      icon: XCircle,
+    },
+    {
+      label: "Total Alerts",
+      value: data?.alerts.total ?? 0,
+      icon: Bell,
+    },
+    {
+      label: "Portal Users",
+      value: data?.portal.total_users ?? 0,
+      icon: UserCheck,
+    },
+  ];
+
+  // Transform data for charts
+  const stageData = data
+    ? Object.entries(data.accounts_by_stage).map(([stage, count]) => ({
+        stage,
+        count,
+        fill: STAGE_COLORS[stage] || "var(--chart-1)",
+      }))
+    : [];
+
+  const categoryData = data
+    ? Object.entries(data.analysis_by_category).map(([category, count]) => ({
+        category,
+        count,
+      }))
+    : [];
+
+  const scanData = data
+    ? [
+        {
+          name: "Scans",
+          total: data.scans.total,
+          successful: data.scans.successful,
+          failed: data.scans.failed,
+        },
+      ]
+    : [];
+
+  const alertData = data
+    ? Object.entries(data.alerts.by_type).map(([type, count]) => ({
+        type,
+        count,
+      }))
+    : [];
+
+  const portalData = data
+    ? [
+        {
+          name: "Portal",
+          total_users: data.portal.total_users,
+          active_users: data.portal.active_users,
+          logins_30d: data.portal.logins_30d,
+        },
+      ]
+    : [];
 
   return (
     <div className="p-6 space-y-6">
       {/* Page Title */}
       <div>
-        <h1 className="text-2xl font-bold text-dd-950">Analytics</h1>
-        <p className="text-sm text-dd-600 mt-1">Overview of platform activity and metrics</p>
+        <h1 className="text-2xl font-bold text-foreground">Analytics</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Overview of platform activity and metrics
+        </p>
       </div>
 
-      {/* Top Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <StatCard label="Total Accounts" value={data.accounts.total} />
-        <StatCard label="Emails Analyzed" value={data.analysis.total} />
-        <StatCard label="Scan Success Rate" value={`${data.scans.success_rate}%`} sub={`${data.scans.total_scanned} scanned`} />
-        <StatCard label="Total Alerts" value={data.alerts.total} sub={`${data.alerts.unread} unread`} />
-        <StatCard label="Active (24h)" value={data.portal_activity.active_24h} sub="portal logins" />
-        <StatCard label="Active (7d)" value={data.portal_activity.active_7d} sub="portal logins" />
+      {/* Stat Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {statCards.map((stat) => (
+          <Card key={stat.label}>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                {stat.label}
+              </CardTitle>
+              <stat.icon className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <Skeleton className="h-8 w-20" />
+              ) : (
+                <div className="text-2xl font-bold">
+                  {stat.value.toLocaleString()}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Stage Distribution */}
-        <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 p-6">
-          <h2 className="text-[12px] uppercase tracking-wider text-dd-600 font-semibold mb-5">Account Stage Distribution</h2>
-          <BarChart data={data.accounts.by_stage} total={data.accounts.total} />
+      {/* Charts */}
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <ChartSkeleton key={i} />
+          ))}
         </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Accounts by Stage — horizontal bar */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold">
+                Accounts by Stage
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer config={stageChartConfig} className="h-[300px]">
+                <BarChart data={stageData} layout="vertical">
+                  <CartesianGrid horizontal={false} />
+                  <YAxis
+                    dataKey="stage"
+                    type="category"
+                    width={120}
+                    tickLine={false}
+                    axisLine={false}
+                    className="text-xs"
+                  />
+                  <XAxis type="number" tickLine={false} axisLine={false} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="count" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ChartContainer>
+            </CardContent>
+          </Card>
 
-        {/* Email Category Distribution */}
-        <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 p-6">
-          <h2 className="text-[12px] uppercase tracking-wider text-dd-600 font-semibold mb-5">Email Category Distribution</h2>
-          <BarChart data={data.analysis.by_category} total={data.analysis.total} />
-        </div>
+          {/* Analysis by Category */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold">
+                Analysis by Category
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer
+                config={categoryChartConfig}
+                className="h-[300px]"
+              >
+                <BarChart data={categoryData}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="category"
+                    tickLine={false}
+                    axisLine={false}
+                    className="text-xs"
+                  />
+                  <YAxis tickLine={false} axisLine={false} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar
+                    dataKey="count"
+                    fill="var(--color-count)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ChartContainer>
+            </CardContent>
+          </Card>
 
-        {/* Account Status */}
-        <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 p-6">
-          <h2 className="text-[12px] uppercase tracking-wider text-dd-600 font-semibold mb-5">Account Status</h2>
-          <BarChart data={data.accounts.by_status} total={data.accounts.total} />
-        </div>
+          {/* Scan Statistics — grouped bar */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold">
+                Scan Statistics
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer config={scanChartConfig} className="h-[300px]">
+                <BarChart data={scanData}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="name"
+                    tickLine={false}
+                    axisLine={false}
+                    className="text-xs"
+                  />
+                  <YAxis tickLine={false} axisLine={false} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar
+                    dataKey="total"
+                    fill="var(--color-total)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                  <Bar
+                    dataKey="successful"
+                    fill="var(--color-successful)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                  <Bar
+                    dataKey="failed"
+                    fill="var(--color-failed)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ChartContainer>
+            </CardContent>
+          </Card>
 
-        {/* Analysis Source */}
-        <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 p-6">
-          <h2 className="text-[12px] uppercase tracking-wider text-dd-600 font-semibold mb-5">Analysis Method</h2>
-          <BarChart
-            data={data.analysis.by_source}
-            total={data.analysis.total}
-            labels={{
-              rules: "Rules",
-              rules_dedup: "Rules (Dedup)",
-              ai: "AI",
-              ai_dedup: "AI (Dedup)",
-              manual: "Manual Review",
-            }}
-            colors={{
-              rules: "#E23744",
-              rules_dedup: "#F4727B",
-              ai: "#6366F1",
-              ai_dedup: "#A5B4FC",
-              manual: "#F59E0B",
-            }}
-          />
-        </div>
+          {/* Alerts by Type */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold">
+                Alerts by Type
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer config={alertChartConfig} className="h-[300px]">
+                <BarChart data={alertData}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="type"
+                    tickLine={false}
+                    axisLine={false}
+                    className="text-xs"
+                  />
+                  <YAxis tickLine={false} axisLine={false} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar
+                    dataKey="count"
+                    fill="var(--color-count)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ChartContainer>
+            </CardContent>
+          </Card>
 
-        {/* Alert Types */}
-        <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 p-6">
-          <h2 className="text-[12px] uppercase tracking-wider text-dd-600 font-semibold mb-5">Alert Types</h2>
-          <BarChart data={data.alerts.by_type} total={data.alerts.total} />
+          {/* Portal Activity — grouped bar */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold">
+                Portal Activity
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer config={portalChartConfig} className="h-[300px]">
+                <BarChart data={portalData}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="name"
+                    tickLine={false}
+                    axisLine={false}
+                    className="text-xs"
+                  />
+                  <YAxis tickLine={false} axisLine={false} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar
+                    dataKey="total_users"
+                    fill="var(--color-total_users)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                  <Bar
+                    dataKey="active_users"
+                    fill="var(--color-active_users)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                  <Bar
+                    dataKey="logins_30d"
+                    fill="var(--color-logins_30d)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ChartContainer>
+            </CardContent>
+          </Card>
         </div>
-      </div>
+      )}
     </div>
   );
 }

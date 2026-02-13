@@ -1,33 +1,62 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../../api/client";
+import { toast } from "sonner";
+import {
+  MoreHorizontal,
+  Search,
+  UserPlus,
+  Users,
+  KeyRound,
+  ToggleLeft,
+  ToggleRight,
+  Trash2,
+  Mail,
+  Copy,
+  Check,
+  Eye,
+  EyeOff,
+  Loader2,
+  ScanText,
+} from "lucide-react";
+import { api } from "@/api/client";
+import type { PortalUser, ExtractNamesResult, ProvisionResult } from "@/types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
-interface PortalUser {
-  id: string;
-  email: string;
-  display_name: string | null;
-  account_id: string | null;
-  is_active: boolean;
-  last_login_at: string | null;
-  created_at: string;
-  first_name: string | null;
-  middle_name: string | null;
-  last_name: string | null;
-  date_of_birth: string | null;
-}
-
-interface ExtractNamesResult {
-  processed: number;
-  updated: number;
-  failed: number;
-}
-
-interface ProvisionResult {
-  credentials: {
-    email: string;
-    portal_password: string;
-  };
-}
+// --- ProvisionCredentials sub-component ---
 
 function ProvisionCredentials({
   credentials,
@@ -39,13 +68,28 @@ function ProvisionCredentials({
   const [showPassword, setShowPassword] = useState(false);
   const [copied, setCopied] = useState(false);
   const [expired, setExpired] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(30);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const expireTimer = setTimeout(() => {
       setShowPassword(false);
       setExpired(true);
     }, 30000);
-    return () => clearTimeout(timer);
+
+    const countdownInterval = setInterval(() => {
+      setSecondsLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(countdownInterval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      clearTimeout(expireTimer);
+      clearInterval(countdownInterval);
+    };
   }, []);
 
   async function copyToClipboard() {
@@ -54,7 +98,6 @@ function ProvisionCredentials({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Fallback
       const el = document.createElement("textarea");
       el.value = credentials.portal_password;
       document.body.appendChild(el);
@@ -69,55 +112,141 @@ function ProvisionCredentials({
   const maskedPassword = credentials.portal_password.replace(/./g, "\u2022");
 
   return (
-    <div className="bg-[#E5F9EB] border border-green-200 rounded-dd p-6">
-      <h2 className="text-sm font-bold text-[#004C1B] mb-3">Customer Created Successfully</h2>
-      <div className="bg-white rounded-lg p-4 font-mono text-sm space-y-2 border border-green-200">
-        <div>
-          <span className="text-dd-600">Email:</span>{" "}
-          <span className="text-dd-950">{credentials.email}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-dd-600">Portal Password:</span>{" "}
-          <span
-            className={`font-bold ${expired ? "text-dd-600" : "text-[#004C1B]"} cursor-pointer select-all`}
-            onClick={() => !expired && setShowPassword((v) => !v)}
-            title={expired ? "Expired -- copy was available for 30s" : "Click to reveal"}
-          >
-            {showPassword && !expired ? credentials.portal_password : maskedPassword}
-          </span>
-          {!expired && (
-            <button
-              onClick={copyToClipboard}
-              className="px-2 py-0.5 rounded text-xs font-semibold border border-[#004C1B] text-[#004C1B] hover:bg-[#E5F9EB] transition-colors"
+    <Card className="border-green-200 bg-green-50">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base text-green-800">
+          Customer Created Successfully
+        </CardTitle>
+        {!expired && (
+          <CardDescription className="text-green-700">
+            Copy credentials now -- password hidden in {secondsLeft}s
+          </CardDescription>
+        )}
+        {expired && (
+          <CardDescription className="text-muted-foreground">
+            Password display has expired. If you didn't copy it, reset the
+            password.
+          </CardDescription>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="rounded-lg border border-green-200 bg-white p-4 font-mono text-sm space-y-2">
+          <div className="flex items-center gap-2">
+            <Mail className="h-4 w-4 text-muted-foreground" />
+            <span className="text-muted-foreground">Email:</span>
+            <span className="font-medium">{credentials.email}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <KeyRound className="h-4 w-4 text-muted-foreground" />
+            <span className="text-muted-foreground">Password:</span>
+            <span
+              className={`font-bold cursor-pointer select-all ${expired ? "text-muted-foreground" : "text-green-800"}`}
+              onClick={() => !expired && setShowPassword((v) => !v)}
+              title={
+                expired
+                  ? "Expired -- copy was available for 30s"
+                  : "Click to reveal"
+              }
             >
-              {copied ? "Copied!" : "Copy"}
-            </button>
-          )}
-          {expired && (
-            <span className="text-xs text-dd-600">(expired)</span>
-          )}
+              {showPassword && !expired
+                ? credentials.portal_password
+                : maskedPassword}
+            </span>
+            {!expired && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1"
+                onClick={copyToClipboard}
+              >
+                {copied ? (
+                  <Check className="h-3 w-3" />
+                ) : (
+                  <Copy className="h-3 w-3" />
+                )}
+                {copied ? "Copied" : "Copy"}
+              </Button>
+            )}
+            {!expired && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0"
+                onClick={() => setShowPassword((v) => !v)}
+              >
+                {showPassword ? (
+                  <EyeOff className="h-3.5 w-3.5" />
+                ) : (
+                  <Eye className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            )}
+            {expired && (
+              <Badge variant="secondary" className="text-xs">
+                expired
+              </Badge>
+            )}
+          </div>
         </div>
-      </div>
-      <p className="text-xs text-[#004C1B] mt-3 font-medium">
-        {expired
-          ? "Password display has expired. If you didn't copy it, reset the password."
-          : "Copy these credentials now -- the password will be hidden after 30 seconds."}
-      </p>
-      <button
-        onClick={onDone}
-        className="mt-4 bg-dd-red text-white px-5 py-2 rounded-dd-pill text-sm hover:bg-dd-red-hover font-semibold transition-colors"
-      >
-        Done
-      </button>
-    </div>
+        <Button onClick={onDone}>Done</Button>
+      </CardContent>
+    </Card>
   );
 }
 
+// --- Table skeleton ---
+
+function UsersTableSkeleton() {
+  return (
+    <Card>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Email</TableHead>
+              <TableHead>Display Name</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Last Login</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead className="w-[60px]" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {Array.from({ length: 5 }).map((_, i) => (
+              <TableRow key={i}>
+                <TableCell>
+                  <Skeleton className="h-4 w-48" />
+                </TableCell>
+                <TableCell>
+                  <Skeleton className="h-4 w-32" />
+                </TableCell>
+                <TableCell>
+                  <Skeleton className="h-5 w-16 rounded-full" />
+                </TableCell>
+                <TableCell>
+                  <Skeleton className="h-4 w-28" />
+                </TableCell>
+                <TableCell>
+                  <Skeleton className="h-4 w-24" />
+                </TableCell>
+                <TableCell>
+                  <Skeleton className="h-8 w-8 rounded-md" />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+// --- Main page ---
 
 export default function PortalUsersPage() {
   const [users, setUsers] = useState<PortalUser[]>([]);
   const [search, setSearch] = useState("");
-  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
   const adminRole = localStorage.getItem("admin_role") || "admin";
   const canManage = adminRole === "admin" || adminRole === "super_admin";
 
@@ -134,14 +263,17 @@ export default function PortalUsersPage() {
 
   // Extract names state
   const [extracting, setExtracting] = useState(false);
-  const [extractResult, setExtractResult] = useState<ExtractNamesResult | null>(null);
 
-  // Manual create state
+  // Manual create dialog state
   const [showManual, setShowManual] = useState(false);
   const [manualEmail, setManualEmail] = useState("");
   const [manualPassword, setManualPassword] = useState("");
   const [manualName, setManualName] = useState("");
   const [creating, setCreating] = useState(false);
+
+  // Delete confirmation dialog
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Auto-generated email preview
   const generatedEmail =
@@ -149,16 +281,23 @@ export default function PortalUsersPage() {
       ? `${provFirstName.toLowerCase().replace(/[^a-z]/g, "")}${provLastName.toLowerCase().replace(/[^a-z]/g, "")}@dasherhelp.com`
       : "";
 
-  async function loadUsers() {
-    const params = search ? `?search=${encodeURIComponent(search)}` : "";
-    const data = await api.get<{ users: PortalUser[] }>(`/api/portal-users${params}`);
-    setUsers(data.users);
-  }
+  const loadUsers = useCallback(async () => {
+    try {
+      const params = search ? `?search=${encodeURIComponent(search)}` : "";
+      const data = await api.get<{ users: PortalUser[] }>(
+        `/api/portal-users${params}`
+      );
+      setUsers(data.users);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to load users");
+    } finally {
+      setLoading(false);
+    }
+  }, [search]);
 
   async function provisionCustomer(e: React.FormEvent) {
     e.preventDefault();
     setProvisioning(true);
-    setError("");
     try {
       let dob: string | null = null;
       if (provDobYear && provDobMonth && provDobDay) {
@@ -166,7 +305,9 @@ export default function PortalUsersPage() {
         const d = parseInt(provDobDay, 10);
         const y = parseInt(provDobYear, 10);
         if (m < 1 || m > 12 || d < 1 || d > 31 || y < 1900 || y > 2100) {
-          setError("Invalid date of birth. Month: 1-12, Day: 1-31, Year: 1900-2100");
+          toast.error(
+            "Invalid date of birth. Month: 1-12, Day: 1-31, Year: 1900-2100"
+          );
           setProvisioning(false);
           return;
         }
@@ -181,7 +322,7 @@ export default function PortalUsersPage() {
       setProvResult(result);
       loadUsers();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Provisioning failed");
+      toast.error(err instanceof Error ? err.message : "Provisioning failed");
     } finally {
       setProvisioning(false);
     }
@@ -201,7 +342,6 @@ export default function PortalUsersPage() {
   async function createUser(e: React.FormEvent) {
     e.preventDefault();
     setCreating(true);
-    setError("");
     try {
       await api.post("/api/portal-users", {
         email: manualEmail,
@@ -212,46 +352,78 @@ export default function PortalUsersPage() {
       setManualPassword("");
       setManualName("");
       setShowManual(false);
+      toast.success("Portal user created");
       loadUsers();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to create");
+      toast.error(err instanceof Error ? err.message : "Failed to create");
     } finally {
       setCreating(false);
     }
   }
 
   async function toggleActive(user: PortalUser) {
-    await api.patch(`/api/portal-users/${encodeURIComponent(user.email)}`, {
-      is_active: !user.is_active,
-    });
-    loadUsers();
+    try {
+      await api.patch(`/api/portal-users/${encodeURIComponent(user.email)}`, {
+        is_active: !user.is_active,
+      });
+      toast.success(
+        `${user.email} ${user.is_active ? "disabled" : "enabled"}`
+      );
+      loadUsers();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to update");
+    }
   }
 
   async function resetPassword(email: string) {
-    if (!confirm(`Reset password for ${email}?`)) return;
-    const newPassword = Math.random().toString(36).slice(-10);
-    await api.patch(`/api/portal-users/${encodeURIComponent(email)}`, {
-      password: newPassword,
-    });
-    alert(`New password for ${email}: ${newPassword}\n\nCopy this now — it won't be shown again.`);
+    try {
+      const newPassword = Math.random().toString(36).slice(-10);
+      await api.patch(`/api/portal-users/${encodeURIComponent(email)}`, {
+        password: newPassword,
+      });
+      try {
+        await navigator.clipboard.writeText(newPassword);
+        toast.success(`Password reset for ${email}. New password copied to clipboard.`);
+      } catch {
+        toast.success(`New password for ${email}: ${newPassword}`);
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to reset password");
+    }
   }
 
-  async function deleteUser(userEmail: string) {
-    if (!confirm(`Delete portal user ${userEmail}?`)) return;
-    await api.delete(`/api/portal-users/${encodeURIComponent(userEmail)}`);
-    loadUsers();
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await api.delete(
+        `/api/portal-users/${encodeURIComponent(deleteTarget)}`
+      );
+      toast.success(`Deleted ${deleteTarget}`);
+      setDeleteTarget(null);
+      loadUsers();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   async function extractNames() {
     setExtracting(true);
-    setExtractResult(null);
-    setError("");
     try {
-      const result = await api.post<ExtractNamesResult>("/api/dashboard/accounts/extract-names", {});
-      setExtractResult(result);
+      const result = await api.post<ExtractNamesResult>(
+        "/api/dashboard/accounts/extract-names",
+        {}
+      );
+      toast.success(
+        `Name extraction complete: ${result.updated} updated out of ${result.processed} processed${result.failed > 0 ? `, ${result.failed} failed` : ""}`
+      );
       loadUsers();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Name extraction failed");
+      toast.error(
+        err instanceof Error ? err.message : "Name extraction failed"
+      );
     } finally {
       setExtracting(false);
     }
@@ -259,165 +431,178 @@ export default function PortalUsersPage() {
 
   useEffect(() => {
     loadUsers();
-  }, [search]);
+  }, [loadUsers]);
+
+  function formatDate(dateStr: string | null) {
+    if (!dateStr) return "--";
+    try {
+      return new Date(dateStr).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+    } catch {
+      return dateStr;
+    }
+  }
 
   return (
     <div className="p-6 space-y-6">
-      {/* Page Title */}
+      {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-dd-950">Customer Management</h1>
-          <p className="text-sm text-dd-600 mt-1">Manage portal users and customer accounts</p>
+          <h1 className="text-2xl font-bold tracking-tight">
+            Customer Management
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Manage portal users and customer accounts
+          </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           {canManage && (
-            <button
+            <Button
+              variant="outline"
               onClick={extractNames}
               disabled={extracting}
-              className="border border-dd-950 text-dd-950 px-5 py-2.5 rounded-dd-pill text-sm hover:bg-dd-100 font-semibold transition-colors disabled:opacity-50"
             >
-              {extracting ? "Extracting..." : "Extract Names"}
-            </button>
+              {extracting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <ScanText className="h-4 w-4" />
+              )}
+              Extract Names
+            </Button>
           )}
-          <button
-            onClick={() => { setShowProvision(true); setShowManual(false); setProvResult(null); }}
-            className="bg-dd-red text-white px-5 py-2.5 rounded-dd-pill text-sm hover:bg-dd-red-hover font-semibold transition-colors"
+          <Button
+            onClick={() => {
+              setShowProvision(true);
+              setShowManual(false);
+              setProvResult(null);
+            }}
           >
+            <UserPlus className="h-4 w-4" />
             New Customer
-          </button>
+          </Button>
           {canManage && (
-            <button
-              onClick={() => { setShowManual(true); setShowProvision(false); }}
-              className="border border-dd-950 text-dd-950 px-5 py-2.5 rounded-dd-pill text-sm hover:bg-dd-100 font-semibold transition-colors"
-            >
+            <Button variant="outline" onClick={() => setShowManual(true)}>
+              <Users className="h-4 w-4" />
               Manual Create
-            </button>
+            </Button>
           )}
         </div>
       </div>
 
-      {error && (
-        <div className="bg-dd-red-lighter text-dd-red-active p-3 rounded-dd text-sm font-medium border border-dd-red/20">
-          {error}
-        </div>
-      )}
-
-      {extractResult && (
-        <div className="bg-[#E5F9EB] border border-green-200 rounded-dd p-3 text-sm font-medium text-[#004C1B] flex items-center justify-between">
-          <span>
-            Name extraction complete: {extractResult.updated} updated out of {extractResult.processed} processed
-            {extractResult.failed > 0 && `, ${extractResult.failed} failed`}
-          </span>
-          <button onClick={() => setExtractResult(null)} className="text-[#004C1B] hover:underline text-xs">
-            Dismiss
-          </button>
-        </div>
-      )}
-
       {/* Provision Wizard */}
       {showProvision && !provResult && (
-        <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 p-6">
-          <h2 className="text-[12px] uppercase tracking-wider text-dd-600 font-semibold mb-1">New Customer -- Auto Provision</h2>
-          <p className="text-xs text-dd-600 mb-5">
-            Creates SMTP.dev email account, DB record, and portal login in one step.
-          </p>
-          <form onSubmit={provisionCustomer} className="space-y-4">
-            {/* Name Fields */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[12px] uppercase tracking-wider text-dd-600 font-semibold">First Name *</label>
-                <input
-                  type="text"
-                  placeholder="Muhammet"
-                  value={provFirstName}
-                  onChange={(e) => setProvFirstName(e.target.value)}
-                  required
-                  className="px-4 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 placeholder:text-dd-500 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
-                />
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              New Customer -- Auto Provision
+            </CardTitle>
+            <CardDescription>
+              Creates SMTP.dev email account, DB record, and portal login in one
+              step.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={provisionCustomer} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="prov-first">First Name *</Label>
+                  <Input
+                    id="prov-first"
+                    placeholder="Muhammet"
+                    value={provFirstName}
+                    onChange={(e) => setProvFirstName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="prov-middle">Middle Name</Label>
+                  <Input
+                    id="prov-middle"
+                    placeholder="Oguz"
+                    value={provMiddleName}
+                    onChange={(e) => setProvMiddleName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="prov-last">Last Name *</Label>
+                  <Input
+                    id="prov-last"
+                    placeholder="Bayram"
+                    value={provLastName}
+                    onChange={(e) => setProvLastName(e.target.value)}
+                    required
+                  />
+                </div>
               </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[12px] uppercase tracking-wider text-dd-600 font-semibold">Middle Name</label>
-                <input
-                  type="text"
-                  placeholder="Oguz"
-                  value={provMiddleName}
-                  onChange={(e) => setProvMiddleName(e.target.value)}
-                  className="px-4 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 placeholder:text-dd-500 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[12px] uppercase tracking-wider text-dd-600 font-semibold">Last Name *</label>
-                <input
-                  type="text"
-                  placeholder="Bayram"
-                  value={provLastName}
-                  onChange={(e) => setProvLastName(e.target.value)}
-                  required
-                  className="px-4 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 placeholder:text-dd-500 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
-                />
-              </div>
-            </div>
 
-            {/* Email Preview */}
-            {generatedEmail && (
-              <div className="bg-dd-50 border border-dd-200 rounded-lg px-4 py-3 flex items-center gap-2">
-                <svg className="w-4 h-4 text-dd-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-                <span className="text-sm text-dd-600">Email:</span>
-                <span className="text-sm font-semibold text-dd-950">{generatedEmail}</span>
-              </div>
-            )}
+              {generatedEmail && (
+                <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-4 py-3 text-sm">
+                  <Mail className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-muted-foreground">Email:</span>
+                  <span className="font-semibold">{generatedEmail}</span>
+                </div>
+              )}
 
-            {/* DOB */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[12px] uppercase tracking-wider text-dd-600 font-semibold">Date of Birth</label>
+              <div className="space-y-2">
+                <Label>Date of Birth</Label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="MM"
+                    value={provDobMonth}
+                    onChange={(e) =>
+                      setProvDobMonth(
+                        e.target.value.replace(/\D/g, "").slice(0, 2)
+                      )
+                    }
+                    maxLength={2}
+                    className="w-16 text-center"
+                  />
+                  <Input
+                    placeholder="DD"
+                    value={provDobDay}
+                    onChange={(e) =>
+                      setProvDobDay(
+                        e.target.value.replace(/\D/g, "").slice(0, 2)
+                      )
+                    }
+                    maxLength={2}
+                    className="w-16 text-center"
+                  />
+                  <Input
+                    placeholder="YYYY"
+                    value={provDobYear}
+                    onChange={(e) =>
+                      setProvDobYear(
+                        e.target.value.replace(/\D/g, "").slice(0, 4)
+                      )
+                    }
+                    maxLength={4}
+                    className="w-20 text-center"
+                  />
+                </div>
+              </div>
+
               <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="MM"
-                  value={provDobMonth}
-                  onChange={(e) => setProvDobMonth(e.target.value.replace(/\D/g, "").slice(0, 2))}
-                  maxLength={2}
-                  className="w-16 px-3 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 text-center placeholder:text-dd-500 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
-                />
-                <input
-                  type="text"
-                  placeholder="DD"
-                  value={provDobDay}
-                  onChange={(e) => setProvDobDay(e.target.value.replace(/\D/g, "").slice(0, 2))}
-                  maxLength={2}
-                  className="w-16 px-3 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 text-center placeholder:text-dd-500 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
-                />
-                <input
-                  type="text"
-                  placeholder="YYYY"
-                  value={provDobYear}
-                  onChange={(e) => setProvDobYear(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                  maxLength={4}
-                  className="w-20 px-3 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 text-center placeholder:text-dd-500 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
-                />
+                <Button type="submit" disabled={provisioning}>
+                  {provisioning && (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+                  {provisioning ? "Provisioning..." : "Create Customer"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={resetProvisionForm}
+                >
+                  Cancel
+                </Button>
               </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                type="submit"
-                disabled={provisioning}
-                className="bg-dd-red text-white px-6 py-2.5 rounded-dd-pill text-sm hover:bg-dd-red-hover font-semibold disabled:opacity-50 transition-colors"
-              >
-                {provisioning ? "Provisioning..." : "Create Customer"}
-              </button>
-              <button
-                type="button"
-                onClick={resetProvisionForm}
-                className="border border-dd-950 text-dd-950 px-5 py-2.5 rounded-dd-pill text-sm hover:bg-dd-100 font-semibold transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        </div>
+            </form>
+          </CardContent>
+        </Card>
       )}
 
       {/* Provision Result */}
@@ -428,127 +613,223 @@ export default function PortalUsersPage() {
         />
       )}
 
-      {/* Manual Create Form */}
-      {showManual && (
-        <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 p-6">
-          <h2 className="text-[12px] uppercase tracking-wider text-dd-600 font-semibold mb-5">Manual Portal User Create</h2>
-          <form onSubmit={createUser} className="flex gap-3 flex-wrap items-end">
-            <input
-              type="email" placeholder="Email" value={manualEmail}
-              onChange={(e) => setManualEmail(e.target.value)} required
-              className="px-4 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 placeholder:text-dd-600 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
-            />
-            <input
-              type="password" placeholder="Password" value={manualPassword}
-              onChange={(e) => setManualPassword(e.target.value)} required
-              className="px-4 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 placeholder:text-dd-600 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
-            />
-            <input
-              type="text" placeholder="Display Name" value={manualName}
-              onChange={(e) => setManualName(e.target.value)}
-              className="px-4 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 placeholder:text-dd-600 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
-            />
-            <button type="submit" disabled={creating}
-              className="bg-dd-red text-white px-5 py-2.5 rounded-dd-pill text-sm hover:bg-dd-red-hover font-semibold disabled:opacity-50 transition-colors">
-              {creating ? "Creating..." : "Create"}
-            </button>
-            <button type="button" onClick={() => setShowManual(false)}
-              className="border border-dd-950 text-dd-950 px-5 py-2.5 rounded-dd-pill text-sm hover:bg-dd-100 font-semibold transition-colors">
-              Cancel
-            </button>
-          </form>
-        </div>
-      )}
-
       {/* Search */}
-      <input
-        type="text"
-        placeholder="Search customers..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="w-full px-4 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 placeholder:text-dd-600 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
-      />
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search customers..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-9"
+        />
+      </div>
 
       {/* Users Table */}
-      <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 overflow-hidden">
-        <table className="w-full">
-          <thead>
-            <tr className="bg-dd-50">
-              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">First Name</th>
-              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Middle Name</th>
-              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Last Name</th>
-              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Email</th>
-              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Status</th>
-              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">DOB</th>
-              <th className="px-4 py-3"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((u) => (
-              <tr key={u.id} className="hover:bg-dd-50 transition-colors">
-                <td className="px-4 py-3 text-sm text-dd-950 font-medium border-b border-dd-200">
-                  {u.first_name || "--"}
-                </td>
-                <td className="px-4 py-3 text-sm text-dd-600 border-b border-dd-200">
-                  {u.middle_name || "--"}
-                </td>
-                <td className="px-4 py-3 text-sm text-dd-950 font-medium border-b border-dd-200">
-                  {u.last_name || "--"}
-                </td>
-                <td className="px-4 py-3 text-sm text-dd-800 border-b border-dd-200">{u.email}</td>
-                <td className="px-4 py-3 border-b border-dd-200">
-                  <span className={`px-2.5 py-1 rounded-dd-pill text-xs font-semibold ${
-                    u.is_active ? "bg-[#E5F9EB] text-[#004C1B]" : "bg-dd-red-lighter text-dd-red-active"
-                  }`}>
-                    {u.is_active ? "Active" : "Disabled"}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-sm text-dd-600 border-b border-dd-200">
-                  {u.date_of_birth
-                    ? (() => {
-                        const [y, m, d] = u.date_of_birth.split("-");
-                        return `${m}/${d}/${y}`;
-                      })()
-                    : "--"}
-                </td>
-                <td className="px-4 py-3 text-right border-b border-dd-200">
-                  <div className="flex items-center justify-end gap-2">
-                    <Link
-                      to={`/emails/${encodeURIComponent(u.email)}`}
-                      className="px-3 py-1 rounded-dd-pill text-xs font-semibold border border-dd-950 text-dd-950 hover:bg-dd-100 transition-colors"
+      {loading ? (
+        <UsersTableSkeleton />
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Display Name</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Last Login</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="w-[60px]" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {users.map((u) => (
+                  <TableRow key={u.id}>
+                    <TableCell className="font-medium">
+                      <Link
+                        to={`/emails/${encodeURIComponent(u.email)}`}
+                        className="hover:underline"
+                      >
+                        {u.email}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      {u.display_name ||
+                        [u.first_name, u.middle_name, u.last_name]
+                          .filter(Boolean)
+                          .join(" ") ||
+                        "--"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={u.is_active ? "default" : "destructive"}
+                        className={
+                          u.is_active
+                            ? "bg-green-100 text-green-800 hover:bg-green-100 border-transparent"
+                            : ""
+                        }
+                      >
+                        {u.is_active ? "Active" : "Disabled"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {formatDate(u.last_login_at)}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {formatDate(u.created_at)}
+                    </TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="h-4 w-4" />
+                            <span className="sr-only">Open menu</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem asChild>
+                            <Link to={`/emails/${encodeURIComponent(u.email)}`}>
+                              <Mail className="h-4 w-4" />
+                              View Emails
+                            </Link>
+                          </DropdownMenuItem>
+                          {canManage && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => resetPassword(u.email)}
+                              >
+                                <KeyRound className="h-4 w-4" />
+                                Reset Password
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => toggleActive(u)}
+                              >
+                                {u.is_active ? (
+                                  <ToggleLeft className="h-4 w-4" />
+                                ) : (
+                                  <ToggleRight className="h-4 w-4" />
+                                )}
+                                {u.is_active ? "Disable" : "Enable"}
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => setDeleteTarget(u.email)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {users.length === 0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={6}
+                      className="h-32 text-center text-muted-foreground"
                     >
-                      Emails
-                    </Link>
-                    {canManage && (
-                      <>
-                        <button onClick={() => resetPassword(u.email)}
-                          className="px-3 py-1 rounded-dd-pill text-xs font-semibold border border-dd-950 text-dd-950 hover:bg-dd-100 transition-colors">
-                          Reset Pwd
-                        </button>
-                        <button onClick={() => toggleActive(u)}
-                          className="px-3 py-1 rounded-dd-pill text-xs font-semibold border border-dd-950 text-dd-950 hover:bg-dd-100 transition-colors">
-                          {u.is_active ? "Disable" : "Enable"}
-                        </button>
-                        <button onClick={() => deleteUser(u.email)}
-                          className="px-3 py-1 rounded-dd-pill text-xs font-semibold text-dd-red border border-dd-red hover:bg-dd-red-lighter transition-colors">
-                          Delete
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {users.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-dd-600 text-sm">
-                  No customers found
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+                      No customers found
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Manual Create Dialog */}
+      <Dialog open={showManual} onOpenChange={setShowManual}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Manual Portal User Create</DialogTitle>
+            <DialogDescription>
+              Create a portal user with custom email and password.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={createUser} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="manual-email">Email *</Label>
+              <Input
+                id="manual-email"
+                type="email"
+                placeholder="user@example.com"
+                value={manualEmail}
+                onChange={(e) => setManualEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="manual-password">Password *</Label>
+              <Input
+                id="manual-password"
+                type="password"
+                placeholder="Password"
+                value={manualPassword}
+                onChange={(e) => setManualPassword(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="manual-name">Display Name</Label>
+              <Input
+                id="manual-name"
+                type="text"
+                placeholder="John Doe"
+                value={manualName}
+                onChange={(e) => setManualName(e.target.value)}
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowManual(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={creating}>
+                {creating && <Loader2 className="h-4 w-4 animate-spin" />}
+                {creating ? "Creating..." : "Create"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Portal User</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete{" "}
+              <span className="font-semibold">{deleteTarget}</span>? This action
+              cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={deleting}
+            >
+              {deleting && <Loader2 className="h-4 w-4 animate-spin" />}
+              {deleting ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

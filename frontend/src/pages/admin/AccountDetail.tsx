@@ -1,72 +1,438 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { api } from "../../api/client";
+import { api } from "@/api/client";
+import {
+  ArrowLeft,
+  User,
+  Clock,
+  BarChart3,
+  AlertTriangle,
+  ArrowRight,
+  Search,
+  X,
+  Loader2,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+} from "lucide-react";
+import type { Account, HistoryEntry, Admin, Analysis } from "@/types";
+import { STAGE_COLORS, STAGE_BADGE, STATUS_BADGE } from "@/types";
 
-const STAGE_COLORS: Record<string, { active: string; bar: string }> = {
-  REGISTERED: { active: "bg-dd-400", bar: "bg-dd-300" },
-  IDENTITY_VERIFIED: { active: "bg-blue-500", bar: "bg-blue-400" },
-  BGC_PENDING: { active: "bg-yellow-500", bar: "bg-yellow-400" },
-  BGC_CLEAR: { active: "bg-emerald-500", bar: "bg-emerald-400" },
-  BGC_CONSIDER: { active: "bg-orange-500", bar: "bg-orange-400" },
-  ACTIVE: { active: "bg-dd-red", bar: "bg-dd-red" },
-  DEACTIVATED: { active: "bg-red-600", bar: "bg-red-500" },
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
+const STAGES = [
+  "REGISTERED",
+  "IDENTITY_VERIFIED",
+  "BGC_PENDING",
+  "BGC_CLEAR",
+  "BGC_CONSIDER",
+  "ACTIVE",
+  "DEACTIVATED",
+];
+
+const CATEGORY_COLORS: Record<string, string> = {
+  bgc: "bg-purple-100 text-purple-700",
+  account: "bg-blue-100 text-blue-700",
+  earnings: "bg-emerald-100 text-emerald-700",
+  operational: "bg-dd-200 text-dd-700",
+  warning: "bg-dd-red-light text-dd-red",
+  unknown: "bg-yellow-100 text-yellow-700",
 };
 
-const STAGE_BADGE: Record<string, string> = {
-  REGISTERED: "bg-dd-200 text-dd-800",
-  IDENTITY_VERIFIED: "bg-blue-100 text-blue-700",
-  BGC_PENDING: "bg-yellow-100 text-yellow-700",
-  BGC_CLEAR: "bg-emerald-100 text-emerald-700",
-  BGC_CONSIDER: "bg-orange-100 text-orange-700",
-  ACTIVE: "bg-dd-red-lighter text-dd-red",
-  DEACTIVATED: "bg-red-100 text-red-700",
+const URGENCY_COLORS: Record<string, string> = {
+  critical: "text-red-600 font-bold",
+  high: "text-orange-600 font-semibold",
+  medium: "text-yellow-600 font-medium",
+  low: "text-dd-600",
+  info: "text-blue-500",
 };
 
-const STATUS_BADGE: Record<string, string> = {
-  active: "bg-emerald-100 text-emerald-700",
-  suspended: "bg-yellow-100 text-yellow-700",
-  archived: "bg-dd-200 text-dd-700",
-};
+// --- Loading Skeleton ---
 
-interface Account {
-  id: string;
-  email: string;
-  stage: string;
-  stage_updated_at: string | null;
-  last_scanned_at: string | null;
-  scan_error: string | null;
-  notes: string | null;
-  created_at: string;
-  customer_name: string | null;
-  phone: string | null;
-  tags: string[];
-  status: string;
-  assigned_admin_id: string | null;
+function AccountDetailSkeleton() {
+  return (
+    <div className="p-6 lg:p-8 max-w-5xl mx-auto space-y-6">
+      <Skeleton className="h-4 w-36" />
+      <div className="flex items-start justify-between">
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-64" />
+          <Skeleton className="h-4 w-40" />
+        </div>
+        <Skeleton className="h-6 w-28 rounded-full" />
+      </div>
+      <Card>
+        <CardContent className="p-6">
+          <Skeleton className="h-3 w-32 mb-4" />
+          <div className="flex gap-1.5">
+            {STAGES.map((s) => (
+              <Skeleton key={s} className="h-2 flex-1 rounded-full" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[1, 2, 3, 4].map((i) => (
+          <Card key={i}>
+            <CardContent className="p-4 space-y-2">
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-5 w-28" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <Skeleton className="h-10 w-72" />
+      <Card>
+        <CardContent className="p-6 space-y-4">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-10 w-full" />
+          ))}
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
-interface HistoryEntry {
-  id: number;
-  old_stage: string | null;
-  new_stage: string;
-  trigger_email_subject: string | null;
-  trigger_email_date: string | null;
-  changed_at: string;
+// --- History Timeline Entry ---
+
+function HistoryTimelineEntry({ entry }: { entry: HistoryEntry }) {
+  return (
+    <div className="flex gap-4">
+      <div className="flex flex-col items-center">
+        <div className="w-3 h-3 rounded-full bg-primary border-2 border-background shadow" />
+        <Separator orientation="vertical" className="flex-1 my-1" />
+      </div>
+      <Card className="flex-1 mb-4">
+        <CardContent className="p-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            {entry.old_stage ? (
+              <Badge className={STAGE_BADGE[entry.old_stage] || "bg-dd-200 text-dd-800"}>
+                {entry.old_stage.replace(/_/g, " ")}
+              </Badge>
+            ) : (
+              <span className="text-xs text-muted-foreground">--</span>
+            )}
+            <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+            <Badge className={STAGE_BADGE[entry.new_stage] || "bg-dd-200 text-dd-800"}>
+              {entry.new_stage.replace(/_/g, " ")}
+            </Badge>
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            {new Date(entry.changed_at).toLocaleString()}
+          </p>
+          {entry.trigger_email_subject && (
+            <p className="text-xs text-muted-foreground mt-1 truncate">
+              Trigger: {entry.trigger_email_subject}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
-interface Admin {
-  id: string;
-  username: string;
-  display_name: string | null;
+// --- Analysis Tab ---
+
+function AnalysisTab({ accountId, email }: { accountId: string; email: string }) {
+  const [analyses, setAnalyses] = useState<Analysis[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("");
+  const [urgency, setUrgency] = useState("");
+  const [source, setSource] = useState("");
+  const [actionRequired, setActionRequired] = useState<boolean | null>(null);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const perPage = 50;
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filter, urgency, source, actionRequired, debouncedSearch]);
+
+  async function loadAnalyses() {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (filter) params.set("category", filter);
+      if (urgency) params.set("urgency", urgency);
+      if (source) params.set("source", source);
+      if (actionRequired !== null) params.set("action_required", String(actionRequired));
+      if (debouncedSearch) params.set("search", debouncedSearch);
+      params.set("page", String(page));
+      params.set("per_page", String(perPage));
+
+      const qs = params.toString();
+      const data = await api.get<{ analyses: Analysis[]; total: number; page: number; per_page: number }>(
+        `/api/analysis/account/${accountId}?${qs}`
+      );
+      setAnalyses(data.analyses);
+      setTotal(data.total);
+    } catch {
+      setAnalyses([]);
+      setTotal(0);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadAnalyses();
+  }, [accountId, filter, urgency, source, actionRequired, debouncedSearch, page]);
+
+  const hasFilters = !!(urgency || source || actionRequired !== null || debouncedSearch);
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+
+  const categoryCounts: Record<string, number> = {};
+  for (const a of analyses) {
+    categoryCounts[a.category] = (categoryCounts[a.category] || 0) + 1;
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Category filter chips */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button
+          variant={!filter ? "default" : "outline"}
+          size="sm"
+          onClick={() => setFilter("")}
+        >
+          All {!hasFilters ? `(${total})` : ""}
+        </Button>
+        {Object.entries(categoryCounts).map(([cat, count]) => (
+          <Badge
+            key={cat}
+            className={`cursor-pointer ${CATEGORY_COLORS[cat] || "bg-dd-200 text-dd-700"} ${
+              filter === cat ? "ring-2 ring-primary ring-offset-1" : ""
+            }`}
+            onClick={() => setFilter(cat === filter ? "" : cat)}
+          >
+            {cat} ({count})
+          </Badge>
+        ))}
+      </div>
+
+      {/* Advanced filters */}
+      <Card>
+        <CardContent className="p-3 flex items-center gap-3 flex-wrap">
+          <Select value={urgency} onValueChange={setUrgency}>
+            <SelectTrigger className="w-[140px] h-8 text-xs">
+              <SelectValue placeholder="All Urgency" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Urgency</SelectItem>
+              <SelectItem value="critical">Critical</SelectItem>
+              <SelectItem value="high">High</SelectItem>
+              <SelectItem value="medium">Medium</SelectItem>
+              <SelectItem value="low">Low</SelectItem>
+              <SelectItem value="info">Info</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={source} onValueChange={setSource}>
+            <SelectTrigger className="w-[140px] h-8 text-xs">
+              <SelectValue placeholder="All Sources" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Sources</SelectItem>
+              <SelectItem value="rules">Rules</SelectItem>
+              <SelectItem value="rules_dedup">Rules (Dedup)</SelectItem>
+              <SelectItem value="ai">AI</SelectItem>
+              <SelectItem value="ai_dedup">AI (Dedup)</SelectItem>
+              <SelectItem value="manual">Manual</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={actionRequired === true}
+              onChange={(e) => setActionRequired(e.target.checked ? true : null)}
+              className="rounded border-input text-primary focus:ring-primary"
+            />
+            Action Required
+          </label>
+
+          <div className="relative flex-1 min-w-[180px]">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search summary..."
+              className="pl-8 h-8 text-xs"
+            />
+          </div>
+
+          {hasFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setUrgency(""); setSource(""); setActionRequired(null); setSearch(""); }}
+            >
+              Clear filters
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* View emails link */}
+      <div className="text-right">
+        <Button variant="link" asChild className="text-primary">
+          <Link to={`/emails/${encodeURIComponent(email)}`}>
+            View All Emails
+            <ExternalLink className="h-3.5 w-3.5 ml-1" />
+          </Link>
+        </Button>
+      </div>
+
+      {/* Analysis table */}
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          <span className="ml-2 text-sm text-muted-foreground">Loading analyses...</span>
+        </div>
+      ) : (
+        <Card>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Category</TableHead>
+                <TableHead>Summary</TableHead>
+                <TableHead>Urgency</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead>Confidence</TableHead>
+                <TableHead>Date</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {analyses.map((a) => (
+                <TableRow key={a.id}>
+                  <TableCell>
+                    <Badge className={CATEGORY_COLORS[a.category] || "bg-dd-200 text-dd-700"}>
+                      {a.category}/{a.sub_category}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="max-w-xs truncate text-muted-foreground">
+                    {a.summary}
+                  </TableCell>
+                  <TableCell>
+                    <span className={`text-xs ${URGENCY_COLORS[a.urgency] || "text-muted-foreground"}`}>
+                      {a.urgency.toUpperCase()}
+                      {a.action_required && (
+                        <Badge variant="destructive" className="ml-1.5 text-[10px] px-1.5 py-0">
+                          ACTION
+                        </Badge>
+                      )}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {a.analysis_source}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary rounded-full"
+                          style={{ width: `${Math.round(a.confidence * 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {Math.round(a.confidence * 100)}%
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {new Date(a.created_at).toLocaleString()}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {analyses.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-12">
+                    <p className="text-sm text-muted-foreground">
+                      {hasFilters ? "No analyses match your filters" : "No email analyses yet"}
+                    </p>
+                    <p className="text-xs text-muted-foreground/60 mt-1">
+                      {hasFilters ? "Try adjusting your filter criteria" : "Run a scan to analyze emails for this account"}
+                    </p>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+
+          {/* Pagination */}
+          {total > perPage && (
+            <div className="flex items-center justify-between px-4 py-3 border-t">
+              <span className="text-xs text-muted-foreground">
+                Showing {(page - 1) * perPage + 1}-{Math.min(page * perPage, total)} of {total}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Prev
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  {page} / {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+    </div>
+  );
 }
 
-type Tab = "info" | "history" | "analysis";
+// --- Main Component ---
 
 export default function AccountDetail() {
   const { email } = useParams<{ email: string }>();
   const [account, setAccount] = useState<Account | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [admins, setAdmins] = useState<Admin[]>([]);
-  const [activeTab, setActiveTab] = useState<Tab>("info");
   const [error, setError] = useState("");
 
   // Edit form state
@@ -134,7 +500,7 @@ export default function AccountDetail() {
   }
 
   function removeTag(tag: string) {
-    setTags(tags.filter((t) => t !== tag));
+    setTags(tags.filter((tg) => tg !== tag));
   }
 
   useEffect(() => {
@@ -142,132 +508,84 @@ export default function AccountDetail() {
     loadAdmins();
   }, [email]);
 
-  if (error)
+  if (error) {
     return (
       <div className="p-8">
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded-dd p-4 text-sm">
-          {error}
-        </div>
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       </div>
     );
+  }
 
-  if (!account)
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="flex items-center gap-3 text-dd-500">
-          <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-          <span className="text-sm">Loading account...</span>
-        </div>
-      </div>
-    );
+  if (!account) {
+    return <AccountDetailSkeleton />;
+  }
 
-  const STAGES = [
-    "REGISTERED",
-    "IDENTITY_VERIFIED",
-    "BGC_PENDING",
-    "BGC_CLEAR",
-    "BGC_CONSIDER",
-    "ACTIVE",
-    "DEACTIVATED",
-  ];
   const currentIndex = STAGES.indexOf(account.stage);
-
-  const tabs: { key: Tab; label: string; icon: JSX.Element }[] = [
-    {
-      key: "info",
-      label: "Account Info",
-      icon: (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-        </svg>
-      ),
-    },
-    {
-      key: "history",
-      label: "Stage History",
-      icon: (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-      ),
-    },
-    {
-      key: "analysis",
-      label: "Email Analysis",
-      icon: (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-        </svg>
-      ),
-    },
-  ];
 
   return (
     <div className="p-6 lg:p-8 max-w-5xl mx-auto space-y-6">
       {/* Back link */}
-      <Link
-        to="/"
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-dd-red hover:text-dd-red-hover transition-colors"
-      >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-        </svg>
-        Back to Dashboard
-      </Link>
+      <Button variant="link" asChild className="p-0 h-auto text-primary">
+        <Link to="/">
+          <ArrowLeft className="h-4 w-4" />
+          Back to Dashboard
+        </Link>
+      </Button>
 
       {/* Page header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-dd-950">{account.email}</h1>
+          <h1 className="text-2xl font-bold">{account.email}</h1>
           {account.customer_name && (
-            <p className="text-sm text-dd-600 mt-1">{account.customer_name}</p>
+            <p className="text-sm text-muted-foreground mt-1">{account.customer_name}</p>
           )}
         </div>
-        <span
-          className={`inline-flex items-center px-3 py-1 rounded-dd-pill text-xs font-semibold ${
-            STAGE_BADGE[account.stage] || "bg-dd-200 text-dd-800"
-          }`}
-        >
+        <Badge className={STAGE_BADGE[account.stage] || "bg-dd-200 text-dd-800"}>
           {account.stage.replace(/_/g, " ")}
-        </span>
+        </Badge>
       </div>
 
       {/* Stage Progression Bar */}
-      <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 p-6">
-        <h2 className="uppercase text-[12px] font-semibold text-dd-600 tracking-wider mb-4">
-          Stage Progression
-        </h2>
-        <div className="flex items-center gap-1.5">
-          {STAGES.map((s, i) => {
-            const isCurrent = s === account.stage;
-            const isPast = i <= currentIndex;
-            const colors = STAGE_COLORS[s] || { active: "bg-dd-300", bar: "bg-dd-200" };
-            return (
-              <div key={s} className="flex-1">
-                <div
-                  className={`h-2 rounded-full transition-all ${
-                    isPast ? colors.bar : "bg-dd-200"
-                  } ${isCurrent ? `${colors.active} ring-2 ring-offset-1 ring-${colors.active}` : ""}`}
-                />
-                <div
-                  className={`text-[10px] mt-1.5 text-center leading-tight ${
-                    isCurrent
-                      ? "font-bold text-dd-950"
-                      : isPast
-                      ? "font-medium text-dd-700"
-                      : "text-dd-400"
-                  }`}
-                >
-                  {s.replace(/_/g, " ")}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="uppercase text-[12px] font-semibold text-muted-foreground tracking-wider">
+            Stage Progression
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-1.5">
+            {STAGES.map((s, i) => {
+              const isCurrent = s === account.stage;
+              const isPast = i <= currentIndex;
+              const colors = STAGE_COLORS[s] || { active: "bg-dd-300", bar: "bg-dd-200" };
+              return (
+                <div key={s} className="flex-1">
+                  <div
+                    className={`h-2 rounded-full transition-all ${
+                      isPast ? colors.bar : "bg-muted"
+                    } ${isCurrent ? `${colors.active} ring-2 ring-offset-1 ring-primary` : ""}`}
+                  />
+                  <div
+                    className={`text-[10px] mt-1.5 text-center leading-tight ${
+                      isCurrent
+                        ? "font-bold text-foreground"
+                        : isPast
+                        ? "font-medium text-muted-foreground"
+                        : "text-muted-foreground/50"
+                    }`}
+                  >
+                    {s.replace(/_/g, " ")}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Info Grid Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -290,606 +608,186 @@ export default function AccountDetail() {
           },
           {
             label: "Created",
-            value: new Date(account.created_at).toLocaleString(),
+            value: account.created_at
+              ? new Date(account.created_at).toLocaleString()
+              : "--",
           },
         ].map((item) => (
-          <div
-            key={item.label}
-            className="bg-white rounded-dd shadow-dd-md border border-dd-200 p-4"
-          >
-            <div className="uppercase text-[11px] font-semibold text-dd-500 tracking-wider">
-              {item.label}
-            </div>
-            {item.badge ? (
-              <span
-                className={`inline-flex items-center mt-2 px-2.5 py-0.5 rounded-dd-pill text-xs font-semibold ${item.badge}`}
-              >
-                {item.value}
-              </span>
-            ) : (
-              <div className="text-sm font-medium text-dd-950 mt-2">{item.value}</div>
-            )}
-          </div>
+          <Card key={item.label}>
+            <CardContent className="p-4">
+              <p className="uppercase text-[11px] font-semibold text-muted-foreground tracking-wider">
+                {item.label}
+              </p>
+              {item.badge ? (
+                <Badge className={`mt-2 ${item.badge}`}>{item.value}</Badge>
+              ) : (
+                <p className="text-sm font-medium mt-2">{item.value}</p>
+              )}
+            </CardContent>
+          </Card>
         ))}
       </div>
 
       {/* Scan Error Alert */}
       {account.scan_error && (
-        <div className="bg-dd-red-light border border-dd-red-lighter rounded-dd p-4 flex items-start gap-3">
-          <svg className="w-5 h-5 text-dd-red flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
-          </svg>
-          <div>
-            <div className="text-sm font-semibold text-dd-red">Last Scan Error</div>
-            <div className="text-sm text-dd-800 mt-0.5">{account.scan_error}</div>
-          </div>
-        </div>
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Last Scan Error</AlertTitle>
+          <AlertDescription>{account.scan_error}</AlertDescription>
+        </Alert>
       )}
 
       {/* Tabs */}
-      <div className="border-b border-dd-200">
-        <div className="flex gap-0">
-          {tabs.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setActiveTab(t.key)}
-              className={`flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === t.key
-                  ? "border-dd-red text-dd-red"
-                  : "border-transparent text-dd-600 hover:text-dd-950 hover:border-dd-300"
-              }`}
-            >
-              {t.icon}
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <Tabs defaultValue="info">
+        <TabsList>
+          <TabsTrigger value="info" className="gap-2">
+            <User className="h-4 w-4" />
+            Account Info
+          </TabsTrigger>
+          <TabsTrigger value="history" className="gap-2">
+            <Clock className="h-4 w-4" />
+            Stage History
+          </TabsTrigger>
+          <TabsTrigger value="analysis" className="gap-2">
+            <BarChart3 className="h-4 w-4" />
+            Email Analysis
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Tab Content: Info */}
-      {activeTab === "info" && (
-        <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 p-6 space-y-6">
-          <h2 className="uppercase text-[12px] font-semibold text-dd-600 tracking-wider">
-            Account Details
-          </h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div>
-              <label className="block text-[12px] uppercase font-semibold text-dd-600 tracking-wider mb-1.5">
-                Customer Name
-              </label>
-              <input
-                type="text"
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                placeholder="Enter customer name"
-                className="w-full px-3.5 py-2.5 border border-dd-300 rounded-dd text-sm text-dd-950 placeholder:text-dd-400 focus:ring-2 focus:ring-dd-red focus:border-dd-red focus:outline-none transition-colors"
-              />
-            </div>
-            <div>
-              <label className="block text-[12px] uppercase font-semibold text-dd-600 tracking-wider mb-1.5">
-                Phone
-              </label>
-              <input
-                type="text"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="Enter phone number"
-                className="w-full px-3.5 py-2.5 border border-dd-300 rounded-dd text-sm text-dd-950 placeholder:text-dd-400 focus:ring-2 focus:ring-dd-red focus:border-dd-red focus:outline-none transition-colors"
-              />
-            </div>
-            <div>
-              <label className="block text-[12px] uppercase font-semibold text-dd-600 tracking-wider mb-1.5">
-                Status
-              </label>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="w-full px-3.5 py-2.5 border border-dd-300 rounded-dd text-sm text-dd-950 focus:ring-2 focus:ring-dd-red focus:border-dd-red focus:outline-none transition-colors bg-white"
-              >
-                <option value="active">Active</option>
-                <option value="suspended">Suspended</option>
-                <option value="archived">Archived</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-[12px] uppercase font-semibold text-dd-600 tracking-wider mb-1.5">
-                Assigned Admin
-              </label>
-              <select
-                value={assignedAdmin}
-                onChange={(e) => setAssignedAdmin(e.target.value)}
-                className="w-full px-3.5 py-2.5 border border-dd-300 rounded-dd text-sm text-dd-950 focus:ring-2 focus:ring-dd-red focus:border-dd-red focus:outline-none transition-colors bg-white"
-              >
-                <option value="">Unassigned</option>
-                {admins.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.display_name || a.username}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Tags */}
-          <div>
-            <label className="block text-[12px] uppercase font-semibold text-dd-600 tracking-wider mb-2">
-              Tags
-            </label>
-            <div className="flex flex-wrap gap-2 mb-3">
-              {tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="inline-flex items-center gap-1.5 bg-dd-100 text-dd-800 rounded-dd-pill px-3 py-1 text-xs font-medium"
-                >
-                  {tag}
-                  <button
-                    onClick={() => removeTag(tag)}
-                    className="text-dd-500 hover:text-dd-red transition-colors"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </span>
-              ))}
-              {tags.length === 0 && (
-                <span className="text-xs text-dd-400">No tags added</span>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addTag())}
-                placeholder="Add a tag..."
-                className="px-3.5 py-2 border border-dd-300 rounded-dd text-sm text-dd-950 placeholder:text-dd-400 focus:ring-2 focus:ring-dd-red focus:border-dd-red focus:outline-none transition-colors"
-              />
-              <button
-                onClick={addTag}
-                className="px-4 py-2 border border-dd-950 text-dd-950 text-sm font-medium rounded-dd-pill hover:bg-dd-950 hover:text-white transition-colors"
-              >
-                Add
-              </button>
-            </div>
-          </div>
-
-          {/* Notes */}
-          <div>
-            <label className="block text-[12px] uppercase font-semibold text-dd-600 tracking-wider mb-1.5">
-              Notes
-            </label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={3}
-              placeholder="Add notes about this account..."
-              className="w-full border border-dd-300 rounded-dd px-3.5 py-2.5 text-sm text-dd-950 placeholder:text-dd-400 focus:ring-2 focus:ring-dd-red focus:border-dd-red focus:outline-none transition-colors resize-none"
-            />
-          </div>
-
-          {/* Save Button */}
-          <div className="flex items-center gap-3 pt-2">
-            <button
-              onClick={saveAccount}
-              disabled={saving}
-              className="bg-dd-red text-white px-8 py-2.5 rounded-dd-pill text-sm font-semibold hover:bg-dd-red-hover active:bg-dd-red-active disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-dd-sm"
-            >
-              {saving ? (
-                <span className="flex items-center gap-2">
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Saving...
-                </span>
-              ) : (
-                "Save Changes"
-              )}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Tab Content: History */}
-      {activeTab === "history" && (
-        <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-dd-50 border-b border-dd-200">
-              <tr>
-                <th className="text-left px-5 py-3.5 uppercase text-[12px] text-dd-600 font-semibold tracking-wider">
-                  Date
-                </th>
-                <th className="text-left px-5 py-3.5 uppercase text-[12px] text-dd-600 font-semibold tracking-wider">
-                  From
-                </th>
-                <th className="text-left px-5 py-3.5 uppercase text-[12px] text-dd-600 font-semibold tracking-wider">
-                  To
-                </th>
-                <th className="text-left px-5 py-3.5 uppercase text-[12px] text-dd-600 font-semibold tracking-wider">
-                  Trigger Email
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-dd-200">
-              {history.map((h) => (
-                <tr key={h.id} className="hover:bg-dd-50 transition-colors">
-                  <td className="px-5 py-3.5 text-dd-600 text-xs">
-                    {new Date(h.changed_at).toLocaleString()}
-                  </td>
-                  <td className="px-5 py-3.5">
-                    {h.old_stage ? (
-                      <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-dd-pill text-xs font-medium ${
-                          STAGE_BADGE[h.old_stage] || "bg-dd-200 text-dd-800"
-                        }`}
-                      >
-                        {h.old_stage.replace(/_/g, " ")}
-                      </span>
-                    ) : (
-                      <span className="text-dd-400 text-xs">--</span>
-                    )}
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-dd-pill text-xs font-semibold ${
-                        STAGE_BADGE[h.new_stage] || "bg-dd-200 text-dd-800"
-                      }`}
-                    >
-                      {h.new_stage.replace(/_/g, " ")}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5 text-dd-600 text-xs max-w-xs truncate">
-                    {h.trigger_email_subject || (
-                      <span className="text-dd-400">--</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {history.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-5 py-12 text-center">
-                    <div className="text-dd-400 text-sm">No stage changes recorded</div>
-                    <div className="text-dd-300 text-xs mt-1">
-                      Changes will appear here as the account progresses
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Tab Content: Analysis */}
-      {activeTab === "analysis" && (
-        <AnalysisTab accountId={account.id} email={account.email} />
-      )}
-    </div>
-  );
-}
-
-// --- Email Analysis Tab ---
-
-interface Analysis {
-  id: number;
-  message_id: string;
-  category: string;
-  sub_category: string;
-  confidence: number;
-  analysis_source: string;
-  summary: string;
-  urgency: string;
-  action_required: boolean;
-  created_at: string;
-}
-
-const CATEGORY_COLORS: Record<string, string> = {
-  bgc: "bg-purple-100 text-purple-700",
-  account: "bg-blue-100 text-blue-700",
-  earnings: "bg-emerald-100 text-emerald-700",
-  operational: "bg-dd-200 text-dd-700",
-  warning: "bg-dd-red-light text-dd-red",
-  unknown: "bg-yellow-100 text-yellow-700",
-};
-
-const URGENCY_COLORS: Record<string, string> = {
-  critical: "text-red-600 font-bold",
-  high: "text-orange-600 font-semibold",
-  medium: "text-yellow-600 font-medium",
-  low: "text-dd-600",
-  info: "text-blue-500",
-};
-
-function AnalysisTab({ accountId, email }: { accountId: string; email: string }) {
-  const [analyses, setAnalyses] = useState<Analysis[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("");
-  const [urgency, setUrgency] = useState("");
-  const [source, setSource] = useState("");
-  const [actionRequired, setActionRequired] = useState<boolean | null>(null);
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
-  const perPage = 50;
-
-  // Debounce search input
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 300);
-    return () => clearTimeout(timer);
-  }, [search]);
-
-  // Reset page when filters change
-  useEffect(() => {
-    setPage(1);
-  }, [filter, urgency, source, actionRequired, debouncedSearch]);
-
-  async function loadAnalyses() {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (filter) params.set("category", filter);
-      if (urgency) params.set("urgency", urgency);
-      if (source) params.set("source", source);
-      if (actionRequired !== null) params.set("action_required", String(actionRequired));
-      if (debouncedSearch) params.set("search", debouncedSearch);
-      params.set("page", String(page));
-      params.set("per_page", String(perPage));
-
-      const qs = params.toString();
-      const data = await api.get<{ analyses: Analysis[]; total: number; page: number; per_page: number }>(
-        `/api/analysis/account/${accountId}?${qs}`
-      );
-      setAnalyses(data.analyses);
-      setTotal(data.total);
-    } catch {
-      setAnalyses([]);
-      setTotal(0);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    loadAnalyses();
-  }, [accountId, filter, urgency, source, actionRequired, debouncedSearch, page]);
-
-  const hasFilters = !!(urgency || source || actionRequired !== null || debouncedSearch);
-  const totalPages = Math.max(1, Math.ceil(total / perPage));
-
-  // Count by category (page-level only when filters active)
-  const categoryCounts: Record<string, number> = {};
-  for (const a of analyses) {
-    categoryCounts[a.category] = (categoryCounts[a.category] || 0) + 1;
-  }
-
-  return (
-    <div className="space-y-4">
-      {/* Category filter chips */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <button
-          onClick={() => setFilter("")}
-          className={`px-4 py-1.5 rounded-dd-pill text-xs font-semibold transition-colors ${
-            !filter
-              ? "bg-dd-red text-white"
-              : "bg-white text-dd-700 border border-dd-300 hover:border-dd-950 hover:text-dd-950"
-          }`}
-        >
-          All {!hasFilters ? `(${total})` : ""}
-        </button>
-        {Object.entries(categoryCounts).map(([cat, count]) => (
-          <button
-            key={cat}
-            onClick={() => setFilter(cat === filter ? "" : cat)}
-            className={`px-4 py-1.5 rounded-dd-pill text-xs font-semibold transition-all ${
-              filter === cat
-                ? "ring-2 ring-dd-red ring-offset-1"
-                : ""
-            } ${CATEGORY_COLORS[cat] || "bg-dd-200 text-dd-700"}`}
-          >
-            {cat} ({count})
-          </button>
-        ))}
-      </div>
-
-      {/* Advanced filters bar */}
-      <div className="flex items-center gap-3 flex-wrap bg-dd-50 border border-dd-200 rounded-dd p-3">
-        <select
-          value={urgency}
-          onChange={(e) => setUrgency(e.target.value)}
-          className="px-3 py-1.5 border border-dd-300 rounded-dd text-xs text-dd-950 bg-white focus:ring-2 focus:ring-dd-red focus:border-dd-red focus:outline-none"
-        >
-          <option value="">All Urgency</option>
-          <option value="critical">Critical</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
-          <option value="info">Info</option>
-        </select>
-
-        <select
-          value={source}
-          onChange={(e) => setSource(e.target.value)}
-          className="px-3 py-1.5 border border-dd-300 rounded-dd text-xs text-dd-950 bg-white focus:ring-2 focus:ring-dd-red focus:border-dd-red focus:outline-none"
-        >
-          <option value="">All Sources</option>
-          <option value="rules">Rules</option>
-          <option value="rules_dedup">Rules (Dedup)</option>
-          <option value="ai">AI</option>
-          <option value="ai_dedup">AI (Dedup)</option>
-          <option value="manual">Manual</option>
-        </select>
-
-        <label className="inline-flex items-center gap-1.5 text-xs text-dd-700 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={actionRequired === true}
-            onChange={(e) => setActionRequired(e.target.checked ? true : null)}
-            className="rounded border-dd-300 text-dd-red focus:ring-dd-red"
-          />
-          Action Required
-        </label>
-
-        <div className="relative flex-1 min-w-[180px]">
-          <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-dd-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search summary..."
-            className="w-full pl-8 pr-3 py-1.5 border border-dd-300 rounded-dd text-xs text-dd-950 placeholder:text-dd-400 bg-white focus:ring-2 focus:ring-dd-red focus:border-dd-red focus:outline-none"
-          />
-        </div>
-
-        {hasFilters && (
-          <button
-            onClick={() => { setUrgency(""); setSource(""); setActionRequired(null); setSearch(""); }}
-            className="px-3 py-1.5 text-xs font-medium text-dd-600 hover:text-dd-red transition-colors"
-          >
-            Clear filters
-          </button>
-        )}
-      </div>
-
-      {/* View emails link */}
-      <div className="text-right">
-        <Link
-          to={`/emails/${encodeURIComponent(email)}`}
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-dd-red hover:text-dd-red-hover transition-colors"
-        >
-          View All Emails
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </Link>
-      </div>
-
-      {/* Analysis table */}
-      {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="flex items-center gap-3 text-dd-500">
-            <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-            <span className="text-sm">Loading analyses...</span>
-          </div>
-        </div>
-      ) : (
-        <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-dd-50 border-b border-dd-200">
-              <tr>
-                <th className="text-left px-5 py-3.5 uppercase text-[12px] text-dd-600 font-semibold tracking-wider">
-                  Category
-                </th>
-                <th className="text-left px-5 py-3.5 uppercase text-[12px] text-dd-600 font-semibold tracking-wider">
-                  Summary
-                </th>
-                <th className="text-left px-5 py-3.5 uppercase text-[12px] text-dd-600 font-semibold tracking-wider">
-                  Urgency
-                </th>
-                <th className="text-left px-5 py-3.5 uppercase text-[12px] text-dd-600 font-semibold tracking-wider">
-                  Source
-                </th>
-                <th className="text-left px-5 py-3.5 uppercase text-[12px] text-dd-600 font-semibold tracking-wider">
-                  Confidence
-                </th>
-                <th className="text-left px-5 py-3.5 uppercase text-[12px] text-dd-600 font-semibold tracking-wider">
-                  Date
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-dd-200">
-              {analyses.map((a) => (
-                <tr key={a.id} className="hover:bg-dd-50 transition-colors">
-                  <td className="px-5 py-3.5">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-dd-pill text-xs font-medium ${
-                        CATEGORY_COLORS[a.category] || "bg-dd-200 text-dd-700"
-                      }`}
-                    >
-                      {a.category}/{a.sub_category}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5 text-dd-800 max-w-xs truncate">{a.summary}</td>
-                  <td className="px-5 py-3.5">
-                    <span className={`text-xs ${URGENCY_COLORS[a.urgency] || "text-dd-600"}`}>
-                      {a.urgency.toUpperCase()}
-                      {a.action_required && (
-                        <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 bg-dd-red-light text-dd-red rounded-dd-pill text-[10px] font-bold">
-                          ACTION
-                        </span>
-                      )}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5 text-dd-600 text-xs">{a.analysis_source}</td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-12 h-1.5 bg-dd-200 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-dd-red rounded-full"
-                          style={{ width: `${Math.round(a.confidence * 100)}%` }}
-                        />
-                      </div>
-                      <span className="text-dd-600 text-xs">
-                        {Math.round(a.confidence * 100)}%
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-5 py-3.5 text-dd-600 text-xs">
-                    {new Date(a.created_at).toLocaleString()}
-                  </td>
-                </tr>
-              ))}
-              {analyses.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center">
-                    <div className="text-dd-400 text-sm">
-                      {hasFilters ? "No analyses match your filters" : "No email analyses yet"}
-                    </div>
-                    <div className="text-dd-300 text-xs mt-1">
-                      {hasFilters ? "Try adjusting your filter criteria" : "Run a scan to analyze emails for this account"}
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-
-          {/* Pagination */}
-          {total > perPage && (
-            <div className="flex items-center justify-between px-5 py-3 border-t border-dd-200 bg-dd-50">
-              <span className="text-xs text-dd-600">
-                Showing {(page - 1) * perPage + 1}-{Math.min(page * perPage, total)} of {total}
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page <= 1}
-                  className="px-3 py-1 text-xs font-medium rounded-dd border border-dd-300 text-dd-700 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  Prev
-                </button>
-                <span className="text-xs text-dd-600">
-                  {page} / {totalPages}
-                </span>
-                <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page >= totalPages}
-                  className="px-3 py-1 text-xs font-medium rounded-dd border border-dd-300 text-dd-700 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  Next
-                </button>
+        {/* Info Tab */}
+        <TabsContent value="info">
+          <Card>
+            <CardHeader>
+              <CardTitle className="uppercase text-[12px] font-semibold text-muted-foreground tracking-wider">
+                Account Details
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="space-y-2">
+                  <Label>Customer Name</Label>
+                  <Input
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Enter customer name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Phone</Label>
+                  <Input
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="Enter phone number"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <Select value={status} onValueChange={setStatus}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="suspended">Suspended</SelectItem>
+                      <SelectItem value="archived">Archived</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Assigned Admin</Label>
+                  <Select value={assignedAdmin || "unassigned"} onValueChange={(v) => setAssignedAdmin(v === "unassigned" ? "" : v)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unassigned">Unassigned</SelectItem>
+                      {admins.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.display_name || a.username}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
+
+              {/* Tags */}
+              <div className="space-y-2">
+                <Label>Tags</Label>
+                <div className="flex flex-wrap gap-2 mb-1">
+                  {tags.map((tag) => (
+                    <Badge key={tag} variant="secondary" className="gap-1.5">
+                      {tag}
+                      <button onClick={() => removeTag(tag)}>
+                        <X className="h-3 w-3 hover:text-destructive transition-colors" />
+                      </button>
+                    </Badge>
+                  ))}
+                  {tags.length === 0 && (
+                    <span className="text-xs text-muted-foreground">No tags added</span>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addTag())}
+                    placeholder="Add a tag..."
+                    className="w-auto"
+                  />
+                  <Button variant="outline" onClick={addTag}>
+                    Add
+                  </Button>
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div className="space-y-2">
+                <Label>Notes</Label>
+                <Textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={3}
+                  placeholder="Add notes about this account..."
+                />
+              </div>
+
+              {/* Save Button */}
+              <div className="flex items-center gap-3 pt-2">
+                <Button onClick={saveAccount} disabled={saving}>
+                  {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {saving ? "Saving..." : "Save Changes"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* History Tab */}
+        <TabsContent value="history">
+          {history.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <p className="text-sm text-muted-foreground">No stage changes recorded</p>
+                <p className="text-xs text-muted-foreground/60 mt-1">
+                  Changes will appear here as the account progresses
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="pl-2 pt-2">
+              {history.map((h) => (
+                <HistoryTimelineEntry key={h.id} entry={h} />
+              ))}
             </div>
           )}
-        </div>
-      )}
+        </TabsContent>
+
+        {/* Analysis Tab */}
+        <TabsContent value="analysis">
+          <AnalysisTab accountId={account.id} email={account.email} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
