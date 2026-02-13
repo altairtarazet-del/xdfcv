@@ -1,37 +1,11 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { api } from "../../api/client";
-import EmailPanel from "../../components/EmailPanel";
-
-interface Mailbox {
-  id: string;
-  name: string;
-  unread?: number;
-}
-
-interface Message {
-  id: string;
-  from?: string;
-  sender?: string;
-  subject: string;
-  date?: string;
-  created_at?: string;
-  seen?: boolean;
-}
-
-interface Attachment {
-  id: string;
-  filename: string;
-  contentType?: string;
-  size?: number;
-}
-
-interface FullMessage extends Message {
-  html?: string;
-  text?: string;
-  to?: string;
-  attachments?: Attachment[];
-}
+import { ArrowLeft } from "lucide-react";
+import { api } from "@/api/client";
+import EmailPanel from "@/components/EmailPanel";
+import type { Mailbox, Message, FullMessage } from "@/types";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function CustomerEmails() {
   const { email } = useParams<{ email: string }>();
@@ -42,9 +16,11 @@ export default function CustomerEmails() {
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [loadingBody, setLoadingBody] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   async function loadMailboxes() {
+    setLoading(true);
     try {
       const data = await api.get<{ mailboxes: Mailbox[] }>(
         `/api/admin/customer-emails/${encodeURIComponent(email!)}/mailboxes`
@@ -56,6 +32,8 @@ export default function CustomerEmails() {
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to load mailboxes");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -100,13 +78,48 @@ export default function CustomerEmails() {
     );
   }
 
+  if (loading) {
+    return (
+      <div className="h-full flex flex-col">
+        <div className="px-6 py-4 border-b border-dd-200 bg-white flex-shrink-0 space-y-2">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-6 w-48" />
+        </div>
+        <div className="flex flex-1 overflow-hidden">
+          <div className="w-52 flex-shrink-0 border-r border-dd-200 p-3 space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-4 w-full" />
+            ))}
+          </div>
+          <div className="w-80 flex-shrink-0 border-r border-dd-200 p-3 space-y-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="space-y-1.5">
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-3 w-16" />
+              </div>
+            ))}
+          </div>
+          <div className="flex-1 p-5 space-y-4">
+            <Skeleton className="h-6 w-3/4" />
+            <Skeleton className="h-4 w-1/2" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-5/6" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full flex flex-col">
-      {/* Page Header */}
       <div className="px-6 py-4 border-b border-dd-200 bg-white flex-shrink-0">
-        <Link to={`/accounts/${encodeURIComponent(email!)}`} className="text-sm font-medium text-dd-red hover:text-dd-red-hover transition-colors">
-          ← Back to Account
-        </Link>
+        <Button variant="link" asChild className="p-0 h-auto text-primary">
+          <Link to={`/accounts/${encodeURIComponent(email!)}`}>
+            <ArrowLeft className="h-4 w-4" />
+            Back to Account
+          </Link>
+        </Button>
         <h1 className="text-xl font-bold text-dd-950 mt-1">Emails: {email}</h1>
       </div>
 

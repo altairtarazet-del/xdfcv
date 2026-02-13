@@ -1,37 +1,84 @@
 import { useEffect, useState } from "react";
-import { api } from "../../api/client";
+import {
+  Plus,
+  MoreHorizontal,
+  Loader2,
+  UserCog,
+  Trash2,
+  ToggleLeft,
+  ToggleRight,
+  AlertCircle,
+} from "lucide-react";
+import { api } from "@/api/client";
+import type { Admin } from "@/types";
+import { ROLE_COLORS } from "@/types";
 
-interface Admin {
-  id: string;
-  username: string;
-  display_name: string | null;
-  role: string;
-  is_active: boolean;
-  last_login_at: string | null;
-  created_at: string;
-}
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Card } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
-const ROLE_COLORS: Record<string, string> = {
-  super_admin: "bg-dd-red-lighter text-dd-red-active",
-  admin: "bg-blue-50 text-blue-700",
-  operator: "bg-[#FFF3D6] text-[#8A6100]",
-  viewer: "bg-dd-100 text-dd-600",
-};
+const ROLES = ["viewer", "operator", "admin", "super_admin"] as const;
 
 export default function TeamManagement() {
   const [admins, setAdmins] = useState<Admin[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [role, setRole] = useState("admin");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const [editRoleOpen, setEditRoleOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<Admin | null>(null);
   const [editRole, setEditRole] = useState("");
 
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Admin | null>(null);
+
   async function loadAdmins() {
-    const data = await api.get<{ admins: Admin[] }>("/api/admin/team");
-    setAdmins(data.admins);
+    try {
+      const data = await api.get<{ admins: Admin[] }>("/api/admin/team");
+      setAdmins(data.admins);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function createAdmin(e: React.FormEvent) {
@@ -49,6 +96,7 @@ export default function TeamManagement() {
       setPassword("");
       setDisplayName("");
       setRole("admin");
+      setCreateOpen(false);
       loadAdmins();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to create");
@@ -57,10 +105,12 @@ export default function TeamManagement() {
     }
   }
 
-  async function updateRole(adminId: string) {
+  async function updateRole() {
+    if (!editTarget) return;
     try {
-      await api.patch(`/api/admin/team/${adminId}`, { role: editRole });
-      setEditingId(null);
+      await api.patch(`/api/admin/team/${editTarget.id}`, { role: editRole });
+      setEditRoleOpen(false);
+      setEditTarget(null);
       loadAdmins();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to update");
@@ -69,17 +119,21 @@ export default function TeamManagement() {
 
   async function toggleActive(admin: Admin) {
     try {
-      await api.patch(`/api/admin/team/${admin.id}`, { is_active: !admin.is_active });
+      await api.patch(`/api/admin/team/${admin.id}`, {
+        is_active: !admin.is_active,
+      });
       loadAdmins();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to update");
     }
   }
 
-  async function deleteAdmin(admin: Admin) {
-    if (!confirm(`Delete admin "${admin.username}"? This cannot be undone.`)) return;
+  async function confirmDelete() {
+    if (!deleteTarget) return;
     try {
-      await api.delete(`/api/admin/team/${admin.id}`);
+      await api.delete(`/api/admin/team/${deleteTarget.id}`);
+      setDeleteOpen(false);
+      setDeleteTarget(null);
       loadAdmins();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to delete");
@@ -90,157 +144,283 @@ export default function TeamManagement() {
     loadAdmins();
   }, []);
 
+  if (loading) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-56" />
+          <Skeleton className="h-4 w-72" />
+        </div>
+        <Skeleton className="h-64 rounded-xl" />
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
-      {/* Page Title */}
-      <div>
-        <h1 className="text-2xl font-bold text-dd-950">Team Management</h1>
-        <p className="text-sm text-dd-600 mt-1">Manage admin users and their roles</p>
+      {/* Page Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">
+            Team Management
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Manage admin users and their roles
+          </p>
+        </div>
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="h-4 w-4" />
+              Add Member
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add Team Member</DialogTitle>
+              <DialogDescription>
+                Create a new admin account with the specified role.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={createAdmin} className="space-y-4">
+              {error && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="username">Username</Label>
+                <Input
+                  id="username"
+                  placeholder="Username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="displayName">Display Name</Label>
+                <Input
+                  id="displayName"
+                  placeholder="Display Name (optional)"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Role</Label>
+                <Select value={role} onValueChange={setRole}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ROLES.map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {r.replace("_", " ")}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setCreateOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={creating}>
+                  {creating && <Loader2 className="animate-spin" />}
+                  {creating ? "Creating..." : "Add Member"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
-      {/* Create Form */}
-      <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 p-6">
-        <h2 className="text-[12px] uppercase tracking-wider text-dd-600 font-semibold mb-5">Add Team Member</h2>
-        {error && (
-          <div className="bg-dd-red-lighter text-dd-red-active p-3 rounded-dd text-sm font-medium border border-dd-red/20 mb-4">
-            {error}
-          </div>
-        )}
-        <form onSubmit={createAdmin} className="flex gap-3 flex-wrap items-end">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[12px] uppercase tracking-wider text-dd-600 font-semibold">Username</label>
-            <input
-              type="text"
-              placeholder="Username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              required
-              className="px-4 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 placeholder:text-dd-600 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[12px] uppercase tracking-wider text-dd-600 font-semibold">Password</label>
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="px-4 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 placeholder:text-dd-600 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[12px] uppercase tracking-wider text-dd-600 font-semibold">Display Name</label>
-            <input
-              type="text"
-              placeholder="Display Name"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              className="px-4 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 placeholder:text-dd-600 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[12px] uppercase tracking-wider text-dd-600 font-semibold">Role</label>
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className="px-4 py-2.5 border border-dd-400 rounded-lg text-sm text-dd-950 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none bg-white"
-            >
-              <option value="viewer">Viewer</option>
-              <option value="operator">Operator</option>
-              <option value="admin">Admin</option>
-              <option value="super_admin">Super Admin</option>
-            </select>
-          </div>
-          <button
-            type="submit"
-            disabled={creating}
-            className="bg-dd-red text-white px-6 py-2.5 rounded-dd-pill text-sm hover:bg-dd-red-hover font-semibold disabled:opacity-50 transition-colors"
-          >
-            {creating ? "Creating..." : "Add Member"}
-          </button>
-        </form>
-      </div>
+      {/* Error banner */}
+      {error && !createOpen && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
       {/* Team Table */}
-      <div className="bg-white rounded-dd shadow-dd-md border border-dd-200 overflow-hidden">
-        <table className="w-full">
-          <thead>
-            <tr className="bg-dd-50">
-              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Username</th>
-              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Display Name</th>
-              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Role</th>
-              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Status</th>
-              <th className="text-left px-4 py-3 uppercase text-[12px] text-dd-600 tracking-wider font-semibold">Last Login</th>
-              <th className="px-4 py-3"></th>
-            </tr>
-          </thead>
-          <tbody>
+      <Card>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Username</TableHead>
+              <TableHead>Display Name</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Last Login</TableHead>
+              <TableHead className="w-12" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {admins.map((a) => (
-              <tr key={a.id} className="hover:bg-dd-50 transition-colors">
-                <td className="px-4 py-3 text-sm text-dd-950 font-medium border-b border-dd-200">{a.username}</td>
-                <td className="px-4 py-3 text-sm text-dd-800 border-b border-dd-200">{a.display_name || "--"}</td>
-                <td className="px-4 py-3 border-b border-dd-200">
-                  {editingId === a.id ? (
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={editRole}
-                        onChange={(e) => setEditRole(e.target.value)}
-                        className="px-3 py-1.5 border border-dd-400 rounded-lg text-xs text-dd-950 focus:border-dd-red focus:ring-2 focus:ring-dd-red/20 focus:outline-none bg-white"
-                      >
-                        <option value="viewer">Viewer</option>
-                        <option value="admin">Admin</option>
-                        <option value="super_admin">Super Admin</option>
-                      </select>
-                      <button onClick={() => updateRole(a.id)}
-                        className="px-3 py-1 rounded-dd-pill text-xs font-semibold bg-dd-red text-white hover:bg-dd-red-hover transition-colors">
-                        Save
-                      </button>
-                      <button onClick={() => setEditingId(null)}
-                        className="px-3 py-1 rounded-dd-pill text-xs font-semibold text-dd-600 hover:text-dd-950 transition-colors">
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => { setEditingId(a.id); setEditRole(a.role); }}
-                      className={`px-2.5 py-1 rounded-dd-pill text-xs font-semibold cursor-pointer hover:opacity-80 transition-opacity ${ROLE_COLORS[a.role] || "bg-dd-100 text-dd-600"}`}
-                    >
-                      {a.role}
-                    </button>
-                  )}
-                </td>
-                <td className="px-4 py-3 border-b border-dd-200">
-                  <span className={`px-2.5 py-1 rounded-dd-pill text-xs font-semibold ${
-                    a.is_active ? "bg-[#E5F9EB] text-[#004C1B]" : "bg-dd-red-lighter text-dd-red-active"
-                  }`}>
+              <TableRow key={a.id}>
+                <TableCell className="font-medium">{a.username}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  {a.display_name || "\u2014"}
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant="secondary"
+                    className={`capitalize ${ROLE_COLORS[a.role || "viewer"] || ""}`}
+                  >
+                    {(a.role || "viewer").replace("_", " ")}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant="secondary"
+                    className={
+                      a.is_active
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-red-100 text-red-700"
+                    }
+                  >
                     {a.is_active ? "Active" : "Disabled"}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-xs text-dd-600 border-b border-dd-200">
-                  {a.last_login_at ? new Date(a.last_login_at).toLocaleString() : "Never"}
-                </td>
-                <td className="px-4 py-3 text-right border-b border-dd-200">
-                  <div className="flex items-center justify-end gap-2">
-                    <button
-                      onClick={() => toggleActive(a)}
-                      className="px-3 py-1 rounded-dd-pill text-xs font-semibold border border-dd-950 text-dd-950 hover:bg-dd-100 transition-colors"
-                    >
-                      {a.is_active ? "Disable" : "Enable"}
-                    </button>
-                    <button
-                      onClick={() => deleteAdmin(a)}
-                      className="px-3 py-1 rounded-dd-pill text-xs font-semibold text-dd-red border border-dd-red hover:bg-dd-red-lighter transition-colors"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </td>
-              </tr>
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-muted-foreground text-sm">
+                  {a.last_login_at
+                    ? new Date(a.last_login_at).toLocaleString()
+                    : "Never"}
+                </TableCell>
+                <TableCell>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setEditTarget(a);
+                          setEditRole(a.role || "viewer");
+                          setEditRoleOpen(true);
+                        }}
+                      >
+                        <UserCog className="h-4 w-4" />
+                        Change Role
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => toggleActive(a)}>
+                        {a.is_active ? (
+                          <ToggleLeft className="h-4 w-4" />
+                        ) : (
+                          <ToggleRight className="h-4 w-4" />
+                        )}
+                        {a.is_active ? "Disable" : "Enable"}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() => {
+                          setDeleteTarget(a);
+                          setDeleteOpen(true);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
-      </div>
+            {admins.length === 0 && (
+              <TableRow>
+                <TableCell
+                  colSpan={6}
+                  className="h-24 text-center text-muted-foreground"
+                >
+                  No team members found
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </Card>
+
+      {/* Edit Role Dialog */}
+      <Dialog open={editRoleOpen} onOpenChange={setEditRoleOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change Role</DialogTitle>
+            <DialogDescription>
+              Update the role for{" "}
+              <span className="font-medium text-foreground">
+                {editTarget?.username}
+              </span>
+              .
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>New Role</Label>
+            <Select value={editRole} onValueChange={setEditRole}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ROLES.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {r.replace("_", " ")}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditRoleOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={updateRole}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Admin</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete{" "}
+              <span className="font-medium text-foreground">
+                "{deleteTarget?.username}"
+              </span>
+              ? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

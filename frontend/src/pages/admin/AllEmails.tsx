@@ -1,64 +1,15 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../../api/client";
-import EmailPanel from "../../components/EmailPanel";
-
-interface Account {
-  id: string;
-  email: string;
-  customer_name: string | null;
-  stage: string;
-}
-
-interface Mailbox {
-  id: string;
-  name: string;
-  unread?: number;
-}
-
-interface Message {
-  id: string;
-  from?: string;
-  sender?: string;
-  subject: string;
-  date?: string;
-  created_at?: string;
-  seen?: boolean;
-}
-
-interface Attachment {
-  id: string;
-  filename: string;
-  contentType?: string;
-  size?: number;
-}
-
-interface FullMessage extends Message {
-  html?: string;
-  text?: string;
-  to?: string;
-  attachments?: Attachment[];
-}
-
-const STAGE_COLORS: Record<string, string> = {
-  REGISTERED: "bg-dd-500",
-  IDENTITY_VERIFIED: "bg-blue-500",
-  BGC_PENDING: "bg-yellow-500",
-  BGC_CLEAR: "bg-green-500",
-  BGC_CONSIDER: "bg-orange-500",
-  ACTIVE: "bg-emerald-500",
-  DEACTIVATED: "bg-dd-red",
-};
-
-const STAGE_LABELS: Record<string, string> = {
-  REGISTERED: "Registered",
-  IDENTITY_VERIFIED: "ID Verified",
-  BGC_PENDING: "BGC Pending",
-  BGC_CLEAR: "BGC Clear",
-  BGC_CONSIDER: "BGC Consider",
-  ACTIVE: "Active",
-  DEACTIVATED: "Deactivated",
-};
+import { Search, Users, Inbox } from "lucide-react";
+import type { Account, Mailbox, Message, FullMessage } from "@/types";
+import { STAGE_MAP, STAGE_BADGE } from "@/types";
+import { api } from "@/api/client";
+import EmailPanel from "@/components/EmailPanel";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function AllEmails() {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -152,7 +103,10 @@ export default function AllEmails() {
     <div className="h-full flex flex-col">
       {/* Page Header */}
       <div className="px-6 py-4 border-b border-dd-200 bg-white flex-shrink-0">
-        <h1 className="text-xl font-bold text-dd-950">All Emails</h1>
+        <div className="flex items-center gap-2">
+          <Users className="h-5 w-5 text-dd-600" />
+          <h1 className="text-xl font-bold text-dd-950">All Emails</h1>
+        </div>
         <p className="text-sm text-dd-600 mt-0.5">{accounts.length} customer accounts</p>
       </div>
 
@@ -162,55 +116,76 @@ export default function AllEmails() {
           {/* Search */}
           <div className="px-3 py-3 border-b border-dd-200">
             <div className="relative">
-              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dd-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-dd-500" />
+              <Input
                 type="text"
                 placeholder="Search customer..."
                 value={searchCustomer}
                 onChange={(e) => setSearchCustomer(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-dd-100 rounded-lg text-sm text-dd-950 placeholder:text-dd-500 focus:ring-2 focus:ring-dd-red/20 focus:outline-none border border-transparent focus:border-dd-red/30"
+                className="pl-9 h-9 bg-dd-100 border-transparent focus-visible:ring-dd-red/20 focus-visible:border-dd-red/30 text-sm"
               />
             </div>
           </div>
 
           {/* Account List */}
-          <div className="flex-1 overflow-y-auto">
+          <ScrollArea className="flex-1">
             {loadingAccounts ? (
-              <div className="p-4 text-dd-500 text-sm">Loading...</div>
+              <div className="p-3 space-y-2">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="p-3 space-y-2">
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </div>
+                ))}
+              </div>
             ) : filteredAccounts.length === 0 ? (
-              <div className="p-4 text-dd-500 text-sm">No accounts found</div>
+              <div className="p-6 text-center">
+                <Users className="h-8 w-8 text-dd-300 mx-auto mb-2" />
+                <p className="text-sm text-dd-500">No accounts found</p>
+              </div>
             ) : (
-              filteredAccounts.map((acc) => (
-                <button
-                  key={acc.id}
-                  onClick={() => selectAccount(acc.email)}
-                  className={`w-full text-left px-4 py-3 border-b border-dd-200 hover:bg-dd-50 transition-colors ${
-                    selectedEmail === acc.email
-                      ? "bg-dd-red-light border-l-[3px] border-l-dd-red pl-[13px]"
-                      : ""
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <span
-                      className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${STAGE_COLORS[acc.stage] || "bg-dd-400"}`}
-                      title={STAGE_LABELS[acc.stage] || acc.stage}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className={`text-sm truncate ${selectedEmail === acc.email ? "text-dd-red font-semibold" : "text-dd-950 font-medium"}`}>
-                        {acc.email.split("@")[0]}
-                      </div>
-                      <div className="text-[11px] text-dd-600 mt-0.5">
-                        {STAGE_LABELS[acc.stage] || acc.stage}
-                        {acc.customer_name && ` · ${acc.customer_name}`}
+              filteredAccounts.map((acc) => {
+                const isActive = selectedEmail === acc.email;
+                const stageInfo = STAGE_MAP[acc.stage];
+                return (
+                  <Card
+                    key={acc.id}
+                    onClick={() => selectAccount(acc.email)}
+                    className={`cursor-pointer rounded-none border-x-0 border-t-0 border-b border-dd-200 shadow-none transition-colors ${
+                      isActive
+                        ? "bg-dd-red-light border-l-[3px] border-l-dd-red pl-[13px]"
+                        : "hover:bg-dd-50"
+                    }`}
+                  >
+                    <div className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="min-w-0 flex-1">
+                          <div className={`text-sm truncate ${isActive ? "text-dd-red font-semibold" : "text-dd-950 font-medium"}`}>
+                            {acc.email.split("@")[0]}
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <Badge
+                              variant="secondary"
+                              className={`text-[10px] px-1.5 py-0 font-medium border-0 ${
+                                STAGE_BADGE[acc.stage] || "bg-dd-200 text-dd-700"
+                              }`}
+                            >
+                              {stageInfo?.label || acc.stage}
+                            </Badge>
+                            {acc.customer_name && (
+                              <span className="text-[11px] text-dd-600 truncate">
+                                {acc.customer_name}
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </button>
-              ))
+                  </Card>
+                );
+              })
             )}
-          </div>
+          </ScrollArea>
         </div>
 
         {/* Email Viewer */}
@@ -219,9 +194,7 @@ export default function AllEmails() {
             {/* Selected account bar */}
             <div className="px-4 py-2.5 bg-dd-50 border-b border-dd-200 flex-shrink-0 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-dd-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
+                <Inbox className="w-4 h-4 text-dd-600" />
                 <span className="text-sm font-medium text-dd-950">{selectedEmail}</span>
               </div>
               <Link
@@ -249,9 +222,7 @@ export default function AllEmails() {
         ) : (
           <div className="flex-1 flex items-center justify-center bg-dd-50">
             <div className="text-center">
-              <svg className="w-16 h-16 text-dd-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
+              <Inbox className="w-16 h-16 text-dd-300 mx-auto mb-4" />
               <p className="text-dd-600 font-medium">Select a customer</p>
               <p className="text-sm text-dd-500 mt-1">Choose an account from the left to view their emails</p>
             </div>

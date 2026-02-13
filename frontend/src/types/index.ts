@@ -202,5 +202,6 @@ export const STATUS_BADGE: Record<string, string> = {
 export const ROLE_COLORS: Record<string, string> = {
   super_admin: "bg-dd-red-lighter text-dd-red-active",
   admin: "bg-blue-100 text-blue-700",
+  operator: "bg-yellow-100 text-yellow-700",
   viewer: "bg-dd-200 text-dd-700",
 };
