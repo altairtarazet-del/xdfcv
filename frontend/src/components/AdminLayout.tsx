@@ -1,6 +1,52 @@
-import { NavLink, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { api } from "../api/client";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import {
+  LayoutDashboard,
+  Inbox,
+  BarChart3,
+  Users,
+  Shield,
+  Bell,
+  LogOut,
+  ChevronsUpDown,
+  type LucideIcon,
+} from "lucide-react";
+import { api } from "@/api/client";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarRail,
+  SidebarTrigger,
+} from "@/components/ui/sidebar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Separator } from "@/components/ui/separator";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -9,57 +55,37 @@ interface AdminLayoutProps {
 interface NavItem {
   to: string;
   label: string;
-  icon: React.ReactNode;
-  minRole?: string; // "admin" or "super_admin" — hidden from operator/viewer
+  icon: LucideIcon;
+  minRole?: string;
 }
 
 const NAV_ITEMS: NavItem[] = [
   {
     to: "/",
     label: "Dashboard",
-    icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-      </svg>
-    ),
+    icon: LayoutDashboard,
   },
   {
     to: "/all-emails",
     label: "All Emails",
-    icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-      </svg>
-    ),
+    icon: Inbox,
   },
   {
     to: "/analytics",
     label: "Analytics",
     minRole: "admin",
-    icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-      </svg>
-    ),
+    icon: BarChart3,
   },
   {
     to: "/portal-users",
     label: "Customers",
-    icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-      </svg>
-    ),
+    icon: Users,
   },
   {
     to: "/team",
     label: "Team",
     minRole: "admin",
-    icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-      </svg>
-    ),
+    icon: Shield,
   },
 ];
 
@@ -70,21 +96,20 @@ const ROLE_LEVELS: Record<string, number> = {
   viewer: 1,
 };
 
+const ROUTE_LABELS: Record<string, string> = {
+  "/": "Dashboard",
+  "/all-emails": "All Emails",
+  "/analytics": "Analytics",
+  "/portal-users": "Customers",
+  "/team": "Team",
+};
+
 export default function AdminLayout({ children }: AdminLayoutProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [unreadAlerts, setUnreadAlerts] = useState(0);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebar_collapsed") === "true");
   const adminRole = localStorage.getItem("admin_role") || "admin";
   const userLevel = ROLE_LEVELS[adminRole] || 1;
-
-  function toggleCollapsed() {
-    setCollapsed((prev) => {
-      const next = !prev;
-      localStorage.setItem("sidebar_collapsed", String(next));
-      return next;
-    });
-  }
 
   const visibleNavItems = NAV_ITEMS.filter((item) => {
     if (!item.minRole) return true;
@@ -92,7 +117,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   });
 
   useEffect(() => {
-    api.get<{ stage_counts: Record<string, number>; total_accounts: number; unread_alerts: number }>("/api/dashboard/stats")
+    api
+      .get<{
+        stage_counts: Record<string, number>;
+        total_accounts: number;
+        unread_alerts: number;
+      }>("/api/dashboard/stats")
       .then((data) => setUnreadAlerts(data.unread_alerts))
       .catch(() => {});
   }, []);
@@ -104,126 +134,176 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     navigate("/login");
   }
 
-  const sidebarContent = (
-    <>
-      {/* Logo */}
-      <div className={`py-5 border-b border-dd-200 ${collapsed ? "px-3" : "px-5"}`}>
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 bg-dd-red rounded-lg flex items-center justify-center flex-shrink-0">
-            <span className="text-white font-bold text-sm">D</span>
-          </div>
-          {!collapsed && <span className="font-bold text-lg text-dd-950">DasherHelp</span>}
-        </div>
-      </div>
-
-      {/* Navigation */}
-      <nav className="flex-1 py-3 overflow-y-auto">
-        {visibleNavItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.to === "/"}
-            onClick={() => setMobileMenuOpen(false)}
-            title={collapsed ? item.label : undefined}
-            className={({ isActive }) =>
-              `flex items-center ${collapsed ? "justify-center px-3" : "gap-3 px-5"} py-2.5 text-sm font-medium transition-colors ${
-                isActive
-                  ? `bg-dd-red-light text-dd-red border-l-[3px] border-dd-red ${collapsed ? "pl-[9px]" : "pl-[17px]"}`
-                  : "text-dd-800 hover:bg-dd-100 hover:text-dd-950"
-              }`
-            }
-          >
-            {item.icon}
-            {!collapsed && item.label}
-            {!collapsed && item.label === "Dashboard" && unreadAlerts > 0 && (
-              <span className="ml-auto bg-dd-red text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                {unreadAlerts > 99 ? "99+" : unreadAlerts}
-              </span>
-            )}
-          </NavLink>
-        ))}
-      </nav>
-
-      {/* Collapse toggle */}
-      <button
-        onClick={toggleCollapsed}
-        className="hidden lg:flex items-center justify-center py-3 border-t border-dd-200 text-dd-500 hover:text-dd-950 hover:bg-dd-50 transition-colors"
-        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-      >
-        <svg className={`w-5 h-5 transition-transform ${collapsed ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-        </svg>
-      </button>
-
-      {/* User section */}
-      <div className={`border-t border-dd-200 py-4 ${collapsed ? "px-3" : "px-5"}`}>
-        <div className={`flex items-center ${collapsed ? "justify-center" : "gap-3"}`}>
-          <div className="w-8 h-8 bg-dd-300 rounded-full flex items-center justify-center flex-shrink-0">
-            <svg className="w-4 h-4 text-dd-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-          </div>
-          {!collapsed && (
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-dd-950 truncate">Admin</div>
-              <button onClick={logout} className="text-xs text-dd-600 hover:text-dd-red transition-colors">
-                Sign out
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </>
-  );
+  // Build breadcrumb from current path
+  const pathSegments = location.pathname.split("/").filter(Boolean);
+  const currentLabel =
+    ROUTE_LABELS[location.pathname] ||
+    pathSegments[pathSegments.length - 1]
+      ?.replace(/-/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase()) ||
+    "Dashboard";
 
   return (
-    <div className="flex h-screen bg-dd-100">
-      {/* Mobile header */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 z-30 bg-white border-b border-dd-200 px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <button
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="p-1.5 rounded-lg hover:bg-dd-100 transition-colors"
-          >
-            <svg className="w-6 h-6 text-dd-800" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              {mobileMenuOpen ? (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+    <SidebarProvider>
+      <Sidebar collapsible="icon">
+        <SidebarHeader>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton size="lg" asChild>
+                <Link to="/">
+                  <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                    <span className="font-bold text-sm">D</span>
+                  </div>
+                  <div className="grid flex-1 text-left text-sm leading-tight">
+                    <span className="truncate font-semibold">DasherHelp</span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      DD Operations
+                    </span>
+                  </div>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarHeader>
+
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {visibleNavItems.map((item) => {
+                  const isActive =
+                    item.to === "/"
+                      ? location.pathname === "/"
+                      : location.pathname.startsWith(item.to);
+                  return (
+                    <SidebarMenuItem key={item.to}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={isActive}
+                        tooltip={item.label}
+                      >
+                        <NavLink to={item.to} end={item.to === "/"}>
+                          <item.icon />
+                          <span>{item.label}</span>
+                        </NavLink>
+                      </SidebarMenuButton>
+                      {item.to === "/" && unreadAlerts > 0 && (
+                        <SidebarMenuBadge className="bg-primary text-primary-foreground rounded-full text-[10px] font-bold min-w-5 h-5 flex items-center justify-center">
+                          {unreadAlerts > 99 ? "99+" : unreadAlerts}
+                        </SidebarMenuBadge>
+                      )}
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+
+        <SidebarFooter>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <SidebarMenuButton
+                    size="lg"
+                    className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+                  >
+                    <Avatar className="h-8 w-8 rounded-lg">
+                      <AvatarFallback className="rounded-lg bg-primary text-primary-foreground text-xs font-semibold">
+                        {adminRole === "super_admin" ? "SA" : "AD"}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="grid flex-1 text-left text-sm leading-tight">
+                      <span className="truncate font-semibold">Admin</span>
+                      <span className="truncate text-xs text-muted-foreground capitalize">
+                        {adminRole.replace("_", " ")}
+                      </span>
+                    </div>
+                    <ChevronsUpDown className="ml-auto size-4" />
+                  </SidebarMenuButton>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  className="w-[--radix-dropdown-menu-trigger-width] min-w-56 rounded-lg"
+                  side="bottom"
+                  align="end"
+                  sideOffset={4}
+                >
+                  <DropdownMenuLabel className="p-0 font-normal">
+                    <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
+                      <Avatar className="h-8 w-8 rounded-lg">
+                        <AvatarFallback className="rounded-lg bg-primary text-primary-foreground text-xs font-semibold">
+                          {adminRole === "super_admin" ? "SA" : "AD"}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="grid flex-1 text-left text-sm leading-tight">
+                        <span className="truncate font-semibold">Admin</span>
+                        <span className="truncate text-xs text-muted-foreground capitalize">
+                          {adminRole.replace("_", " ")}
+                        </span>
+                      </div>
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={logout} className="cursor-pointer">
+                    <LogOut />
+                    Sign Out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+
+        <SidebarRail />
+      </Sidebar>
+
+      <SidebarInset>
+        <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
+          <SidebarTrigger className="-ml-1" />
+          <Separator orientation="vertical" className="mr-2 h-4" />
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem className="hidden md:block">
+                <BreadcrumbLink asChild>
+                  <Link to="/">DasherHelp</Link>
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              {currentLabel !== "Dashboard" && (
+                <>
+                  <BreadcrumbSeparator className="hidden md:block" />
+                  <BreadcrumbItem>
+                    <BreadcrumbPage>{currentLabel}</BreadcrumbPage>
+                  </BreadcrumbItem>
+                </>
               )}
-            </svg>
-          </button>
-          <div className="w-7 h-7 bg-dd-red rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-xs">D</span>
-          </div>
-          <span className="font-bold text-dd-950">DasherHelp</span>
-        </div>
-        {unreadAlerts > 0 && (
-          <span className="bg-dd-red text-white text-[10px] font-bold rounded-full px-2 py-0.5">
-            {unreadAlerts}
-          </span>
-        )}
-      </div>
-
-      {/* Mobile overlay */}
-      {mobileMenuOpen && (
-        <div className="lg:hidden fixed inset-0 z-40 bg-black/40" onClick={() => setMobileMenuOpen(false)} />
-      )}
-
-      {/* Sidebar — desktop: always visible, mobile: slide-in */}
-      <aside className={`
-        fixed lg:static inset-y-0 left-0 z-50
-        ${collapsed ? "lg:w-[64px]" : "lg:w-[240px]"} w-[240px] bg-white border-r border-dd-200 flex flex-col flex-shrink-0
-        transform transition-all duration-200 ease-in-out
-        ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
-      `}>
-        {sidebarContent}
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 overflow-auto pt-14 lg:pt-0">
-        {children}
-      </main>
-    </div>
+              {currentLabel === "Dashboard" && (
+                <>
+                  <BreadcrumbSeparator className="hidden md:block" />
+                  <BreadcrumbItem>
+                    <BreadcrumbPage>Dashboard</BreadcrumbPage>
+                  </BreadcrumbItem>
+                </>
+              )}
+            </BreadcrumbList>
+          </Breadcrumb>
+          {unreadAlerts > 0 && (
+            <div className="ml-auto flex items-center gap-2">
+              <Link
+                to="/"
+                className="relative inline-flex items-center justify-center rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+              >
+                <Bell className="h-5 w-5" />
+                <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                  {unreadAlerts > 99 ? "99+" : unreadAlerts}
+                </span>
+              </Link>
+            </div>
+          )}
+        </header>
+        <div className="flex-1 overflow-auto">{children}</div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
