@@ -271,6 +271,9 @@ export default function PortalUsersPage() {
   const [manualName, setManualName] = useState("");
   const [creating, setCreating] = useState(false);
 
+  // Reset password dialog state
+  const [resetResult, setResetResult] = useState<{ email: string; password: string } | null>(null);
+
   // Delete confirmation dialog
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -381,12 +384,7 @@ export default function PortalUsersPage() {
       await api.patch(`/api/portal-users/${encodeURIComponent(email)}`, {
         password: newPassword,
       });
-      try {
-        await navigator.clipboard.writeText(newPassword);
-        toast.success(`Password reset for ${email}. New password copied to clipboard.`);
-      } catch {
-        toast.success(`New password for ${email}: ${newPassword}`);
-      }
+      setResetResult({ email, password: newPassword });
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to reset password");
     }
@@ -828,6 +826,27 @@ export default function PortalUsersPage() {
               {deleting ? "Deleting..." : "Delete"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset Password Result Dialog */}
+      <Dialog
+        open={resetResult !== null}
+        onOpenChange={(open) => !open && setResetResult(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Password Reset Successful</DialogTitle>
+            <DialogDescription>
+              New credentials for <span className="font-semibold">{resetResult?.email}</span>
+            </DialogDescription>
+          </DialogHeader>
+          {resetResult && (
+            <ProvisionCredentials
+              credentials={{ email: resetResult.email, portal_password: resetResult.password }}
+              onDone={() => setResetResult(null)}
+            />
+          )}
         </DialogContent>
       </Dialog>
     </div>
