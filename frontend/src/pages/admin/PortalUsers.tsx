@@ -378,9 +378,27 @@ export default function PortalUsersPage() {
     }
   }
 
+  function generatePassword(): string {
+    const lower = "abcdefghijklmnopqrstuvwxyz";
+    const upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const digits = "0123456789";
+    const all = lower + upper + digits;
+    // Ensure at least one of each required type
+    const required = [
+      upper[Math.floor(Math.random() * upper.length)],
+      lower[Math.floor(Math.random() * lower.length)],
+      digits[Math.floor(Math.random() * digits.length)],
+    ];
+    for (let i = 0; i < 7; i++) {
+      required.push(all[Math.floor(Math.random() * all.length)]);
+    }
+    // Shuffle
+    return required.sort(() => Math.random() - 0.5).join("");
+  }
+
   async function resetPassword(email: string) {
     try {
-      const newPassword = Math.random().toString(36).slice(-10);
+      const newPassword = generatePassword();
       await api.patch(`/api/portal-users/${encodeURIComponent(email)}`, {
         password: newPassword,
       });
