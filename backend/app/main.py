@@ -48,13 +48,6 @@ from app.exceptions import RequestIdMiddleware, setup_exception_handlers  # noqa
 
 app.add_middleware(RequestIdMiddleware)
 
-# Add audit and rate limit middleware (rate limit also injects security headers)
-from app.middleware import AuditLogMiddleware, RateLimitMiddleware  # noqa: E402
-
-app.add_middleware(AuditLogMiddleware)
-app.add_middleware(RateLimitMiddleware)
-
-# CORS must be added LAST so it runs FIRST (Starlette reverses addition order)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -64,15 +57,19 @@ app.add_middleware(
         "https://portal.dasherhelp.com",
         "http://localhost:5173",
         "http://localhost:5174",
-        "http://localhost:5175",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
-        "http://127.0.0.1:5175",
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
 )
+
+# Add audit and rate limit middleware (rate limit also injects security headers)
+from app.middleware import AuditLogMiddleware, RateLimitMiddleware  # noqa: E402
+
+app.add_middleware(AuditLogMiddleware)
+app.add_middleware(RateLimitMiddleware)
 
 # Setup global exception handlers
 setup_exception_handlers(app)

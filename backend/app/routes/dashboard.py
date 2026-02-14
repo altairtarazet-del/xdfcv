@@ -77,7 +77,7 @@ async def dashboard_accounts(
         "accounts",
         columns="id,email,stage,stage_updated_at,last_scanned_at,scan_error,notes,created_at,customer_name,first_name,middle_name,last_name,date_of_birth,phone,tags,status,assigned_admin_id",
         filters=filters if filters else None,
-        order="stage_updated_at.desc.nullslast",
+        order="updated_at.desc",
         limit=per_page,
         offset=offset,
     )
