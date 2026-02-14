@@ -59,7 +59,10 @@ _REACTIVATION_PATTERNS = [
     re.compile(r"account.*restored", re.IGNORECASE),
 ]
 
-# Active signal patterns (compiled from previous substring list)
+# Active signal patterns — only real earnings/delivery/payment proof
+# EXCLUDED (false positives): "how was your experience" (survey), "maximize your earnings"
+# (promo), "dasher welcome gift" (onboarding), "dasher bank account" (setup),
+# "new dash available" (promo), "time to dash" (promo), "your first dash" (too broad)
 _ACTIVE_PATTERNS = [
     re.compile(r"your\s+weekly\s+pay", re.IGNORECASE),
     re.compile(r"weekly\s+earnings", re.IGNORECASE),
@@ -68,17 +71,11 @@ _ACTIVE_PATTERNS = [
     re.compile(r"delivery\s+summary", re.IGNORECASE),
     re.compile(r"dasher\s+pay", re.IGNORECASE),
     re.compile(r"payment\s+processed", re.IGNORECASE),
-    re.compile(r"new\s+dash\s+available", re.IGNORECASE),
-    re.compile(r"time\s+to\s+dash", re.IGNORECASE),
-    re.compile(r"your\s+earnings", re.IGNORECASE),
+    re.compile(r"your\s+earnings\s+summary", re.IGNORECASE),
     re.compile(r"pay\s+statement", re.IGNORECASE),
     re.compile(r"fast\s+pay\s+transfer", re.IGNORECASE),
     re.compile(r"prop\s+22\s+healthcare", re.IGNORECASE),
-    re.compile(r"dasher\s+welcome\s+gift", re.IGNORECASE),
-    re.compile(r"how\s+was\s+your\s+experience", re.IGNORECASE),
-    re.compile(r"dasher\s+bank\s+account", re.IGNORECASE),
     re.compile(r"first\s+dash.*(?:done|complete|finished)", re.IGNORECASE),
-    re.compile(r"your\s+first\s+dash", re.IGNORECASE),
     re.compile(r"congratulations.*first\s+dash", re.IGNORECASE),
     re.compile(r"you\s+completed.*(?:first\s+)?dash", re.IGNORECASE),
 ]
