@@ -77,6 +77,10 @@ _ACTIVE_PATTERNS = [
     re.compile(r"dasher\s+welcome\s+gift", re.IGNORECASE),
     re.compile(r"how\s+was\s+your\s+experience", re.IGNORECASE),
     re.compile(r"dasher\s+bank\s+account", re.IGNORECASE),
+    re.compile(r"first\s+dash.*(?:done|complete|finished)", re.IGNORECASE),
+    re.compile(r"your\s+first\s+dash", re.IGNORECASE),
+    re.compile(r"congratulations.*first\s+dash", re.IGNORECASE),
+    re.compile(r"you\s+completed.*(?:first\s+)?dash", re.IGNORECASE),
 ]
 
 # BGC complete pattern (whitespace-insensitive, "bgc" alias)

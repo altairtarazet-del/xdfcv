@@ -419,6 +419,15 @@ def classify_email(subject: str, sender: str, body: str = "") -> ClassificationR
             urgency="medium", action_required=True,
         )
 
+    # === EARNINGS: First Dash Complete (strong ACTIVE signal) ===
+    if re.search(r"first\s+dash.*(?:done|complete|finished)|your\s+first\s+dash|congratulations.*first\s+dash|you\s+completed.*(?:first\s+)?dash", subj, re.IGNORECASE):
+        return ClassificationResult(
+            category="earnings", sub_category="earnings_summary",
+            confidence=_score_confidence(0.95, "exact"),
+            summary="First dash completed - account is active",
+            urgency="low", action_required=False,
+        )
+
     # === OPERATIONAL: Dash Opportunity ===
     if re.search(r"new\s+dash\s+available|time\s+to\s+dash|dash\s+opportunity|busy\s+near\s+you", subj, re.IGNORECASE):
         return ClassificationResult(
