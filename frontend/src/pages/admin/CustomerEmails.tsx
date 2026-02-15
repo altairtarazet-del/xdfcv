@@ -80,7 +80,7 @@ export default function CustomerEmails() {
 
   if (loading) {
     return (
-      <div className="h-full flex flex-col">
+      <div className="h-[calc(100svh-4rem)] flex flex-col">
         <div className="px-6 py-4 border-b border-dd-200 bg-white flex-shrink-0 space-y-2">
           <Skeleton className="h-4 w-32" />
           <Skeleton className="h-6 w-48" />
@@ -112,7 +112,7 @@ export default function CustomerEmails() {
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-[calc(100svh-4rem)] flex flex-col">
       <div className="px-6 py-4 border-b border-dd-200 bg-white flex-shrink-0">
         <Button variant="link" asChild className="p-0 h-auto text-primary">
           <Link to={`/accounts/${encodeURIComponent(email!)}`}>

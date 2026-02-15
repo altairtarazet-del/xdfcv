@@ -302,7 +302,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             </div>
           )}
         </header>
-        <div className="flex-1 overflow-auto h-0">{children}</div>
+        <div className="flex-1 overflow-auto">{children}</div>
       </SidebarInset>
     </SidebarProvider>
   );

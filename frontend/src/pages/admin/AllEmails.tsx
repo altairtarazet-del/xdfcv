@@ -100,7 +100,7 @@ export default function AllEmails() {
     : accounts;
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-[calc(100svh-4rem)] flex flex-col">
       {/* Page Header */}
       <div className="px-6 py-4 border-b border-dd-200 bg-white flex-shrink-0">
         <div className="flex items-center gap-2">
