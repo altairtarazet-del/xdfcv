@@ -236,15 +236,29 @@ class SmtpDevClient:
         return all_messages
 
 
+def _format_address(addr) -> str:
+    """Format an address object {address, name} to string."""
+    if isinstance(addr, dict):
+        a = addr.get("address", "")
+        n = addr.get("name", "")
+        return f"{n} <{a}>" if n else a
+    return str(addr) if addr else ""
+
+
 def _normalize_message(msg: dict):
     """Normalize SMTP.dev message format."""
     # from: object {address, name} -> string
     from_field = msg.get("from")
     if isinstance(from_field, dict):
-        addr = from_field.get("address", "")
-        name = from_field.get("name", "")
-        msg["from"] = f"{name} <{addr}>" if name else addr
-        msg["sender"] = addr
+        msg["from"] = _format_address(from_field)
+        msg["sender"] = from_field.get("address", "")
+    # to/cc/bcc: array of {address, name} -> comma-separated string
+    for field in ("to", "cc", "bcc", "replyTo"):
+        val = msg.get(field)
+        if isinstance(val, list):
+            msg[field] = ", ".join(_format_address(a) for a in val)
+        elif isinstance(val, dict):
+            msg[field] = _format_address(val)
     # html/text: may be arrays, join into strings
     if isinstance(msg.get("html"), list):
         msg["html"] = "\n".join(msg["html"])

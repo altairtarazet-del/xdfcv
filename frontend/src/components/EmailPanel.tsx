@@ -70,6 +70,21 @@ const MAILBOX_ICONS: Record<string, React.ElementType> = {
   drafts: PenLine,
 };
 
+/** Safely convert any value to a renderable string (guards against object/array from API). */
+function safeStr(val: unknown): string {
+  if (val == null) return "";
+  if (typeof val === "string") return val;
+  if (Array.isArray(val)) return val.map(safeStr).join(", ");
+  if (typeof val === "object") {
+    const obj = val as Record<string, unknown>;
+    if (obj.address) {
+      return obj.name ? `${obj.name} <${obj.address}>` : String(obj.address);
+    }
+    return JSON.stringify(val);
+  }
+  return String(val);
+}
+
 function formatFileSize(bytes?: number): string {
   if (!bytes) return "";
   if (bytes < 1024) return `${bytes} B`;
@@ -308,7 +323,7 @@ export default function EmailPanel({
                             <span className="h-2 w-2 rounded-full bg-dd-red flex-shrink-0" />
                           )}
                           <span className="text-xs text-dd-600 truncate flex-1">
-                            {msg.from || msg.sender || "Unknown"}
+                            {safeStr(msg.from) || safeStr(msg.sender) || "Unknown"}
                           </span>
                           <ChevronRight className="h-3.5 w-3.5 text-dd-400 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
                         </div>
@@ -362,12 +377,12 @@ export default function EmailPanel({
               </CardTitle>
               <div className="text-sm text-dd-700 mt-1.5 flex items-center gap-2">
                 <span className="font-medium">From:</span>
-                {activeMessage.from || activeMessage.sender || "Unknown"}
+                {safeStr(activeMessage.from) || safeStr(activeMessage.sender) || "Unknown"}
               </div>
               {activeMessage.to && (
                 <div className="text-sm text-dd-600 mt-0.5 flex items-center gap-2">
                   <span className="font-medium">To:</span>
-                  {activeMessage.to}
+                  {safeStr(activeMessage.to)}
                 </div>
               )}
               <div className="text-xs text-dd-500 mt-1">
