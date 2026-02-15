@@ -152,11 +152,11 @@ export interface ProvisionResult {
 // === Analytics Types ===
 
 export interface AnalyticsData {
-  accounts_by_stage: Record<string, number>;
-  analysis_by_category: Record<string, number>;
-  scans: { total: number; successful: number; failed: number; avg_duration: number };
+  accounts: { total: number; by_stage: Record<string, number>; by_status: Record<string, number> };
+  analysis: { total: number; by_category: Record<string, number>; by_source: Record<string, number> };
+  scans: { recent_count: number; success_rate: number; total_scanned: number; total_errors: number };
   alerts: { total: number; unread: number; by_type: Record<string, number> };
-  portal: { total_users: number; active_users: number; logins_30d: number };
+  portal_activity: { active_24h: number; active_7d: number };
 }
 
 // === Stage Constants ===

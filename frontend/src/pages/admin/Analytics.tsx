@@ -35,19 +35,16 @@ const categoryChartConfig: ChartConfig = {
 };
 
 const scanChartConfig: ChartConfig = {
-  total: { label: "Total", color: "var(--chart-1)" },
-  successful: { label: "Successful", color: "var(--chart-3)" },
-  failed: { label: "Failed", color: "var(--chart-5)" },
+  total_scanned: { label: "Scanned", color: "var(--chart-1)" },
+  total_errors: { label: "Errors", color: "var(--chart-5)" },
 };
 
 const alertChartConfig: ChartConfig = {
   count: { label: "Alerts", color: "var(--chart-4)" },
 };
 
-const portalChartConfig: ChartConfig = {
-  total_users: { label: "Total Users", color: "var(--chart-1)" },
-  active_users: { label: "Active Users", color: "var(--chart-3)" },
-  logins_30d: { label: "Logins (30d)", color: "var(--chart-2)" },
+const statusChartConfig: ChartConfig = {
+  count: { label: "Accounts", color: "var(--chart-3)" },
 };
 
 // --- Stat cards config ---
@@ -96,9 +93,7 @@ export default function Analytics() {
   }
 
   // Derive stats
-  const totalAccounts = data
-    ? Object.values(data.accounts_by_stage).reduce((a, b) => a + b, 0)
-    : 0;
+  const totalAccounts = data?.accounts?.total ?? 0;
 
   const statCards = [
     {
@@ -107,75 +102,70 @@ export default function Analytics() {
       icon: Users,
     },
     {
-      label: "Total Scans",
-      value: data?.scans.total ?? 0,
+      label: "Total Scanned",
+      value: data?.scans?.total_scanned ?? 0,
       icon: ScanLine,
     },
     {
-      label: "Successful Scans",
-      value: data?.scans.successful ?? 0,
+      label: "Success Rate",
+      value: `${data?.scans?.success_rate ?? 0}%`,
       icon: CheckCircle,
     },
     {
-      label: "Failed Scans",
-      value: data?.scans.failed ?? 0,
+      label: "Scan Errors",
+      value: data?.scans?.total_errors ?? 0,
       icon: XCircle,
     },
     {
       label: "Total Alerts",
-      value: data?.alerts.total ?? 0,
+      value: data?.alerts?.total ?? 0,
       icon: Bell,
     },
     {
-      label: "Portal Users",
-      value: data?.portal.total_users ?? 0,
+      label: "Active Users (7d)",
+      value: data?.portal_activity?.active_7d ?? 0,
       icon: UserCheck,
     },
   ];
 
   // Transform data for charts
-  const stageData = data
-    ? Object.entries(data.accounts_by_stage).map(([stage, count]) => ({
+  const stageData = data?.accounts?.by_stage
+    ? Object.entries(data.accounts.by_stage).map(([stage, count]) => ({
         stage,
         count,
         fill: STAGE_COLORS[stage] || "var(--chart-1)",
       }))
     : [];
 
-  const categoryData = data
-    ? Object.entries(data.analysis_by_category).map(([category, count]) => ({
+  const categoryData = data?.analysis?.by_category
+    ? Object.entries(data.analysis.by_category).map(([category, count]) => ({
         category,
         count,
       }))
     : [];
 
-  const scanData = data
+  const scanData = data?.scans
     ? [
         {
           name: "Scans",
-          total: data.scans.total,
-          successful: data.scans.successful,
-          failed: data.scans.failed,
+          total_scanned: data.scans.total_scanned,
+          total_errors: data.scans.total_errors,
         },
       ]
     : [];
 
-  const alertData = data
+  const alertData = data?.alerts?.by_type
     ? Object.entries(data.alerts.by_type).map(([type, count]) => ({
         type,
         count,
       }))
     : [];
 
-  const portalData = data
-    ? [
-        {
-          name: "Portal",
-          total_users: data.portal.total_users,
-          active_users: data.portal.active_users,
-          logins_30d: data.portal.logins_30d,
-        },
-      ]
+  const statusData = data?.accounts?.by_status
+    ? Object.entries(data.accounts.by_status).map(([status, count]) => ({
+        status,
+        count,
+      }))
     : [];
 
   return (
@@ -203,7 +193,7 @@ export default function Analytics() {
                 <Skeleton className="h-8 w-20" />
               ) : (
                 <div className="text-2xl font-bold">
-                  {stat.value.toLocaleString()}
+                  {typeof stat.value === "number" ? stat.value.toLocaleString() : stat.value}
                 </div>
               )}
             </CardContent>
@@ -299,18 +289,13 @@ export default function Analytics() {
                   <YAxis tickLine={false} axisLine={false} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <Bar
-                    dataKey="total"
-                    fill="var(--color-total)"
+                    dataKey="total_scanned"
+                    fill="var(--color-total_scanned)"
                     radius={[4, 4, 0, 0]}
                   />
                   <Bar
-                    dataKey="successful"
-                    fill="var(--color-successful)"
-                    radius={[4, 4, 0, 0]}
-                  />
-                  <Bar
-                    dataKey="failed"
-                    fill="var(--color-failed)"
+                    dataKey="total_errors"
+                    fill="var(--color-total_errors)"
                     radius={[4, 4, 0, 0]}
                   />
                 </BarChart>
@@ -347,19 +332,19 @@ export default function Analytics() {
             </CardContent>
           </Card>
 
-          {/* Portal Activity — grouped bar */}
+          {/* Accounts by Status */}
           <Card>
             <CardHeader>
               <CardTitle className="text-sm font-semibold">
-                Portal Activity
+                Accounts by Status
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <ChartContainer config={portalChartConfig} className="h-[300px]">
-                <BarChart data={portalData}>
+              <ChartContainer config={statusChartConfig} className="h-[300px]">
+                <BarChart data={statusData}>
                   <CartesianGrid vertical={false} />
                   <XAxis
-                    dataKey="name"
+                    dataKey="status"
                     tickLine={false}
                     axisLine={false}
                     className="text-xs"
@@ -367,18 +352,8 @@ export default function Analytics() {
                   <YAxis tickLine={false} axisLine={false} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <Bar
-                    dataKey="total_users"
-                    fill="var(--color-total_users)"
-                    radius={[4, 4, 0, 0]}
-                  />
-                  <Bar
-                    dataKey="active_users"
-                    fill="var(--color-active_users)"
-                    radius={[4, 4, 0, 0]}
-                  />
-                  <Bar
-                    dataKey="logins_30d"
-                    fill="var(--color-logins_30d)"
+                    dataKey="count"
+                    fill="var(--color-count)"
                     radius={[4, 4, 0, 0]}
                   />
                 </BarChart>
