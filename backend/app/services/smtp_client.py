@@ -230,7 +230,9 @@ class SmtpDevClient:
                 for msg in members:
                     _normalize_message(msg)
                 all_messages.extend(members)
-                if len(members) < 100:
+                # Check JSON-LD pagination: use view.next if available
+                view = data.get("view", {}) if isinstance(data, dict) else {}
+                if not view.get("next"):
                     break
                 page += 1
         return all_messages
