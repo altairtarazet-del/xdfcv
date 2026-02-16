@@ -63,17 +63,9 @@ _REACTIVATION_PATTERNS = [
 # EXCLUDED (false positives): "how was your experience" (survey), "maximize your earnings"
 # (promo), "dasher bank account" (setup), "new dash available" (promo), "time to dash" (promo)
 _ACTIVE_PATTERNS = [
-    re.compile(r"your\s+weekly\s+pay", re.IGNORECASE),
-    re.compile(r"weekly\s+earnings", re.IGNORECASE),
-    re.compile(r"direct\s+deposit", re.IGNORECASE),
-    re.compile(r"you\s+earned", re.IGNORECASE),
-    re.compile(r"delivery\s+summary", re.IGNORECASE),
-    re.compile(r"dasher\s+pay", re.IGNORECASE),
     re.compile(r"payment\s+processed", re.IGNORECASE),
-    re.compile(r"your\s+earnings\s+summary", re.IGNORECASE),
     re.compile(r"pay\s+statement", re.IGNORECASE),
     re.compile(r"fast\s+pay\s+transfer", re.IGNORECASE),
-    re.compile(r"prop\s+22\s+healthcare", re.IGNORECASE),
     re.compile(r"dasher\s+welcome\s+gift", re.IGNORECASE),
     re.compile(r"your\s+first\s+dash", re.IGNORECASE),
     re.compile(r"first\s+dash.*(?:done|complete|finished)", re.IGNORECASE),
@@ -105,7 +97,6 @@ _COMPLETE_PATTERN = re.compile(r"complete", re.IGNORECASE)
 _IDENTITY_VERIFIED_PATTERNS = [
     re.compile(r"identity.*verified", re.IGNORECASE),
     re.compile(r"information\s+verified", re.IGNORECASE),
-    re.compile(r"identity\s+verification.*complete", re.IGNORECASE),
 ]
 
 # BGC body patterns: specific adverse-action phrases (replaces broad "consider")
@@ -123,7 +114,7 @@ _BGC_CONSIDER_BODY_PATTERNS = [
 # low    = generic/fallback match
 
 _HIGH_CONFIDENCE_DEACTIVATION = _DEACTIVATION_PATTERNS[0]  # exact phrase
-_HIGH_CONFIDENCE_ACTIVE = [_ACTIVE_PATTERNS[0], _ACTIVE_PATTERNS[1]]  # weekly pay/earnings
+_HIGH_CONFIDENCE_ACTIVE = [_ACTIVE_PATTERNS[0], _ACTIVE_PATTERNS[1]]  # payment processed/pay statement
 
 
 def _lower(s: str | None) -> str:
